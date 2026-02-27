@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, FlatList } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, FlatList, ScrollView } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useXtream } from '../context/XtreamContext';
 import { useMenu } from '../context/MenuContext';
@@ -78,14 +78,16 @@ export function VODScreen(_props: DrawerScreenPropsType<'VOD'>) {
     <View style={styles.container}>
       {/* Category selector */}
       <View style={styles.categoryListContainer}>
-        <FlatList
-          data={[{ category_id: '', category_name: 'All Movies', parent_id: 0 }, ...vodCategories]}
-          renderItem={renderCategoryItem}
-          style={styles.categoryList}
+        <ScrollView
           horizontal
-          keyExtractor={(item) => String(item.category_id || 'all')}
           showsHorizontalScrollIndicator={false}
-        />
+          style={styles.categoryList}
+          contentContainerStyle={styles.categoryListContent}
+        >
+          {[{ category_id: '', category_name: 'All Movies', parent_id: 0 }, ...vodCategories].map((item, index) =>
+            renderCategoryItem({ item, index })
+          )}
+        </ScrollView>
       </View>
 
       {/* Movies grid */}
@@ -134,11 +136,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.scrimDark,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
+    overflow: 'visible',
     zIndex: 5,
   },
   categoryList: {
     flex: 1,
+    overflow: 'visible',
   },
   categoryListContent: {
     paddingHorizontal: scaledPixels(20),
@@ -154,7 +157,7 @@ const styles = StyleSheet.create({
     marginVertical: scaledPixels(4),
     width: scaledPixels(180),
     alignItems: 'center',
-    overflow: 'hidden',
+    overflow: 'visible',
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
