@@ -152,7 +152,19 @@ const buildPrograms = (
     });
   });
 
-  return programs.sort((a, b) => a.left - b.left);
+  const sorted = programs.sort((a, b) => a.left - b.left);
+
+  // Trim overlaps: the later-starting programme takes priority.
+  // If programme[i] extends past the start of programme[i+1], clip its right
+  // edge so the two blocks don't visually overlap.
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const next = sorted[i + 1];
+    if (sorted[i].left + sorted[i].width > next.left) {
+      sorted[i] = { ...sorted[i], width: Math.max(next.left - sorted[i].left, 0) };
+    }
+  }
+
+  return sorted.filter((p) => p.width >= 2);
 };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -197,12 +209,18 @@ const TimeRuler = React.memo(
     }
 
     const nowScreenX = NOW_LEFT - scrollX;
+    const nowTime = fmt12h(new Date(rangeStart.getTime() + PAST_MINUTES * 60_000));
 
     return (
       <View style={[styles.timeRuler, { width: viewportWidth }]}>
         {markers}
         {nowScreenX >= 0 && nowScreenX <= viewportWidth && (
-          <View style={[styles.nowTickInRuler, { left: nowScreenX }]} />
+          <>
+            <View style={[styles.nowTickInRuler, { left: nowScreenX }]} />
+            <View style={[styles.nowTimePill, { left: nowScreenX }]}>
+              <Text style={styles.nowTimePillText}>{nowTime}</Text>
+            </View>
+          </>
         )}
       </View>
     );
@@ -287,6 +305,7 @@ const ChannelRow = React.memo(
             visiblePrograms.map((program) => {
               const globalIdx = programs.indexOf(program);
               const focused = isCurrentRow && isGridMode && globalIdx === focusedProgramIdx;
+              const isNowPlaying = program.left <= NOW_LEFT && program.left + program.width > NOW_LEFT;
               const rawLeft = program.left - scrollX;
               // Clamp to 0 so programs that started before the current scroll
               // position never bleed left into the sidebarCell area. Trim width
@@ -302,6 +321,7 @@ const ChannelRow = React.memo(
                   key={program.id}
                   style={[
                     styles.programBlock,
+                    isNowPlaying && styles.programBlockNowPlaying,
                     { left: blockLeft, width: clampedWidth },
                     focused && styles.programBlockFocused,
                   ]}
@@ -959,6 +979,22 @@ const styles = StyleSheet.create({
     backgroundColor: NOW_C,
     opacity: 0.9,
   },
+  nowTimePill: {
+    position: 'absolute',
+    top: scaledPixels(6),
+    transform: [{ translateX: -scaledPixels(38) }],
+    backgroundColor: NOW_C,
+    borderRadius: scaledPixels(4),
+    paddingHorizontal: scaledPixels(8),
+    paddingVertical: scaledPixels(3),
+    zIndex: 20,
+  },
+  nowTimePillText: {
+    color: '#ffffff',
+    fontSize: scaledPixels(11),
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
 
   // Channel rows
   channelList: {
@@ -1041,6 +1077,11 @@ const styles = StyleSheet.create({
     paddingVertical: scaledPixels(4),
     justifyContent: 'center',
     overflow: 'hidden',
+  },
+  programBlockNowPlaying: {
+    backgroundColor: 'rgba(236, 0, 63, 0.12)',
+    borderColor: NOW_C,
+    borderWidth: 1,
   },
   programBlockFocused: {
     backgroundColor: FOCUS_C,
