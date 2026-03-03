@@ -269,7 +269,7 @@ const ChannelRow = React.memo(
         </View>
 
         {/* ── Programme viewport ── */}
-        <View style={[styles.programViewport, { width: viewportWidth }]}>
+        <View style={styles.programViewport}>
           {/* "Now" vertical bar */}
           {nowScreenX >= 0 && nowScreenX <= viewportWidth && (
             <View style={[styles.nowBarRow, { left: nowScreenX }]} />
@@ -287,14 +287,22 @@ const ChannelRow = React.memo(
             visiblePrograms.map((program) => {
               const globalIdx = programs.indexOf(program);
               const focused = isCurrentRow && isGridMode && globalIdx === focusedProgramIdx;
-              const blockLeft = program.left - scrollX;
+              const rawLeft = program.left - scrollX;
+              // Clamp to 0 so programs that started before the current scroll
+              // position never bleed left into the sidebarCell area. Trim width
+              // by the same amount so the block ends at the correct time.
+              const blockLeft = Math.max(rawLeft, 0);
+              const clampedWidth = Math.max(
+                program.width - scaledPixels(3) - (blockLeft - rawLeft),
+                4,
+              );
 
               return (
                 <View
                   key={program.id}
                   style={[
                     styles.programBlock,
-                    { left: blockLeft, width: Math.max(program.width - scaledPixels(3), 4) },
+                    { left: blockLeft, width: clampedWidth },
                     focused && styles.programBlockFocused,
                   ]}
                 >
@@ -963,6 +971,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.borderLight,
     backgroundColor: colors.backgroundElevated,
+    overflow: 'hidden',
   },
   // Highlight the active row in grid mode so the user always sees which row is selected
   channelRowGridActive: {
@@ -1005,6 +1014,7 @@ const styles = StyleSheet.create({
 
   // Programme viewport
   programViewport: {
+    flex: 1,
     height: CHANNEL_HEIGHT,
     overflow: 'hidden',
     position: 'relative',
