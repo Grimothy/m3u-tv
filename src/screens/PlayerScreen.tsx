@@ -122,7 +122,7 @@ const FocusContainer = isTVOS
 const PROGRESS_INTERVAL_MS = 10_000; // Report progress every 10 seconds
 
 export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player'>) => {
-    const { title, type, streamId, seriesId, seasonNumber } = route.params;
+    const { title, type, streamId, seriesId, seasonNumber, startPosition } = route.params;
     const isLive = type === 'live';
 
     const { isM3UEditor } = useXtream();
@@ -168,6 +168,8 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
     const seekingRef = useRef(false);
     const seekLockoutTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
     const exitGuardRef = useRef(false);
+    const startPositionRef = useRef(startPosition ?? 0);
+    const hasSeekedToStartRef = useRef(false);
 
     const currentTimeRef = useRef(currentTime);
     const durationRef = useRef(duration);
@@ -375,7 +377,13 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
     const handleNativeLoad = useCallback((data: OnLoadData) => {
         setError(null);
         setIsLoading(false);
-        setDuration(data.duration || 0);
+        const loadedDuration = data.duration || 0;
+        setDuration(loadedDuration);
+
+        if (startPositionRef.current > 0 && !hasSeekedToStartRef.current && loadedDuration > 0) {
+            hasSeekedToStartRef.current = true;
+            nativeRef.current?.seek(startPositionRef.current);
+        }
 
         // react-native-video includes audioTracks in OnLoadData
         const nativeAudio = (data as any).audioTracks as Array<{ index: number; title: string; language: string; type: string }> | undefined;
@@ -456,7 +464,15 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
     }) => {
         setError(null);
         setIsLoading(false);
-        setDuration((data.duration || 0) / 1000);
+        const durSeconds = (data.duration || 0) / 1000;
+        setDuration(durSeconds);
+
+        if (startPositionRef.current > 0 && !hasSeekedToStartRef.current && durSeconds > 0) {
+            hasSeekedToStartRef.current = true;
+            const fraction = startPositionRef.current / durSeconds;
+            setVlcSeekValue(fraction);
+            setTimeout(() => setVlcSeekValue(-1), 300);
+        }
 
         // VLC re-fires onLoad when track state changes (e.g. subtitle switch),
         // and track IDs can shift between calls. Only populate tracks on first load.
