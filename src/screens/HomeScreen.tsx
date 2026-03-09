@@ -130,7 +130,7 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
                     style={({ isFocused }) => [styles.continueCard, isFocused && styles.continueCardFocused]}
                   >
                     {() => (
-                      <View>
+                      <View style={styles.continueCardInner}>
                         <Image source={{ uri: cover }} style={styles.continueCover} resizeMode="cover" />
                         {pct > 0 && (
                           <View style={styles.continueProgressBg}>
@@ -312,15 +312,24 @@ const styles = StyleSheet.create({
   },
   continueCard: {
     width: scaledPixels(180),
-    marginRight: scaledPixels(12),
+    marginHorizontal: scaledPixels(12),
     borderRadius: scaledPixels(8),
-    overflow: 'hidden',
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: 'transparent',
+  },
+  continueCardInner: {
+    borderRadius: scaledPixels(6),
+    overflow: 'hidden',
   },
   continueCardFocused: {
     borderColor: colors.primary,
-    transform: [{ scale: 1.05 }],
+    transform: [{ scale: 1.08 }],
+    zIndex: 10,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 15,
+    elevation: 10,
   },
   continueCover: {
     width: '100%',
