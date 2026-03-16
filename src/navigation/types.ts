@@ -28,6 +28,7 @@ export type RootStackParamList = {
 // Drawer Navigator
 export type DrawerParamList = {
   Home: undefined;
+  Search: undefined;
   LiveTV: undefined;
   EPG: undefined;
   VOD: undefined;

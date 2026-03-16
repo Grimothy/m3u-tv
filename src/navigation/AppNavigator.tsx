@@ -10,6 +10,7 @@ import {
   EPGScreen,
   VODScreen,
   SeriesScreen,
+  SearchScreen,
   PlayerScreen,
   MovieDetailsScreen,
   SeriesDetailsScreen,
@@ -89,6 +90,7 @@ function MainNavigator() {
               }}
             >
               <MainStack.Screen name="Home" component={HomeScreen} />
+              <MainStack.Screen name="Search" component={SearchScreen} />
               <MainStack.Screen name="LiveTV" component={LiveTVScreen} />
               <MainStack.Screen name="EPG" component={EPGScreen} />
               <MainStack.Screen name="VOD" component={VODScreen} />

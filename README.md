@@ -135,7 +135,7 @@ yarn lint
 ## Future Enhancements
 
 - [x] Enhanced EPG with timeline view (planby integration)
-- [ ] Search functionality
+- [x] Search functionality
 - [ ] Favorites/Watchlist
 - [ ] Continue watching
 - [ ] Parental controls
