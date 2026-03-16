@@ -23,7 +23,9 @@ type CacheKey =
   | 'vodStreams'
   | `vodStreams_${string}`
   | 'series'
-  | `series_${string}`;
+  | `series_${string}`
+  | `vodInfo_${number}`
+  | `seriesInfo_${number}`;
 
 class CacheService {
   private settings: CacheSettings = DEFAULT_SETTINGS;

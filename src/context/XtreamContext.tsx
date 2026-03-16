@@ -197,13 +197,29 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
           seriesCategories: cached.data.seriesCategories,
         }));
 
-        // If stale, refresh in background without blocking UI
-        if (cached.isStale) {
-          connect(credentials);
-        } else {
-          // Still authenticate to update authResponse and m3u_editor status
-          connect(credentials);
-        }
+        // Silently authenticate in background to refresh auth state and categories if stale
+        xtreamService.authenticate()
+          .then((authResponse) => {
+            if (!authResponse.user_info || authResponse.user_info.auth !== 1) {
+              return;
+            }
+            const isM3UEditor = !!authResponse.m3u_editor;
+            const m3uEditorVersion = authResponse.m3u_editor?.version ?? null;
+            setState((prev) => ({ ...prev, authResponse, isM3UEditor, m3uEditorVersion }));
+
+            if (cached.isStale) {
+              Promise.all([
+                xtreamService.getLiveCategories(),
+                xtreamService.getVodCategories(),
+                xtreamService.getSeriesCategories(),
+              ]).then(([liveCategories, vodCategories, seriesCategories]) => {
+                cacheService.set('categories', { liveCategories, vodCategories, seriesCategories });
+                setState((prev) => ({ ...prev, liveCategories, vodCategories, seriesCategories }));
+              }).catch((e) => console.warn('[XtreamContext] Background category refresh failed:', e));
+            }
+          })
+          .catch((e) => console.warn('[XtreamContext] Background auth failed:', e));
+
         return true;
       }
 
@@ -256,7 +272,7 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
         xtreamService.getLiveStreams(categoryId).then((streams) => {
           cacheService.set(cacheKey, streams);
           setState((prev) => ({ ...prev, liveStreams: streams }));
-        });
+        }).catch((e) => console.warn('[XtreamContext] Background live streams refresh failed:', e));
         return cached.data;
       }
 
@@ -291,7 +307,7 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
         xtreamService.getVodStreams(categoryId).then((streams) => {
           cacheService.set(cacheKey, streams);
           setState((prev) => ({ ...prev, vodStreams: streams }));
-        });
+        }).catch((e) => console.warn('[XtreamContext] Background VOD streams refresh failed:', e));
         return cached.data;
       }
 
@@ -325,7 +341,7 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
         xtreamService.getSeries(categoryId).then((seriesList) => {
           cacheService.set(cacheKey, seriesList);
           setState((prev) => ({ ...prev, series: seriesList }));
-        });
+        }).catch((e) => console.warn('[XtreamContext] Background series refresh failed:', e));
         return cached.data;
       }
 
@@ -345,11 +361,45 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const fetchVodInfo = useCallback(async (vodId: number) => {
-    return await xtreamService.getVodInfo(vodId);
+    const cacheKey = `vodInfo_${vodId}` as const;
+
+    try {
+      const cached = await cacheService.get<XtreamVodInfo>(cacheKey);
+      if (cached && !cached.isStale) {
+        return cached.data;
+      }
+
+      const info = await xtreamService.getVodInfo(vodId);
+      cacheService.set(cacheKey, info);
+      return info;
+    } catch (error) {
+      const cached = await cacheService.get<XtreamVodInfo>(cacheKey);
+      if (cached) {
+        return cached.data;
+      }
+      throw error;
+    }
   }, []);
 
   const fetchSeriesInfo = useCallback(async (seriesId: number) => {
-    return await xtreamService.getSeriesInfo(seriesId);
+    const cacheKey = `seriesInfo_${seriesId}` as const;
+
+    try {
+      const cached = await cacheService.get<XtreamSeriesInfo>(cacheKey);
+      if (cached && !cached.isStale) {
+        return cached.data;
+      }
+
+      const info = await xtreamService.getSeriesInfo(seriesId);
+      cacheService.set(cacheKey, info);
+      return info;
+    } catch (error) {
+      const cached = await cacheService.get<XtreamSeriesInfo>(cacheKey);
+      if (cached) {
+        return cached.data;
+      }
+      throw error;
+    }
   }, []);
 
   const getLiveStreamUrl = useCallback((streamId: number, format?: string) => {

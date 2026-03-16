@@ -20,6 +20,8 @@ const path = require('path');
  * build.gradle itself. If either file is missing the plugin does nothing,
  * leaving the release build signed with the debug key so contributors without
  * the production keystore can still build a sideloadable test APK.
+ *
+ * @param {import('@expo/config-types').ExpoConfig} config
  */
 const withAndroidSigning = (config) =>
   withAppBuildGradle(config, (mod) => {
