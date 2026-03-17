@@ -137,7 +137,7 @@ yarn lint
 - [x] Enhanced EPG with timeline view
 - [x] Continue watching
 - [x] Multiple profile support
-- [ ] Favorites/Watchlist
+- [x] Favorites/Watchlist
 - [x] Search functionality
 - [ ] Parental controls
 - [ ] Stream quality selection

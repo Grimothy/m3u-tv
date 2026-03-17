@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator, ScrollView, FlatList, Image 
 import { useXtream } from '../context/XtreamContext';
 import { useViewer } from '../context/ViewerContext';
 import { useMenu } from '../context/MenuContext';
+import { favoritesService } from '../services/FavoritesService';
 import { colors } from '../theme';
 import { scaledPixels } from '../hooks/useScale';
 import { FocusablePressable } from '../components/FocusablePressable';
@@ -13,7 +14,7 @@ import { DrawerScreenPropsType } from '../navigation/types';
 import { XtreamLiveStream, XtreamVodStream, XtreamSeries, WatchProgress } from '../types/xtream';
 
 export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
-  const { isConfigured, isLoading, isM3UEditor, loadSavedCredentials, fetchLiveStreams, fetchVodStreams, fetchSeries } = useXtream();
+  const { isConfigured, isLoading, isM3UEditor, loadSavedCredentials, fetchLiveStreams, fetchVodStreams, fetchSeries, getLiveStreamUrl, vodCategories } = useXtream();
   const { activeViewer, getRecentlyWatched } = useViewer();
   const { isSidebarActive, setSidebarActive } = useMenu();
   const [liveStreams, setLiveStreams] = useState<XtreamLiveStream[]>([]);
@@ -21,6 +22,7 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
   const [seriesList, setSeriesList] = useState<XtreamSeries[]>([]);
   const [contentLoading, setContentLoading] = useState(false);
   const [recentlyWatched, setRecentlyWatched] = useState<WatchProgress[]>([]);
+  const [favoriteStreams, setFavoriteStreams] = useState<XtreamLiveStream[]>([]);
 
   useEffect(() => {
     loadSavedCredentials();
@@ -42,8 +44,21 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
     setContentLoading(true);
     const [live, vod, series] = await Promise.all([fetchLiveStreams(), fetchVodStreams(), fetchSeries()]);
     setLiveStreams(live);
-    setVodStreams(vod);
+    let finalVod = vod;
+    if (finalVod.length === 0 && vodCategories.length > 0) {
+      const all = await Promise.all(vodCategories.map((c) => fetchVodStreams(c.category_id)));
+      const seen = new Set<number>();
+      finalVod = all.flat().filter((s) => {
+        if (seen.has(s.stream_id)) return false;
+        seen.add(s.stream_id);
+        return true;
+      });
+    }
+    setVodStreams(finalVod);
     setSeriesList(series);
+    await favoritesService.load();
+    const favIds = new Set(favoritesService.getAll());
+    setFavoriteStreams(live.filter((s) => favIds.has(s.stream_id)));
     setContentLoading(false);
   };
 
@@ -94,12 +109,12 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
   return (
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
       {/* Continue Watching Row */}
-      {recentlyWatched.length > 0 && (
+      {recentlyWatched.filter((w) => w.content_type !== 'live').length > 0 && (
         <View style={styles.rowContainer}>
           <Text style={styles.rowTitle}>Continue Watching</Text>
           <View style={styles.continueWatchingList}>
             <FlatList
-              data={recentlyWatched}
+              data={recentlyWatched.filter((w) => w.content_type !== 'live')}
               horizontal
               removeClippedSubviews
               initialNumToRender={6}
@@ -139,6 +154,29 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
                   </FocusablePressable>
                 );
               }}
+            />
+          </View>
+        </View>
+      )}
+
+      {/* Favorites Row */}
+      {favoriteStreams.length > 0 && (
+        <View style={styles.rowContainer}>
+          <Text style={styles.rowTitle}>★ Favorites</Text>
+          <View style={styles.liveTvRowList}>
+            <FlatList
+              data={favoriteStreams}
+              renderItem={({ item, index }: { item: XtreamLiveStream; index: number }) => (
+                <LiveTVCard item={item} onFocus={index === 0 ? () => isSidebarActive && setSidebarActive(false) : undefined} />
+              )}
+              horizontal
+              removeClippedSubviews
+              initialNumToRender={6}
+              maxToRenderPerBatch={4}
+              windowSize={3}
+              style={styles.rowList}
+              keyExtractor={(item) => String(item.stream_id)}
+              showsHorizontalScrollIndicator={false}
             />
           </View>
         </View>
