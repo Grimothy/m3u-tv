@@ -666,6 +666,25 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
                     return;
                 }
 
+                if (!isLive) {
+                    if (event.eventType === 'left') {
+                        doSeek(-SEEK_STEP);
+                        return;
+                    }
+                    if (event.eventType === 'right') {
+                        doSeek(SEEK_STEP);
+                        return;
+                    }
+                    if (event.eventType === 'longLeft') {
+                        doSeek(-TIMELINE_SEEK_STEP);
+                        return;
+                    }
+                    if (event.eventType === 'longRight') {
+                        doSeek(TIMELINE_SEEK_STEP);
+                        return;
+                    }
+                }
+
                 showOverlay();
                 return;
             }
@@ -733,7 +752,7 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
             backHandler.remove();
             subscription?.remove?.();
         };
-    }, [doSeek, doTogglePlayPause, goBackSafe, hideOverlayAnim, resetHideTimer, showOverlay]);
+    }, [doSeek, doTogglePlayPause, goBackSafe, hideOverlayAnim, isLive, resetHideTimer, showOverlay]);
 
     useEffect(() => {
         return () => {
