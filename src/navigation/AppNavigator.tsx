@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { NavigationContainer, DarkTheme, Theme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { View, StyleSheet, BackHandler, TVFocusGuideView, findNodeHandle } from 'react-native';
+import { View, StyleSheet, BackHandler, TVFocusGuideView, findNodeHandle, Pressable } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import {
   HomeScreen,
@@ -42,6 +42,7 @@ function MainNavigator() {
   const contentFocusRef = useRef<View>(null);
   const [contentFocusTag, setContentFocusTag] = useState<number>();
   const wasFocusedRef = useRef(isFocused);
+  const [grabFocus, setGrabFocus] = useState(false);
 
   useEffect(() => {
     const id = setTimeout(() => {
@@ -52,6 +53,18 @@ function MainNavigator() {
     }, 0);
     return () => clearTimeout(id);
   }, []);
+
+  const handleSidebarNavigate = useCallback(() => {
+    setGrabFocus(true);
+  }, []);
+
+  // Reset grabFocus after it's been applied
+  useEffect(() => {
+    if (grabFocus) {
+      const id = setTimeout(() => setGrabFocus(false), 300);
+      return () => clearTimeout(id);
+    }
+  }, [grabFocus]);
 
   // When returning from a modal (Player, Details), ensure sidebar stays collapsed
   useEffect(() => {
@@ -89,6 +102,13 @@ function MainNavigator() {
               }
             }}
           >
+            {grabFocus && (
+              <Pressable
+                hasTVPreferredFocus
+                style={styles.focusAnchor}
+                onFocus={() => setGrabFocus(false)}
+              />
+            )}
             <MainStack.Navigator
               screenOptions={{
                 headerShown: false,
@@ -114,7 +134,7 @@ function MainNavigator() {
         pointerEvents="box-none"
       >
         <TVFocusGuideView style={styles.fill} trapFocusLeft>
-          <SideBar contentFocusTag={contentFocusTag} />
+          <SideBar contentFocusTag={contentFocusTag} onNavigate={handleSidebarNavigate} />
         </TVFocusGuideView>
       </View>
     </View>
@@ -184,5 +204,13 @@ const styles = StyleSheet.create({
   },
   sidebarLayer: {
     ...StyleSheet.absoluteFillObject,
+  },
+  focusAnchor: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    opacity: 0,
   },
 });

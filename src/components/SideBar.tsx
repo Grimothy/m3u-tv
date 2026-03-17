@@ -27,6 +27,7 @@ export { SIDEBAR_WIDTH_COLLAPSED, SIDEBAR_WIDTH_EXPANDED };
 
 interface SideBarProps {
     contentFocusTag?: number;
+    onNavigate?: () => void;
 }
 
 interface MenuItem {
@@ -44,7 +45,7 @@ const MENU_ITEMS: MenuItem[] = [
     { id: 'Settings', label: 'Settings', icon: 'Settings' },
 ];
 
-export const SideBar = ({ contentFocusTag }: SideBarProps) => {
+export const SideBar = ({ contentFocusTag, onNavigate }: SideBarProps) => {
     const { isExpanded, setExpanded, isSidebarActive, setSidebarActive } = useMenu();
     const [preferredMenuId, setPreferredMenuId] = useState<string>('Home');
     const wasSidebarActiveRef = useRef(false);
@@ -61,9 +62,9 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
         return route?.name || 'Home';
     });
 
-    // Use the last known menu item when on non-menu screens (e.g. Player)
-    const isMenuRoute = MENU_ITEMS.some((item) => item.id === currentRouteName);
-    const activeMenuId = isMenuRoute ? currentRouteName : preferredMenuId;
+    // preferredMenuId is the authoritative active-menu indicator.
+    // Sync it from navigation state when route changes externally (not via sidebar).
+    const activeMenuId = preferredMenuId;
 
     // External request to focus sidebar (e.g., back button or explicit activation)
     useEffect(() => {
@@ -85,7 +86,7 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
         setTimeout(() => { focusGuardRef.current = false; }, 300);
     }, [isSidebarActive, setExpanded, activeMenuId]);
 
-    // Keep preferred item in sync with active route.
+    // Keep preferred item in sync with actual navigation route.
     useEffect(() => {
         const isTopLevelMenuRoute = MENU_ITEMS.some((item) => item.id === (currentRouteName as keyof DrawerParamList));
         if (isTopLevelMenuRoute && preferredMenuId !== currentRouteName) {
@@ -173,8 +174,11 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
                                     // @ts-ignore
                                     navigationRef.navigate('Main', { screen: item.id });
                                     setPreferredMenuId(item.id);
+                                    // Set guard immediately so onFocus on other items is blocked
+                                    focusGuardRef.current = true;
                                     setSidebarActive(false);
                                     setExpanded(false);
+                                    onNavigate?.();
                                 }
                             }}
                             onFocus={() => {
