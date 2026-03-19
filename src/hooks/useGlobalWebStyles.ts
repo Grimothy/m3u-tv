@@ -51,21 +51,5 @@ export function useGlobalWebStyles(): void {
       }
     `;
     document.head.appendChild(style);
-
-    // Mark the main scrollable content areas with the m3u-scroll class
-    // so they get the styled scrollbar. Retry until elements are mounted.
-    const markScrollables = () => {
-      document.querySelectorAll('[role="list"]').forEach((el) => {
-        el.classList.add('m3u-scroll');
-      });
-    };
-    markScrollables();
-    const markTimer = setTimeout(markScrollables, 1000);
-    const markTimer2 = setTimeout(markScrollables, 3000);
-
-    return () => {
-      clearTimeout(markTimer);
-      clearTimeout(markTimer2);
-    };
   }, []);
 }
