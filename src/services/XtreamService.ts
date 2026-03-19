@@ -109,10 +109,17 @@ class XtreamService {
     return response.json();
   }
 
-  // Authentication
+  // Authentication — always identifies as m3u-tv so the backend can gate features
   async authenticate(): Promise<XtreamAuthResponse> {
     const url = this.getApiUrl();
-    return this.fetchJson<XtreamAuthResponse>(url);
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json', [M3UE_CLIENT_HEADER]: M3UE_CLIENT_VALUE },
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.json();
   }
 
   // Live TV

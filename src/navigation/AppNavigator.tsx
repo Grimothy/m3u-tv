@@ -5,6 +5,7 @@ import { View, StyleSheet, BackHandler, TVFocusGuideView, findNodeHandle } from 
 import { useIsFocused } from '@react-navigation/native';
 import {
   HomeScreen,
+  SearchScreen,
   SettingsScreen,
   LiveTVScreen,
   EPGScreen,

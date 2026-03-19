@@ -1,7 +1,6 @@
 import React from 'react';
 import { View, Text, Modal, StyleSheet } from 'react-native';
 import { FocusablePressable } from './FocusablePressable';
-import { colors } from '../theme';
 import { scaledPixels } from '../hooks/useScale';
 
 interface Props {
