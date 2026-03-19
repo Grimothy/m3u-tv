@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView, FlatList, Image, Platform } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, FlatList, Image } from 'react-native';
 import { useXtream } from '../context/XtreamContext';
 import { useViewer } from '../context/ViewerContext';
 import { useMenu } from '../context/MenuContext';
@@ -119,7 +119,7 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
               removeClippedSubviews
               initialNumToRender={6}
               style={styles.rowList}
-              showsHorizontalScrollIndicator={Platform.OS === 'web'}
+              showsHorizontalScrollIndicator={false}
               keyExtractor={(item) => `${item.content_type}-${item.stream_id}`}
               renderItem={({ item: prog, index }) => {
                 const vod = prog.content_type === 'vod'
@@ -176,7 +176,7 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
               windowSize={3}
               style={styles.rowList}
               keyExtractor={(item) => String(item.stream_id)}
-              showsHorizontalScrollIndicator={Platform.OS === 'web'}
+              showsHorizontalScrollIndicator={false}
             />
           </View>
         </View>
@@ -199,7 +199,7 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
               windowSize={3}
               style={styles.rowList}
               keyExtractor={(item) => String(item.stream_id)}
-              showsHorizontalScrollIndicator={Platform.OS === 'web'}
+              showsHorizontalScrollIndicator={false}
             />
           </View>
         </View>
@@ -222,7 +222,7 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
               windowSize={3}
               style={styles.rowList}
               keyExtractor={(item) => String(item.stream_id)}
-              showsHorizontalScrollIndicator={Platform.OS === 'web'}
+              showsHorizontalScrollIndicator={false}
             />
           </View>
         </View>
@@ -245,7 +245,7 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
               windowSize={3}
               style={styles.rowList}
               keyExtractor={(item) => String(item.series_id)}
-              showsHorizontalScrollIndicator={Platform.OS === 'web'}
+              showsHorizontalScrollIndicator={false}
             />
           </View>
         </View>
