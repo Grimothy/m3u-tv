@@ -1,0 +1,166 @@
+const { app, BrowserWindow, globalShortcut, protocol, net, session, ipcMain, shell } = require('electron');
+const path = require('path');
+const url = require('url');
+const { spawn } = require('child_process');
+
+const DIST_DIR = path.join(__dirname, '..', 'dist');
+
+let mainWindow;
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 720,
+    minWidth: 800,
+    minHeight: 600,
+    backgroundColor: '#0a0a0f',
+    icon: path.join(__dirname, '..', 'logo.png'),
+    titleBarStyle: 'default',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: false,
+    },
+  });
+
+  const isDev = process.env.ELECTRON_DEV === '1';
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:8081');
+  } else {
+    mainWindow.loadURL('app://bundle/index.html');
+  }
+
+  // Always open DevTools during testing — remove for production
+  mainWindow.webContents.openDevTools();
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+}
+
+// Register the custom scheme as privileged before app is ready
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'app',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+]);
+
+app.whenReady().then(() => {
+  // Serve dist/ files via custom protocol so absolute paths (/_expo/...) resolve correctly
+  protocol.handle('app', (request) => {
+    const reqUrl = new URL(request.url);
+    const filePath = path.join(DIST_DIR, decodeURIComponent(reqUrl.pathname));
+    return net.fetch(url.pathToFileURL(filePath).toString());
+  });
+
+  // Set Content-Security-Policy only for our own app:// pages, not external requests
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    if (details.url.startsWith('app://')) {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': ["default-src 'self' app:; script-src 'self' 'unsafe-inline' 'unsafe-eval' app:; style-src 'self' 'unsafe-inline' app:; img-src 'self' app: data: blob: http: https:; media-src * blob:; connect-src * ws: wss:; worker-src 'self' app: blob:;"],
+        },
+      });
+    } else {
+      callback({ responseHeaders: details.responseHeaders });
+    }
+  });
+
+  createWindow();
+
+  // Track the active external player process to prevent duplicates
+  let activePlayerProcess = null;
+
+  // Handle request to open a stream URL in an external player (mpv, vlc, or system default)
+  ipcMain.handle('open-external', async (_event, streamUrl, startPosition) => {
+    // Prevent spawning multiple players
+    if (activePlayerProcess) {
+      return { success: true, player: 'already-running' };
+    }
+
+    // Validate URL to prevent command injection
+    try {
+      const parsed = new URL(streamUrl);
+      if (!['http:', 'https:', 'rtmp:', 'rtsp:'].includes(parsed.protocol)) {
+        return { success: false, error: 'Invalid URL protocol' };
+      }
+    } catch {
+      return { success: false, error: 'Invalid URL' };
+    }
+
+    // Try mpv first, then vlc, then flatpak mpv
+    const players = [
+      { cmd: 'mpv', args: ['--force-window=yes', '--no-terminal', ...(startPosition > 0 ? [`--start=${Math.floor(startPosition)}`] : []), streamUrl] },
+      { cmd: 'vlc', args: ['--play-and-exit', ...(startPosition > 0 ? [`--start-time=${Math.floor(startPosition)}`] : []), streamUrl] },
+      { cmd: 'flatpak', args: ['run', 'io.mpv.Mpv', '--force-window=yes', '--no-terminal', ...(startPosition > 0 ? [`--start=${Math.floor(startPosition)}`] : []), streamUrl] },
+    ];
+
+    for (const player of players) {
+      try {
+        const launched = await new Promise((resolve, reject) => {
+          const child = spawn(player.cmd, player.args, {
+            stdio: 'ignore',
+            detached: false,
+          });
+          child.on('error', reject);
+          child.on('close', () => {
+            activePlayerProcess = null;
+            mainWindow?.webContents?.send('external-player-closed');
+          });
+          // If it hasn't errored after 200ms, it launched successfully
+          setTimeout(() => {
+            activePlayerProcess = child;
+            resolve(player.cmd);
+          }, 200);
+        });
+        return { success: true, player: launched };
+      } catch {
+        continue;
+      }
+    }
+
+    // Fallback: open with system default handler
+    try {
+      await shell.openExternal(streamUrl);
+      return { success: true, player: 'system' };
+    } catch (err) {
+      return { success: false, error: 'No compatible player found. Install mpv or VLC.' };
+    }
+  });
+
+  // Register keyboard shortcuts
+  globalShortcut.register('F11', () => {
+    if (mainWindow) {
+      mainWindow.setFullScreen(!mainWindow.isFullScreen());
+    }
+  });
+
+  globalShortcut.register('CommandOrControl+Q', () => {
+    app.quit();
+  });
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});

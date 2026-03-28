@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, FlatList, ScrollView } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, FlatList, Platform, useWindowDimensions } from 'react-native';
 import { useXtream } from '../context/XtreamContext';
 import { useMenu } from '../context/MenuContext';
 import { colors } from '../theme';
@@ -7,13 +7,25 @@ import { DrawerScreenPropsType } from '../navigation/types';
 import { XtreamCategory, XtreamVodStream } from '../types/xtream';
 import { scaledPixels } from '../hooks/useScale';
 import { FocusablePressable } from '../components/FocusablePressable';
+import { CategoryScroller } from '../components/CategoryScroller';
 import { MovieCard } from '../components/MovieCard';
+
+import { SIDEBAR_WIDTH_COLLAPSED } from '../components/SideBar';
+
+const CARD_CELL_WIDTH = scaledPixels(200) + scaledPixels(12) * 2;
 
 export function VODScreen(_props: DrawerScreenPropsType<'VOD'>) {
   const { isSidebarActive, setSidebarActive } = useMenu();
-  const { isConfigured, vodCategories, vodStreams, fetchVodStreams } = useXtream();
+  const { isConfigured, vodCategories, fetchVodStreams } = useXtream();
+  const [movies, setMovies] = useState<XtreamVodStream[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
+  const { width: windowWidth } = useWindowDimensions();
+  const numColumns = useMemo(() => {
+    if (Platform.OS !== 'web') return 8;
+    const available = windowWidth - SIDEBAR_WIDTH_COLLAPSED - scaledPixels(40);
+    return Math.max(2, Math.floor(available / CARD_CELL_WIDTH));
+  }, [windowWidth]);
 
   useEffect(() => {
     if (isConfigured) {
@@ -23,25 +35,35 @@ export function VODScreen(_props: DrawerScreenPropsType<'VOD'>) {
 
   const loadStreams = async () => {
     setIsLoading(true);
-    await fetchVodStreams(selectedCategory);
+    let streams = await fetchVodStreams(selectedCategory);
+    if (!selectedCategory && streams.length === 0 && vodCategories.length > 0) {
+      const all = await Promise.all(vodCategories.map((c) => fetchVodStreams(c.category_id)));
+      const seen = new Set<number>();
+      streams = all.flat().filter((s) => {
+        if (seen.has(s.stream_id)) return false;
+        seen.add(s.stream_id);
+        return true;
+      });
+    }
+    setMovies(streams);
     setIsLoading(false);
   };
 
-  const renderCategoryItem = ({ item, index }: { item: XtreamCategory; index: number }) => (
+  const renderCategoryItem = useCallback(({ item, index }: { item: XtreamCategory; index: number }) => (
     <FocusablePressable
       onFocus={index === 0 ? () => isSidebarActive && setSidebarActive(false) : undefined}
       style={({ isFocused }) => [
         styles.categoryButton,
-        selectedCategory === item.category_id && styles.categoryButtonActive,
+        (selectedCategory ?? undefined) === (item.category_id || undefined) && styles.categoryButtonActive,
         isFocused && styles.categoryButtonFocused,
       ]}
-      onSelect={() => setSelectedCategory(item.category_id)}
+      onSelect={() => setSelectedCategory(item.category_id || undefined)}
     >
       {({ isFocused }) => (
         <Text
           style={[
             styles.categoryText,
-            selectedCategory === item.category_id && styles.categoryTextActive,
+            (selectedCategory ?? undefined) === (item.category_id || undefined) && styles.categoryTextActive,
             isFocused && styles.categoryTextFocused,
           ]}
           numberOfLines={1}
@@ -50,14 +72,14 @@ export function VODScreen(_props: DrawerScreenPropsType<'VOD'>) {
         </Text>
       )}
     </FocusablePressable>
-  );
+  ), [selectedCategory, isSidebarActive, setSidebarActive]);
 
-  const renderMovieItem = ({ item, index }: { item: XtreamVodStream; index: number }) => (
+  const renderMovieItem = useCallback(({ item, index }: { item: XtreamVodStream; index: number }) => (
     <MovieCard
       item={item}
       onFocus={index === 0 ? () => isSidebarActive && setSidebarActive(false) : undefined}
     />
-  );
+  ), [isSidebarActive, setSidebarActive]);
 
   if (!isConfigured) {
     return (
@@ -71,10 +93,17 @@ export function VODScreen(_props: DrawerScreenPropsType<'VOD'>) {
     <View style={styles.container}>
       {/* Movies grid */}
       <View style={styles.gridContent}>
+        {isLoading && movies.length > 0 && (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        )}
         <FlatList
-          data={vodStreams}
+          key={`grid-${numColumns}`}
+          data={movies}
           renderItem={renderMovieItem}
-          numColumns={8}
+          numColumns={numColumns}
+          columnWrapperStyle={styles.columnWrapper}
           style={styles.movieGrid}
           keyExtractor={(item) => String(item.stream_id)}
           showsVerticalScrollIndicator={false}
@@ -90,16 +119,13 @@ export function VODScreen(_props: DrawerScreenPropsType<'VOD'>) {
             ) : null
           }
           ListHeaderComponent={<View style={styles.categoryListContainer}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.categoryList}
-              contentContainerStyle={styles.categoryListContent}
-            >
-              {[{ category_id: '', category_name: 'All Movies', parent_id: 0 }, ...vodCategories].map((item, index) =>
-                renderCategoryItem({ item, index })
-              )}
-            </ScrollView>
+            <CategoryScroller>
+              {[{ category_id: '', category_name: 'All Movies', parent_id: 0 }, ...vodCategories].map((item, index) => (
+                <React.Fragment key={item.category_id ? `cat-${item.category_id}` : `idx-${index}`}>
+                  {renderCategoryItem({ item, index })}
+                </React.Fragment>
+              ))}
+            </CategoryScroller>
           </View>}
         />
       </View>
@@ -134,15 +160,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
     zIndex: 5,
-  },
-  categoryList: {
-    flex: 1,
-    borderRadius: scaledPixels(50),
-  },
-  categoryListContent: {
-    paddingHorizontal: scaledPixels(20),
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   categoryButton: {
     paddingHorizontal: scaledPixels(25),
@@ -185,8 +202,23 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: scaledPixels(60),
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: scaledPixels(100),
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(10, 10, 15, 0.7)',
+    zIndex: 10,
   },
   movieGrid: {
     padding: scaledPixels(20),
+  },
+  columnWrapper: {
+    justifyContent: 'center',
   },
 });

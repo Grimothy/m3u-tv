@@ -44,18 +44,12 @@ corepack yarn install
 
 ### Running the App
 
-**Prebuild**
+**Prebuild (optional)**
 
 Run prebuild to generate the `Android` and `iOS` folders and native code.
 
 ```bash
 EXPO_TV=1 corepack yarn prebuild --clean
-```
-
-**Start metro server:**
-
-```bash
-corepack yarn start
 ```
 
 **Android TV:**
@@ -143,8 +137,8 @@ yarn lint
 - [x] Enhanced EPG with timeline view
 - [x] Continue watching
 - [x] Multiple profile support
+- [x] Favorites/Watchlist
 - [x] Search functionality
-- [ ] Favorites/Watchlist
 - [ ] Parental controls
 - [ ] Stream quality selection
 - [ ] Catchup/DVR support

@@ -15,6 +15,7 @@ dist-ssr
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+.github/
 .idea
 .DS_Store
 *.suo
@@ -31,6 +32,7 @@ ios/M3UTV.xcodeproj/project.pbxproj
 planby-native-pro-main
 release.keystore
 signing.properties
+src/config/devDefaults.ts
 
 # Build directories
 ios

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -21,12 +21,14 @@ import { BlurView } from 'expo-blur';
 
 const SIDEBAR_WIDTH_COLLAPSED = scaledPixels(100);
 const SIDEBAR_WIDTH_EXPANDED = scaledPixels(300);
+const LOGO_SIZE = Math.min(scaledPixels(60), SIDEBAR_WIDTH_COLLAPSED - scaledPixels(20) * 2);
 
 // Export these for use in screens
 export { SIDEBAR_WIDTH_COLLAPSED, SIDEBAR_WIDTH_EXPANDED };
 
 interface SideBarProps {
     contentFocusTag?: number;
+    onNavigate?: () => void;
 }
 
 interface MenuItem {
@@ -39,58 +41,88 @@ const MENU_ITEMS: MenuItem[] = [
     { id: 'Home', label: 'Home', icon: 'Home' },
     { id: 'Search', label: 'Search', icon: 'Search' },
     { id: 'LiveTV', label: 'Live TV', icon: 'Tv' },
-    { id: 'EPG', label: 'TV Guide', icon: 'Calendar' },
     { id: 'VOD', label: 'Movies', icon: 'Film' },
     { id: 'Series', label: 'Series', icon: 'Tv2' },
     { id: 'Settings', label: 'Settings', icon: 'Settings' },
 ];
 
-export const SideBar = ({ contentFocusTag }: SideBarProps) => {
+export const SideBar = ({ contentFocusTag, onNavigate }: SideBarProps) => {
     const { isExpanded, setExpanded, isSidebarActive, setSidebarActive } = useMenu();
     const [preferredMenuId, setPreferredMenuId] = useState<string>('Home');
     const wasSidebarActiveRef = useRef(false);
+    const menuRefs = useRef<Record<string, FocusablePressableRef | null>>({});
+    const focusGuardRef = useRef(false);
+    const hoverRef = useRef<View>(null);
+    const isWeb = Platform.OS === 'web';
 
     const currentRouteName = useNavigationState((state) => {
         if (!state) return 'Home';
         let route: any = state.routes[state.index];
+        // Traverse into nested navigators to find the deepest active screen
         while (route?.state && typeof route.state.index === 'number') {
             route = route.state.routes[route.state.index];
         }
         return route?.name || 'Home';
     });
 
-    // Refs to each menu item so we can set focus programmatically
-    const menuItemRefs = useRef<Record<string, FocusablePressableRef | null>>({});
+    // preferredMenuId is the authoritative active-menu indicator.
+    // Sync it from navigation state when route changes externally (not via sidebar).
+    const activeMenuId = preferredMenuId;
+
+    // Web/Electron: expand sidebar on mouse hover, collapse on leave
+    useEffect(() => {
+        if (!isWeb) return;
+        const el = hoverRef.current as unknown as HTMLElement;
+        if (!el) return;
+
+        let leaveTimer: ReturnType<typeof setTimeout>;
+
+        const enterHandler = () => {
+            clearTimeout(leaveTimer);
+            setExpanded(true);
+        };
+        const leaveHandler = () => {
+            leaveTimer = setTimeout(() => setExpanded(false), 200);
+        };
+
+        el.addEventListener('mouseenter', enterHandler);
+        el.addEventListener('mouseleave', leaveHandler);
+        return () => {
+            clearTimeout(leaveTimer);
+            el.removeEventListener('mouseenter', enterHandler);
+            el.removeEventListener('mouseleave', leaveHandler);
+        };
+    }, [isWeb, setExpanded]);
 
     // External request to focus sidebar (e.g., back button or explicit activation)
+    // On web, hover handles expand/collapse — skip this effect.
     useEffect(() => {
+        if (isWeb) return;
         if (isSidebarActive) {
             setExpanded(true);
             wasSidebarActiveRef.current = true;
-            // When the EPG screen opens the sidebar programmatically, native focus
-            // is held by the EPG's FocusCapture (which has just been deactivated).
-            // Explicitly move focus to the current menu item so the user can
-            // immediately navigate with Up/Down.
-            if (currentRouteName === 'EPG') {
-                const target =
-                    menuItemRefs.current[preferredMenuId] ??
-                    Object.values(menuItemRefs.current).find(Boolean);
-                target?.focus();
-            }
+            // Focus the currently active menu item
+            setTimeout(() => {
+                const ref = menuRefs.current[activeMenuId];
+                ref?.focus();
+            }, 50);
             return;
         }
         wasSidebarActiveRef.current = false;
         setExpanded(false);
-    }, [isSidebarActive, setExpanded, currentRouteName, preferredMenuId]);
+        // Brief guard: prevent sidebar onFocus from re-activating immediately
+        // (e.g. when returning from Player modal, focus may briefly land on sidebar)
+        focusGuardRef.current = true;
+        setTimeout(() => { focusGuardRef.current = false; }, 300);
+    }, [isSidebarActive, setExpanded, activeMenuId]);
 
-    // Keep preferred item in sync with active route while content is active.
+    // Keep preferred item in sync with actual navigation route.
     useEffect(() => {
-        if (isSidebarActive) return;
         const isTopLevelMenuRoute = MENU_ITEMS.some((item) => item.id === (currentRouteName as keyof DrawerParamList));
         if (isTopLevelMenuRoute && preferredMenuId !== currentRouteName) {
             setPreferredMenuId(currentRouteName);
         }
-    }, [currentRouteName, isSidebarActive, preferredMenuId]);
+    }, [currentRouteName, preferredMenuId]);
 
     // Width Animation
     const animatedWidth = useSharedValue(isExpanded ? SIDEBAR_WIDTH_EXPANDED : SIDEBAR_WIDTH_COLLAPSED);
@@ -148,11 +180,11 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
 
     return (
         <Animated.View style={[styles.container, animatedStyle]}>
-            <View style={styles.navContainer}>
+            <View ref={hoverRef} style={styles.navContainer}>
                 <View style={styles.logoContainer}>
                     <Animated.Image
                         source={require('../../assets/images/logo.png')}
-                        style={[{ width: scaledPixels(60), height: scaledPixels(60) }, logoAnimatedStyle]}
+                        style={[{ width: LOGO_SIZE, height: LOGO_SIZE }, logoAnimatedStyle]}
                     />
                     {isExpanded && (
                         <Text numberOfLines={1} style={[styles.logoText, { width: scaledPixels(200) }]}>
@@ -164,26 +196,25 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
                 <View style={styles.menuContainer}>
                     {MENU_ITEMS.map((item) => (
                         <FocusablePressable
-                            ref={(r) => {
-                                menuItemRefs.current[item.id] = r;
-                            }}
                             key={item.id}
-                            focusable={currentRouteName !== 'EPG' || isSidebarActive}
+                            ref={(r) => { menuRefs.current[item.id] = r; }}
                             nextFocusRight={contentFocusTag}
                             onSelect={() => {
-                                console.log(`[SideBar] onSelect triggered for: ${item.id}`);
                                 if (navigationRef.isReady()) {
                                     // @ts-ignore
                                     navigationRef.navigate('Main', { screen: item.id });
                                     setPreferredMenuId(item.id);
-                                    setSidebarActive(false);
-                                    setExpanded(false);
+                                    if (!isWeb) {
+                                        focusGuardRef.current = true;
+                                        setSidebarActive(false);
+                                        setExpanded(false);
+                                    }
+                                    onNavigate?.();
                                 }
                             }}
                             onFocus={() => {
-                                // The EPG screen manages its own focus; never activate the
-                                // sidebar from a native focus event while EPG is active.
-                                if (currentRouteName === 'EPG') return;
+                                if (isWeb) return;
+                                if (focusGuardRef.current) return;
                                 setExpanded(true);
                                 if (!isSidebarActive) {
                                     setSidebarActive(true);
@@ -192,7 +223,7 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
                             style={({ isFocused }) => [
                                 styles.menuItem,
                                 isFocused && styles.menuItemFocused,
-                                currentRouteName === item.id && !isFocused && styles.menuItemActive,
+                                activeMenuId === item.id && !isFocused && styles.menuItemActive,
                             ]}
                         >
                             {({ isFocused }) => (
@@ -201,7 +232,7 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
                                         name={item.icon}
                                         size={scaledPixels(32)}
                                         color={
-                                            isFocused ? colors.text : currentRouteName === item.id ? colors.primary : colors.textSecondary
+                                            isFocused ? colors.text : activeMenuId === item.id ? colors.primary : colors.textSecondary
                                         }
                                     />
                                     {isExpanded && (
@@ -212,7 +243,7 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
                                                 {
                                                     color: isFocused
                                                         ? colors.text
-                                                        : currentRouteName === item.id
+                                                        : activeMenuId === item.id
                                                             ? colors.primary
                                                             : colors.textSecondary,
                                                     width: scaledPixels(200),
@@ -229,7 +260,12 @@ export const SideBar = ({ contentFocusTag }: SideBarProps) => {
                 </View>
             </View>
 
-            <BlurView intensity={30} experimentalBlurMethod={'dimezisBlurView'} style={StyleSheet.absoluteFill} />
+            <BlurView
+                intensity={30}
+                experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
+                pointerEvents="none"
+                style={StyleSheet.absoluteFill}
+            />
         </Animated.View>
     );
 };

@@ -3,8 +3,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const CACHE_PREFIX = 'm3ue_cache_';
 const SETTINGS_KEY = 'm3ue_cache_settings';
 
+export type EpgViewMode = 'list' | 'grid';
+
 export interface CacheSettings {
   refreshIntervalMinutes: number;
+  epgViewMode: EpgViewMode;
 }
 
 interface CacheEntry<T> {
@@ -14,6 +17,7 @@ interface CacheEntry<T> {
 
 const DEFAULT_SETTINGS: CacheSettings = {
   refreshIntervalMinutes: 60,
+  epgViewMode: 'list',
 };
 
 type CacheKey =
@@ -25,7 +29,8 @@ type CacheKey =
   | 'series'
   | `series_${string}`
   | `vodInfo_${number}`
-  | `seriesInfo_${number}`;
+  | `seriesInfo_${number}`
+  | `epg_${string}`;
 
 class CacheService {
   private settings: CacheSettings = DEFAULT_SETTINGS;

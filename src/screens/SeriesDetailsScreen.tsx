@@ -8,8 +8,9 @@ import {
   useWindowDimensions,
   ScrollView,
   FlatList,
-  TVFocusGuideView,
+  Platform,
 } from 'react-native';
+import { FocusGuide } from '../components/FocusGuide';
 import { useIsFocused } from '@react-navigation/native';
 import { useXtream } from '../context/XtreamContext';
 import { useViewer } from '../context/ViewerContext';
@@ -64,6 +65,17 @@ export const SeriesDetailsScreen = ({ route, navigation }: RootStackScreenProps<
     const loadInfo = async () => {
       try {
         const info = await fetchSeriesInfo(item.series_id);
+        if ((!info.seasons || info.seasons.length === 0) && info.episodes) {
+          const keys = Object.keys(info.episodes).sort((a, b) => Number(a) - Number(b));
+          info.seasons = keys.map((k) => ({
+            air_date: '',
+            episode_count: info.episodes[k].length,
+            id: Number(k),
+            name: `Season ${k}`,
+            overview: '',
+            season_number: Number(k),
+          }));
+        }
         setSeriesInfo(info);
         if (info.seasons && info.seasons.length > 0) {
           setSelectedSeason(String(info.seasons[0].season_number));
@@ -143,6 +155,14 @@ export const SeriesDetailsScreen = ({ route, navigation }: RootStackScreenProps<
       />
       <ImageBackground source={{ uri: item.cover }} style={styles.backdrop} blurRadius={5}>
         <LinearGradient colors={['rgba(0,0,0,0.2)', 'rgba(0,0,0,0.8)', colors.background]} style={styles.gradient}>
+          {Platform.OS === 'web' && (
+            <FocusablePressable
+              onSelect={() => navigation.goBack()}
+              style={({ isFocused: f }) => [styles.backButton, f && styles.backButtonFocused]}
+            >
+              <Icon name="ArrowLeft" size={scaledPixels(22)} color={colors.text} />
+            </FocusablePressable>
+          )}
           <View style={styles.content}>
             <View style={styles.header}>
               <View style={styles.mainInfo}>
@@ -158,7 +178,7 @@ export const SeriesDetailsScreen = ({ route, navigation }: RootStackScreenProps<
             </View>
 
             <View style={styles.navigationSection}>
-              <TVFocusGuideView style={styles.seasonsColumn} autoFocus>
+              <FocusGuide style={styles.seasonsColumn} autoFocus>
                 <Text style={styles.sectionTitle}>Seasons</Text>
                 <ScrollView>
                   {seriesInfo?.seasons.map((season, index) => (
@@ -188,9 +208,9 @@ export const SeriesDetailsScreen = ({ route, navigation }: RootStackScreenProps<
                     </FocusablePressable>
                   ))}
                 </ScrollView>
-              </TVFocusGuideView>
+              </FocusGuide>
 
-              <TVFocusGuideView style={styles.episodesColumn} autoFocus>
+              <FocusGuide style={styles.episodesColumn} autoFocus>
                 <Text style={styles.sectionTitle}>Episodes</Text>
                 <FlatList
                   data={episodes}
@@ -247,7 +267,7 @@ export const SeriesDetailsScreen = ({ route, navigation }: RootStackScreenProps<
                     </FocusablePressable>
                   )}
                 />
-              </TVFocusGuideView>
+              </FocusGuide>
             </View>
           </View>
         </LinearGradient>
@@ -268,6 +288,18 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: scaledPixels(80),
     paddingTop: scaledPixels(40),
+  },
+  backButton: {
+    position: 'absolute',
+    top: scaledPixels(20),
+    left: scaledPixels(20),
+    padding: scaledPixels(10),
+    borderRadius: scaledPixels(50),
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    zIndex: 10,
+  },
+  backButtonFocused: {
+    backgroundColor: colors.primary,
   },
   content: {
     flex: 1,

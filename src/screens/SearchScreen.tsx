@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useXtream } from '../context/XtreamContext';
 import { useMenu } from '../context/MenuContext';
-import { colors, spacing, typography } from '../theme';
+import { colors } from '../theme';
 import { DrawerScreenPropsType } from '../navigation/types';
 import { XtreamLiveStream, XtreamVodStream, XtreamSeries } from '../types/xtream';
 import { scaledPixels } from '../hooks/useScale';
@@ -40,7 +40,12 @@ type SearchResult =
 
 export function SearchScreen(_props: DrawerScreenPropsType<'Search'>) {
   const { isSidebarActive, setSidebarActive } = useMenu();
-  const { isConfigured, fetchLiveStreams, fetchVodStreams, fetchSeries } = useXtream();
+  const {
+    isConfigured,
+    fetchLiveStreams,
+    fetchVodStreams,
+    fetchSeries,
+  } = useXtream();
 
   const [query, setQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<ContentType>('all');
@@ -60,21 +65,20 @@ export function SearchScreen(_props: DrawerScreenPropsType<'Search'>) {
     return () => clearTimeout(id);
   }, []);
 
-  const performSearch = useCallback(async (filterOverride?: ContentType) => {
+  const performSearch = useCallback(async () => {
     const trimmed = query.trim();
     if (!trimmed) return;
 
     setIsLoading(true);
     setHasSearched(true);
 
-    const filter = filterOverride ?? activeFilter;
     const lowerQuery = trimmed.toLowerCase();
     const combined: SearchResult[] = [];
 
     try {
-      const shouldSearchLive = filter === 'all' || filter === 'live';
-      const shouldSearchVod = filter === 'all' || filter === 'vod';
-      const shouldSearchSeries = filter === 'all' || filter === 'series';
+      const shouldSearchLive = activeFilter === 'all' || activeFilter === 'live';
+      const shouldSearchVod = activeFilter === 'all' || activeFilter === 'vod';
+      const shouldSearchSeries = activeFilter === 'all' || activeFilter === 'series';
 
       const [liveStreams, vodStreams, seriesList] = await Promise.all([
         shouldSearchLive ? fetchLiveStreams() : Promise.resolve([]),
@@ -89,6 +93,7 @@ export function SearchScreen(_props: DrawerScreenPropsType<'Search'>) {
           }
         }
       }
+
       if (shouldSearchVod) {
         for (const item of vodStreams) {
           if (item.name.toLowerCase().includes(lowerQuery)) {
@@ -96,6 +101,7 @@ export function SearchScreen(_props: DrawerScreenPropsType<'Search'>) {
           }
         }
       }
+
       if (shouldSearchSeries) {
         for (const item of seriesList) {
           if (item.name.toLowerCase().includes(lowerQuery)) {
@@ -104,7 +110,7 @@ export function SearchScreen(_props: DrawerScreenPropsType<'Search'>) {
         }
       }
     } catch (error) {
-      console.error('[SearchScreen] Search failed:', error);
+      console.error('Search failed:', error);
     }
 
     setResults(combined);
@@ -112,7 +118,7 @@ export function SearchScreen(_props: DrawerScreenPropsType<'Search'>) {
   }, [query, activeFilter, fetchLiveStreams, fetchVodStreams, fetchSeries]);
 
   const renderResult = ({ item, index }: { item: SearchResult; index: number }) => {
-    const dismissSidebar = index === 0 ? () => { if (isSidebarActive) setSidebarActive(false); } : undefined;
+    const dismissSidebar = index === 0 ? () => isSidebarActive && setSidebarActive(false) : undefined;
 
     switch (item.type) {
       case 'live':
@@ -126,9 +132,12 @@ export function SearchScreen(_props: DrawerScreenPropsType<'Search'>) {
 
   const getResultKey = (item: SearchResult): string => {
     switch (item.type) {
-      case 'live': return `live-${item.item.stream_id}`;
-      case 'vod': return `vod-${item.item.stream_id}`;
-      case 'series': return `series-${item.item.series_id}`;
+      case 'live':
+        return `live-${item.item.stream_id}`;
+      case 'vod':
+        return `vod-${item.item.stream_id}`;
+      case 'series':
+        return `series-${item.item.series_id}`;
     }
   };
 
@@ -157,13 +166,7 @@ export function SearchScreen(_props: DrawerScreenPropsType<'Search'>) {
           <View>
             {/* Search input row */}
             <View style={styles.searchRow}>
-              <FocusablePressable
-                style={({ isFocused }) => [
-                  styles.inputContainer,
-                  isFocused && styles.inputFocused,
-                ]}
-                onSelect={() => inputRef.current?.focus()}
-              >
+              <View style={styles.inputContainer}>
                 <Icon name="Search" size={scaledPixels(28)} color={colors.textSecondary} />
                 <TextInput
                   ref={inputRef}
@@ -172,12 +175,12 @@ export function SearchScreen(_props: DrawerScreenPropsType<'Search'>) {
                   placeholderTextColor={colors.textTertiary}
                   value={query}
                   onChangeText={setQuery}
-                  onSubmitEditing={() => performSearch()}
+                  onSubmitEditing={performSearch}
                   returnKeyType="search"
                   autoCorrect={false}
                   autoCapitalize="none"
                 />
-              </FocusablePressable>
+              </View>
               <FocusablePressable
                 ref={searchButtonRef}
                 style={({ isFocused }) => [
@@ -185,7 +188,7 @@ export function SearchScreen(_props: DrawerScreenPropsType<'Search'>) {
                   isFocused && styles.searchButtonFocused,
                 ]}
                 onSelect={performSearch}
-                onFocus={() => { if (isSidebarActive) setSidebarActive(false); }}
+                onFocus={() => isSidebarActive && setSidebarActive(false)}
               >
                 {({ isFocused }) => (
                   <Text style={[styles.searchButtonText, isFocused && styles.searchButtonTextFocused]}>
@@ -208,7 +211,10 @@ export function SearchScreen(_props: DrawerScreenPropsType<'Search'>) {
                   ]}
                   onSelect={() => {
                     setActiveFilter(tab.id);
-                    if (hasSearched) performSearch(tab.id);
+                    if (hasSearched) {
+                      // Re-search with new filter after state update
+                      setTimeout(performSearch, 0);
+                    }
                   }}
                 >
                   {({ isFocused }) => (
@@ -224,6 +230,7 @@ export function SearchScreen(_props: DrawerScreenPropsType<'Search'>) {
                   )}
                 </FocusablePressable>
               ))}
+
               {hasSearched && !isLoading && (
                 <Text style={styles.resultCount}>
                   {results.length} {results.length === 1 ? 'result' : 'results'}
@@ -234,7 +241,7 @@ export function SearchScreen(_props: DrawerScreenPropsType<'Search'>) {
         }
         ListEmptyComponent={
           isLoading ? (
-            <View style={styles.emptyContainer}>
+            <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={colors.primary} />
             </View>
           ) : hasSearched ? (
@@ -247,7 +254,9 @@ export function SearchScreen(_props: DrawerScreenPropsType<'Search'>) {
             <View style={styles.emptyContainer}>
               <Icon name="Search" size={scaledPixels(64)} color={colors.textSecondary} />
               <Text style={styles.emptyText}>Search your content</Text>
-              <Text style={styles.emptySubtext}>Find channels, movies, and series</Text>
+              <Text style={styles.emptySubtext}>
+                Find channels, movies, and series
+              </Text>
             </View>
           )
         }
@@ -284,24 +293,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.card,
-    borderRadius: scaledPixels(8),
-    paddingHorizontal: scaledPixels(spacing.md),
+    borderRadius: scaledPixels(12),
+    paddingHorizontal: scaledPixels(20),
     height: scaledPixels(65),
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: colors.border,
     gap: scaledPixels(12),
-  },
-  inputFocused: {
-    borderColor: colors.primary,
-    borderWidth: 2,
-    transform: [{ scale: 1.01 }],
   },
   textInput: {
     flex: 1,
     color: colors.text,
-    fontSize: scaledPixels(typography.fontSize.md),
-    padding: scaledPixels(8),
-    backgroundColor: 'transparent',
+    fontSize: scaledPixels(22),
+    padding: 0,
   },
   searchButton: {
     backgroundColor: colors.card,
@@ -368,6 +371,12 @@ const styles = StyleSheet.create({
   },
   resultGrid: {
     padding: scaledPixels(20),
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: scaledPixels(100),
   },
   emptyContainer: {
     flex: 1,

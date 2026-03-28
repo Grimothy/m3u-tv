@@ -1,8 +1,2 @@
-import { create } from 'react-native-pixel-perfect';
-
-const designResolution = {
-  width: 1920,
-  height: 1080,
-};
-
-export const scaledPixels = create(designResolution);
+// Barrel file for TypeScript resolution — Metro uses .native.ts or .web.ts at runtime.
+export { scaledPixels } from './useScale.web';

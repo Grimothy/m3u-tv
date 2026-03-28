@@ -20,7 +20,15 @@ module.exports = [
         },
       },
     },
+    plugins: {
+      react: require('eslint-plugin-react'),
+      'react-hooks': require('eslint-plugin-react-hooks'),
+      '@typescript-eslint': require('@typescript-eslint/eslint-plugin'),
+      'unused-imports': require('eslint-plugin-unused-imports'),
+    },
     rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'off',
       semi: ['error', 'always'],
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
@@ -36,11 +44,6 @@ module.exports = [
       ],
       'react/jsx-uses-react': 'error',
       'react/jsx-uses-vars': 'error',
-    },
-    plugins: {
-      react: require('eslint-plugin-react'),
-      '@typescript-eslint': require('@typescript-eslint/eslint-plugin'),
-      'unused-imports': require('eslint-plugin-unused-imports'),
     },
   },
 ];

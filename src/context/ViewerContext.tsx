@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
-import * as SecureStore from 'expo-secure-store';
+import { getSecureItem, setSecureItem } from '../services/secureStorage';
 import { xtreamService } from '../services/XtreamService';
 import { PlaylistViewer, WatchProgress, UpdateProgressParams, WatchContentType } from '../types/xtream';
 import { useXtream } from './XtreamContext';
@@ -39,7 +39,7 @@ export function ViewerProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({ ...prev, isLoading: true }));
     try {
       const viewers = await xtreamService.getViewers();
-      const savedUlid = await SecureStore.getItemAsync(VIEWER_STORAGE_KEY);
+      const savedUlid = await getSecureItem(VIEWER_STORAGE_KEY);
 
       let activeViewer: PlaylistViewer | null = null;
       if (savedUlid) {
@@ -49,7 +49,7 @@ export function ViewerProvider({ children }: { children: ReactNode }) {
       if (!activeViewer) {
         activeViewer = viewers.find((v) => v.is_admin) ?? viewers[0] ?? null;
         if (activeViewer) {
-          await SecureStore.setItemAsync(VIEWER_STORAGE_KEY, activeViewer.ulid);
+          await setSecureItem(VIEWER_STORAGE_KEY, activeViewer.ulid);
         }
       }
 
@@ -70,7 +70,7 @@ export function ViewerProvider({ children }: { children: ReactNode }) {
   }, [isConfigured, isM3UEditor, loadViewers]);
 
   const setActiveViewer = useCallback(async (viewer: PlaylistViewer) => {
-    await SecureStore.setItemAsync(VIEWER_STORAGE_KEY, viewer.ulid);
+    await setSecureItem(VIEWER_STORAGE_KEY, viewer.ulid);
     setState((prev) => ({ ...prev, activeViewer: viewer }));
   }, []);
 

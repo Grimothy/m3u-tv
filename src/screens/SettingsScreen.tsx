@@ -1,13 +1,13 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   TextInput,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   ScrollView,
 } from 'react-native';
+import { showAlert, showConfirm } from '../utils/platformAlert';
 import { useIsFocused } from '@react-navigation/native';
 import { useXtream } from '../context/XtreamContext';
 import { useViewer } from '../context/ViewerContext';
@@ -15,6 +15,17 @@ import { colors, spacing, typography } from '../theme';
 import { DrawerScreenPropsType } from '../navigation/types';
 import { FocusablePressable } from '../components/FocusablePressable';
 import { scaledPixels } from '../hooks/useScale';
+import { cacheService, EpgViewMode } from '../services/CacheService';
+
+const REFRESH_OPTIONS = [
+  { label: '15 minutes', value: 15 },
+  { label: '30 minutes', value: 30 },
+  { label: '1 hour', value: 60 },
+  { label: '3 hours', value: 180 },
+  { label: '6 hours', value: 360 },
+  { label: '12 hours', value: 720 },
+  { label: '24 hours', value: 1440 },
+] as const;
 
 export function SettingsScreen({ navigation }: DrawerScreenPropsType<'Settings'>) {
   const isFocused = useIsFocused();
@@ -30,6 +41,10 @@ export function SettingsScreen({ navigation }: DrawerScreenPropsType<'Settings'>
     vodCategories,
     seriesCategories,
     isM3UEditor,
+    fetchLiveStreams,
+    fetchVodStreams,
+    fetchSeries,
+    refreshCategories,
   } = useXtream();
   const { activeViewer } = useViewer();
 
@@ -41,9 +56,65 @@ export function SettingsScreen({ navigation }: DrawerScreenPropsType<'Settings'>
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
+  // Load dev defaults in development mode
+  useEffect(() => {
+    if (__DEV__) {
+      try {
+        const { devDefaults } = require('../config/devDefaults');
+        if (devDefaults) {
+          setServer((s: string) => s || devDefaults.server);
+          setUsername((u: string) => u || devDefaults.username);
+          setPassword((p: string) => p || devDefaults.password);
+        }
+      } catch {
+        // devDefaults.ts not present — ignore
+      }
+    }
+  }, []);
+  const [refreshInterval, setRefreshInterval] = useState(60);
+  const [epgViewMode, setEpgViewMode] = useState<EpgViewMode>('list');
+  const [refreshingKey, setRefreshingKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    cacheService.loadSettings().then((s) => {
+      setRefreshInterval(s.refreshIntervalMinutes);
+      setEpgViewMode(s.epgViewMode);
+    });
+  }, []);
+
+  const handleRefreshChange = async (value: number) => {
+    setRefreshInterval(value);
+    const settings = cacheService.getSettings();
+    await cacheService.saveSettings({ ...settings, refreshIntervalMinutes: value });
+  };
+
+  const handleEpgViewModeChange = async (mode: EpgViewMode) => {
+    setEpgViewMode(mode);
+    const settings = cacheService.getSettings();
+    await cacheService.saveSettings({ ...settings, epgViewMode: mode });
+  };
+
+  const handleClearCache = async () => {
+    await cacheService.clear();
+    showAlert('Cache Cleared', 'All cached content has been removed.');
+  };
+
+  const handleManualRefresh = async (key: string, action: () => Promise<unknown>) => {
+    if (refreshingKey) return;
+    setRefreshingKey(key);
+    try {
+      await action();
+      showAlert('Refreshed', `${key} data has been refreshed.`);
+    } catch {
+      showAlert('Error', `Failed to refresh ${key}.`);
+    } finally {
+      setRefreshingKey(null);
+    }
+  };
+
   const handleConnect = async () => {
     if (!server || !username || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+      showAlert('Error', 'Please fill in all fields');
       return;
     }
     clearError();
@@ -53,15 +124,8 @@ export function SettingsScreen({ navigation }: DrawerScreenPropsType<'Settings'>
     }
   };
 
-  const handleDisconnect = async () => {
-    Alert.alert('Disconnect', 'Are you sure you want to disconnect?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Disconnect',
-        style: 'destructive',
-        onPress: disconnect,
-      },
-    ]);
+  const handleDisconnect = () => {
+    showConfirm('Disconnect', 'Are you sure you want to disconnect?', disconnect);
   };
 
   if (isConfigured && authResponse) {
@@ -95,14 +159,6 @@ export function SettingsScreen({ navigation }: DrawerScreenPropsType<'Settings'>
             >
               {({ isFocused }) => (
                 <Text style={[styles.menuButtonText, isFocused && styles.buttonTextFocused]}>Live TV</Text>
-              )}
-            </FocusablePressable>
-            <FocusablePressable
-              style={({ isFocused }) => [styles.menuButton, isFocused && styles.menuButtonFocused]}
-              onSelect={() => navigation.navigate('EPG')}
-            >
-              {({ isFocused }) => (
-                <Text style={[styles.menuButtonText, isFocused && styles.buttonTextFocused]}>EPG Guide</Text>
               )}
             </FocusablePressable>
             <FocusablePressable
@@ -176,6 +232,109 @@ export function SettingsScreen({ navigation }: DrawerScreenPropsType<'Settings'>
             </View>
           </View>
         )}
+
+        <View style={styles.cacheSection}>
+          <Text style={styles.title}>Content Cache</Text>
+          <Text style={styles.cacheDescription}>
+            Cached content loads instantly. Data refreshes automatically in the background.
+          </Text>
+
+          <Text style={styles.label}>Refresh Interval</Text>
+          <View style={styles.refreshOptions}>
+            {REFRESH_OPTIONS.map((option) => (
+              <FocusablePressable
+                key={option.value}
+                style={({ isFocused }) => [
+                  styles.refreshOption,
+                  refreshInterval === option.value && styles.refreshOptionActive,
+                  isFocused && styles.refreshOptionFocused,
+                ]}
+                onSelect={() => handleRefreshChange(option.value)}
+              >
+                {({ isFocused }) => (
+                  <Text
+                    style={[
+                      styles.refreshOptionText,
+                      refreshInterval === option.value && styles.refreshOptionTextActive,
+                      isFocused && styles.buttonTextFocused,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                )}
+              </FocusablePressable>
+            ))}
+          </View>
+
+          <Text style={styles.label}>EPG View Mode</Text>
+          <Text style={styles.cacheDescription}>
+            Choose how Live TV channels are displayed.
+          </Text>
+          <View style={styles.refreshOptions}>
+            {([{ label: 'Channel List', value: 'list' as EpgViewMode }, { label: 'EPG Grid', value: 'grid' as EpgViewMode }]).map((option) => (
+              <FocusablePressable
+                key={option.value}
+                style={({ isFocused }) => [
+                  styles.refreshOption,
+                  epgViewMode === option.value && styles.refreshOptionActive,
+                  isFocused && styles.refreshOptionFocused,
+                ]}
+                onSelect={() => handleEpgViewModeChange(option.value)}
+              >
+                {({ isFocused }) => (
+                  <Text
+                    style={[
+                      styles.refreshOptionText,
+                      epgViewMode === option.value && styles.refreshOptionTextActive,
+                      isFocused && styles.buttonTextFocused,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                )}
+              </FocusablePressable>
+            ))}
+          </View>
+
+          <Text style={styles.label}>Manual Refresh</Text>
+          <View style={styles.refreshActions}>
+            {[
+              { key: 'Categories', action: () => refreshCategories() },
+              { key: 'Channels', action: () => fetchLiveStreams(undefined, true) },
+              { key: 'Movies', action: () => fetchVodStreams(undefined, true) },
+              { key: 'Series', action: () => fetchSeries(undefined, true) },
+            ].map((item) => (
+              <FocusablePressable
+                key={item.key}
+                style={({ isFocused }) => [
+                  styles.refreshAction,
+                  isFocused && styles.refreshActionFocused,
+                ]}
+                onSelect={() => handleManualRefresh(item.key, item.action)}
+              >
+                {({ isFocused }) => (
+                  <Text
+                    style={[
+                      styles.refreshActionText,
+                      isFocused && styles.buttonTextFocused,
+                    ]}
+                  >
+                    {refreshingKey === item.key ? 'Refreshing...' : item.key}
+                  </Text>
+                )}
+              </FocusablePressable>
+            ))}
+          </View>
+
+          <FocusablePressable
+            style={({ isFocused }) => [styles.settingsButton, isFocused && styles.settingsButtonFocused]}
+            onSelect={handleClearCache}
+          >
+            {({ isFocused }) => (
+              <Text style={[styles.settingsButtonText, isFocused && styles.buttonTextFocused]}>Clear Cache</Text>
+            )}
+          </FocusablePressable>
+        </View>
 
         <FocusablePressable
           style={({ isFocused }) => [styles.settingsButton, isFocused && styles.settingsButtonFocused]}
@@ -517,5 +676,72 @@ const styles = StyleSheet.create({
     paddingHorizontal: scaledPixels(8),
     paddingVertical: scaledPixels(3),
     borderRadius: scaledPixels(4),
+  },
+  cacheSection: {
+    marginBottom: scaledPixels(40),
+  },
+  cacheDescription: {
+    fontSize: scaledPixels(typography.fontSize.sm),
+    color: colors.textSecondary,
+    marginBottom: scaledPixels(spacing.md),
+    textAlign: 'center',
+  },
+  refreshOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: scaledPixels(12),
+    marginBottom: scaledPixels(spacing.lg),
+  },
+  refreshOption: {
+    backgroundColor: colors.card,
+    paddingHorizontal: scaledPixels(24),
+    paddingVertical: scaledPixels(14),
+    borderRadius: scaledPixels(12),
+    borderWidth: 2,
+    borderColor: colors.border,
+  },
+  refreshOptionActive: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(236,0,63,0.15)',
+  },
+  refreshOptionFocused: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+    transform: [{ scale: 1.08 }],
+  },
+  refreshOptionText: {
+    color: colors.textSecondary,
+    fontSize: scaledPixels(18),
+    fontWeight: '500',
+  },
+  refreshOptionTextActive: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  refreshActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: scaledPixels(12),
+    marginBottom: scaledPixels(spacing.lg),
+  },
+  refreshAction: {
+    backgroundColor: colors.card,
+    paddingHorizontal: scaledPixels(24),
+    paddingVertical: scaledPixels(14),
+    borderRadius: scaledPixels(12),
+    borderWidth: 2,
+    borderColor: colors.border,
+  },
+  refreshActionFocused: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+    transform: [{ scale: 1.08 }],
+  },
+  refreshActionText: {
+    color: colors.textSecondary,
+    fontSize: scaledPixels(18),
+    fontWeight: '500',
   },
 });

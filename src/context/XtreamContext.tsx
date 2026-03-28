@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { xtreamService } from '../services/XtreamService';
 import { cacheService } from '../services/CacheService';
+import { epgService } from '../services/EpgService';
 import {
   XtreamCredentials,
   XtreamAuthResponse,
@@ -11,18 +12,9 @@ import {
   XtreamVodInfo,
   XtreamSeriesInfo,
 } from '../types/xtream';
-import * as SecureStore from 'expo-secure-store';
+import { getSecureItem, setSecureItem, deleteSecureItem } from '../services/secureStorage';
 
 const STORAGE_KEY = 'm3ue_tv_credentials';
-const MIN_MAJOR = 0;
-const MIN_MINOR = 10;
-
-function meetsMinimumVersion(version: string | null): boolean {
-  if (!version) return false;
-  const [major = 0, minor = 0] = version.split('.').map(Number);
-  if (major !== MIN_MAJOR) return major > MIN_MAJOR;
-  return minor >= MIN_MINOR;
-}
 
 interface XtreamState {
   isConfigured: boolean;
@@ -73,7 +65,6 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
     series: [],
   });
 
-  // Load persisted cache settings (refresh interval, etc.) on mount.
   useEffect(() => {
     cacheService.loadSettings();
   }, []);
@@ -95,40 +86,38 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
       try {
         setLoading(true);
         xtreamService.setCredentials(credentials);
+        // Always send the m3u-editor client header for the initial auth request
+        // so the server knows to include m3u_editor info in the response
+        xtreamService.setM3UEditor(true);
 
         const authResponse = await xtreamService.authenticate();
 
-        if (authResponse.user_info.auth !== 1) {
+        // Handle error responses (e.g. {"error":"Unauthorized"})
+        if ('error' in authResponse) {
+          setError(`Server error: ${(authResponse as Record<string, unknown>).error}`);
+          return false;
+        }
+
+        if (!authResponse.user_info || authResponse.user_info.auth !== 1) {
           setError('Authentication failed. Please check your credentials.');
           return false;
         }
 
-        // Verify this is an m3u-editor backend
-        if (!authResponse.m3u_editor) {
-          xtreamService.clearCredentials();
-          setError(
-            'This app requires an m3u-editor backend. The provided server does not appear to be running m3u-editor.'
-          );
-          return false;
-        }
+        // Check if the server advertises m3u-editor features (requires experimental v0.10.x+)
+        const isM3UEditor = !!authResponse.m3u_editor;
+        const m3uEditorVersion = authResponse.m3u_editor?.version ?? null;
 
-        const isM3UEditor = true;
-        const m3uEditorVersion = authResponse.m3u_editor.version ?? null;
-
-        // Require m3u-editor v0.10.x or later
-        if (!meetsMinimumVersion(m3uEditorVersion)) {
+        if (!isM3UEditor) {
+          setError('This app requires an m3u-editor backend (v0.10.x or later).');
+          xtreamService.setM3UEditor(false);
           xtreamService.clearCredentials();
-          setError(
-            `This app requires m3u-editor v0.10.0 or later. ` +
-            (m3uEditorVersion ? `Your server is running v${m3uEditorVersion}.` : 'Could not determine the server version.')
-          );
           return false;
         }
 
         xtreamService.setM3UEditor(true);
 
         // Save credentials
-        await SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(credentials));
+        await setSecureItem(STORAGE_KEY, JSON.stringify(credentials));
 
         // Fetch initial categories
         const [liveCategories, vodCategories, seriesCategories] = await Promise.all([
@@ -137,8 +126,11 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
           xtreamService.getSeriesCategories(),
         ]);
 
-        // Persist categories so the next launch can show UI instantly
+        // Cache categories for instant load on next app start
         cacheService.set('categories', { liveCategories, vodCategories, seriesCategories });
+
+        // Start EPG loading in background (non-blocking)
+        epgService.ensureLoaded().catch((e) => console.warn('[XtreamContext] Background EPG load failed:', e));
 
         setState((prev) => ({
           ...prev,
@@ -164,7 +156,7 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
   );
 
   const disconnect = useCallback(async () => {
-    await SecureStore.deleteItemAsync(STORAGE_KEY);
+    await deleteSecureItem(STORAGE_KEY);
     await cacheService.clear();
     xtreamService.setM3UEditor(false);
     setState({
@@ -185,12 +177,12 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
 
   const loadSavedCredentials = useCallback(async (): Promise<boolean> => {
     try {
-      const saved = await SecureStore.getItemAsync(STORAGE_KEY);
+      const saved = await getSecureItem(STORAGE_KEY);
       if (!saved) return false;
 
       const credentials: XtreamCredentials = JSON.parse(saved);
 
-      // If categories are cached, restore UI immediately then auth in background.
+      // Try to load cached categories immediately for instant UI
       const cached = await cacheService.get<{
         liveCategories: XtreamCategory[];
         vodCategories: XtreamCategory[];
@@ -201,6 +193,9 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
         xtreamService.setCredentials(credentials);
         xtreamService.setM3UEditor(true);
 
+        // Start EPG loading in background immediately (non-blocking)
+        epgService.ensureLoaded().catch((e) => console.warn('[XtreamContext] Background EPG load failed:', e));
+
         setState((prev) => ({
           ...prev,
           isConfigured: true,
@@ -210,10 +205,12 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
           seriesCategories: cached.data.seriesCategories,
         }));
 
-        // Silently re-authenticate and refresh stale categories in the background.
+        // Silently authenticate in background to refresh auth state and categories if stale
         xtreamService.authenticate()
           .then((authResponse) => {
-            if (!authResponse.user_info || authResponse.user_info.auth !== 1) return;
+            if (!authResponse.user_info || authResponse.user_info.auth !== 1) {
+              return;
+            }
             const isM3UEditor = !!authResponse.m3u_editor;
             const m3uEditorVersion = authResponse.m3u_editor?.version ?? null;
             setState((prev) => ({ ...prev, authResponse, isM3UEditor, m3uEditorVersion }));
@@ -234,7 +231,7 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
         return true;
       }
 
-      // No cache — do a full connect.
+      // No cache — full connect
       return await connect(credentials);
     } catch {
       return false;
@@ -277,7 +274,7 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
           setState((prev) => ({ ...prev, liveStreams: cached.data }));
           return cached.data;
         }
-        // Stale-while-revalidate: return stale data immediately, refresh in background.
+
         if (cached) {
           setState((prev) => ({ ...prev, liveStreams: cached.data }));
           xtreamService.getLiveStreams(categoryId).then((streams) => {
@@ -294,7 +291,6 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
       return streams;
     } catch (error) {
       console.error('Failed to fetch live streams:', error);
-      // Return stale cache on network failure rather than an empty list.
       const cached = await cacheService.get<XtreamLiveStream[]>(cacheKey);
       if (cached) {
         setState((prev) => ({ ...prev, liveStreams: cached.data }));
@@ -314,12 +310,13 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
           setState((prev) => ({ ...prev, vodStreams: cached.data }));
           return cached.data;
         }
+
         if (cached) {
           setState((prev) => ({ ...prev, vodStreams: cached.data }));
           xtreamService.getVodStreams(categoryId).then((streams) => {
             cacheService.set(cacheKey, streams);
             setState((prev) => ({ ...prev, vodStreams: streams }));
-          }).catch((e) => console.warn('[XtreamContext] Background VOD refresh failed:', e));
+          }).catch((e) => console.warn('[XtreamContext] Background VOD streams refresh failed:', e));
           return cached.data;
         }
       }
@@ -349,6 +346,7 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
           setState((prev) => ({ ...prev, series: cached.data }));
           return cached.data;
         }
+
         if (cached) {
           setState((prev) => ({ ...prev, series: cached.data }));
           xtreamService.getSeries(categoryId).then((seriesList) => {
@@ -376,30 +374,42 @@ export function XtreamProvider({ children }: { children: ReactNode }) {
 
   const fetchVodInfo = useCallback(async (vodId: number) => {
     const cacheKey = `vodInfo_${vodId}` as const;
+
     try {
       const cached = await cacheService.get<XtreamVodInfo>(cacheKey);
-      if (cached && !cached.isStale) return cached.data;
+      if (cached && !cached.isStale) {
+        return cached.data;
+      }
+
       const info = await xtreamService.getVodInfo(vodId);
       cacheService.set(cacheKey, info);
       return info;
     } catch (error) {
       const cached = await cacheService.get<XtreamVodInfo>(cacheKey);
-      if (cached) return cached.data;
+      if (cached) {
+        return cached.data;
+      }
       throw error;
     }
   }, []);
 
   const fetchSeriesInfo = useCallback(async (seriesId: number) => {
     const cacheKey = `seriesInfo_${seriesId}` as const;
+
     try {
       const cached = await cacheService.get<XtreamSeriesInfo>(cacheKey);
-      if (cached && !cached.isStale) return cached.data;
+      if (cached && !cached.isStale) {
+        return cached.data;
+      }
+
       const info = await xtreamService.getSeriesInfo(seriesId);
       cacheService.set(cacheKey, info);
       return info;
     } catch (error) {
       const cached = await cacheService.get<XtreamSeriesInfo>(cacheKey);
-      if (cached) return cached.data;
+      if (cached) {
+        return cached.data;
+      }
       throw error;
     }
   }, []);

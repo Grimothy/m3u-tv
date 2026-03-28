@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, Image, ImageBackground, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Image, ImageBackground, ScrollView, Platform } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useXtream } from '../context/XtreamContext';
 import { useViewer } from '../context/ViewerContext';
@@ -97,6 +97,14 @@ export const MovieDetailsScreen = ({ route, navigation }: RootStackScreenProps<'
       />
       <ImageBackground source={{ uri: backdrop }} style={styles.backdrop}>
         <LinearGradient colors={['rgba(0,0,0,0.2)', 'rgba(0,0,0,0.8)', colors.background]} style={styles.gradient}>
+          {Platform.OS === 'web' && (
+            <FocusablePressable
+              onSelect={() => navigation.goBack()}
+              style={({ isFocused: f }) => [styles.backButton, f && styles.backButtonFocused]}
+            >
+              <Icon name="ArrowLeft" size={scaledPixels(22)} color={colors.text} />
+            </FocusablePressable>
+          )}
           <ScrollView contentContainerStyle={[styles.scrollContent, { paddingLeft: scaledPixels(60) }]}>
             <View style={styles.header}>
               <Image source={{ uri: item.stream_icon }} style={styles.poster} resizeMode="cover" />
@@ -164,6 +172,18 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: scaledPixels(80),
     paddingTop: scaledPixels(60),
+  },
+  backButton: {
+    position: 'absolute',
+    top: scaledPixels(20),
+    left: scaledPixels(20),
+    padding: scaledPixels(10),
+    borderRadius: scaledPixels(50),
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    zIndex: 10,
+  },
+  backButtonFocused: {
+    backgroundColor: colors.primary,
   },
   scrollContent: {
     paddingBottom: scaledPixels(100),

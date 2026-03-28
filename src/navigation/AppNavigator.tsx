@@ -1,14 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { NavigationContainer, DarkTheme, Theme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { View, StyleSheet, BackHandler, TVFocusGuideView, findNodeHandle } from 'react-native';
+import { View, StyleSheet, Platform, findNodeHandle, Pressable } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
+import { FocusGuide } from '../components/FocusGuide';
+import { useBackHandler } from '../hooks/useBackHandler';
 import {
   HomeScreen,
   SearchScreen,
   SettingsScreen,
   LiveTVScreen,
-  EPGScreen,
   VODScreen,
   SeriesScreen,
   PlayerScreen,
@@ -42,8 +43,11 @@ function MainNavigator() {
   const { isSidebarActive, setSidebarActive } = useMenu();
   const contentFocusRef = useRef<View>(null);
   const [contentFocusTag, setContentFocusTag] = useState<number>();
+  const wasFocusedRef = useRef(isFocused);
+  const [grabFocus, setGrabFocus] = useState(false);
 
   useEffect(() => {
+    if (Platform.OS === 'web') return;
     const id = setTimeout(() => {
       const tag = findNodeHandle(contentFocusRef.current);
       if (typeof tag === 'number') {
@@ -53,23 +57,41 @@ function MainNavigator() {
     return () => clearTimeout(id);
   }, []);
 
-  // Back button: focus sidebar instead of exiting when on a top-level screen
+  const handleSidebarNavigate = useCallback(() => {
+    setGrabFocus(true);
+  }, []);
+
+  // Reset grabFocus after it's been applied
   useEffect(() => {
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (isFocused && !isSidebarActive) {
-        setSidebarActive(true);
-        return true; // prevent default (exit app)
-      }
-      return false; // allow default behavior
-    });
-    return () => backHandler.remove();
+    if (grabFocus) {
+      const id = setTimeout(() => setGrabFocus(false), 300);
+      return () => clearTimeout(id);
+    }
+  }, [grabFocus]);
+
+  // When returning from a modal (Player, Details), ensure sidebar stays collapsed
+  useEffect(() => {
+    if (isFocused && !wasFocusedRef.current) {
+      setSidebarActive(false);
+    }
+    wasFocusedRef.current = isFocused;
+  }, [isFocused, setSidebarActive]);
+
+  const handleBackPress = useCallback(() => {
+    if (isFocused && !isSidebarActive) {
+      setSidebarActive(true);
+      return true;
+    }
+    return false;
   }, [isFocused, isSidebarActive, setSidebarActive]);
+
+  useBackHandler(handleBackPress);
 
   return (
     <View style={styles.mainContainer}>
       {/* Content area - full width with left margin for collapsed sidebar */}
       <View style={styles.contentContainer}>
-        <TVFocusGuideView style={styles.fill} autoFocus>
+        <FocusGuide style={styles.fill} autoFocus>
           <View
             ref={contentFocusRef}
             collapsable={false}
@@ -81,6 +103,13 @@ function MainNavigator() {
               }
             }}
           >
+            {grabFocus && (
+              <Pressable
+                hasTVPreferredFocus
+                style={styles.focusAnchor}
+                onFocus={() => setGrabFocus(false)}
+              />
+            )}
             <MainStack.Navigator
               screenOptions={{
                 headerShown: false,
@@ -92,30 +121,28 @@ function MainNavigator() {
               <MainStack.Screen name="Home" component={HomeScreen} />
               <MainStack.Screen name="Search" component={SearchScreen} />
               <MainStack.Screen name="LiveTV" component={LiveTVScreen} />
-              <MainStack.Screen name="EPG" component={EPGScreen} />
               <MainStack.Screen name="VOD" component={VODScreen} />
               <MainStack.Screen name="Series" component={SeriesScreen} />
               <MainStack.Screen name="Settings" component={SettingsScreen} />
             </MainStack.Navigator>
           </View>
-        </TVFocusGuideView>
+        </FocusGuide>
       </View>
 
       {/* Sidebar - absolutely positioned, overlays content when expanded */}
       <View
-        style={styles.sidebarLayer}
+        style={[styles.sidebarLayer, Platform.OS === 'web' && styles.sidebarLayerWeb]}
         pointerEvents="box-none"
       >
-        <TVFocusGuideView style={styles.fill} trapFocusLeft>
-          <SideBar contentFocusTag={contentFocusTag} />
-        </TVFocusGuideView>
+        <FocusGuide style={styles.fill} trapFocusLeft>
+          <SideBar contentFocusTag={contentFocusTag} onNavigate={handleSidebarNavigate} />
+        </FocusGuide>
       </View>
     </View>
   );
 }
 
 export function AppNavigator() {
-  console.log('AppNavigator: Rendering');
   return (
     <ViewerProvider>
     <NavigationContainer theme={AppTheme} ref={navigationRef}>
@@ -178,5 +205,18 @@ const styles = StyleSheet.create({
   },
   sidebarLayer: {
     ...StyleSheet.absoluteFillObject,
+  },
+  sidebarLayerWeb: {
+    right: 'auto' as any,
+    width: SIDEBAR_WIDTH_COLLAPSED,
+    overflow: 'visible' as any,
+  },
+  focusAnchor: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    opacity: 0,
   },
 });

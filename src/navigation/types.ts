@@ -15,6 +15,7 @@ export type RootStackParamList = {
     seriesId?: number;
     seasonNumber?: number;
     startPosition?: number; // seconds to seek to on start
+    epgChannelId?: string; // for live EPG display in player
   };
   Details: {
     item: XtreamVodStream;
@@ -30,7 +31,6 @@ export type DrawerParamList = {
   Home: undefined;
   Search: undefined;
   LiveTV: undefined;
-  EPG: undefined;
   VOD: undefined;
   Series: undefined;
   Settings: undefined;

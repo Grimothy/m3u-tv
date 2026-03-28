@@ -12,6 +12,7 @@ index 9b91442..0fe9e81 100755
      let uri = source.uri || "";
      if (uri && uri.match(/^\//)) {
 diff --git a/node_modules/react-native-vlc-media-player/android/src/main/java/com/yuanzhou/vlc/vlcplayer/ReactVlcPlayerView.java b/node_modules/react-native-vlc-media-player/android/src/main/java/com/yuanzhou/vlc/vlcplayer/ReactVlcPlayerView.java
+index 0000000..0000000 100644
 --- a/node_modules/react-native-vlc-media-player/android/src/main/java/com/yuanzhou/vlc/vlcplayer/ReactVlcPlayerView.java
 +++ b/node_modules/react-native-vlc-media-player/android/src/main/java/com/yuanzhou/vlc/vlcplayer/ReactVlcPlayerView.java
 @@ -133,7 +133,7 @@ public class ReactVlcPlayerView extends SurfaceView implements
@@ -24,6 +25,7 @@ diff --git a/node_modules/react-native-vlc-media-player/android/src/main/java/co
              isHostPaused = true;
              mMediaPlayer.pause();
 @@ -495,6 +495,7 @@ public class ReactVlcPlayerView extends SurfaceView implements
+         vout.detachViews();
          //surfaceView.removeOnLayoutChangeListener(onLayoutChangeListener);
          mMediaPlayer.release();
 +        mMediaPlayer = null;
