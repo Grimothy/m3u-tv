@@ -10,11 +10,12 @@ import { FocusablePressable } from '../components/FocusablePressable';
 import { LiveTVCard } from '../components/LiveTVCard';
 import { MovieCard } from '../components/MovieCard';
 import { SeriesCard } from '../components/SeriesCard';
+import ResumeDialog from '../components/ResumeDialog';
 import { DrawerScreenPropsType } from '../navigation/types';
 import { XtreamLiveStream, XtreamVodStream, XtreamSeries, WatchProgress } from '../types/xtream';
 
 export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
-  const { isConfigured, isLoading, isM3UEditor, loadSavedCredentials, fetchLiveStreams, fetchVodStreams, fetchSeries, vodCategories } = useXtream();
+  const { isConfigured, isLoading, isM3UEditor, loadSavedCredentials, fetchLiveStreams, fetchVodStreams, fetchSeries, vodCategories, getVodStreamUrl, getSeriesStreamUrl } = useXtream();
   const { activeViewer, getRecentlyWatched } = useViewer();
   const { isSidebarActive, setSidebarActive } = useMenu();
   const [liveStreams, setLiveStreams] = useState<XtreamLiveStream[]>([]);
@@ -23,6 +24,8 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
   const [contentLoading, setContentLoading] = useState(false);
   const [recentlyWatched, setRecentlyWatched] = useState<WatchProgress[]>([]);
   const [favoriteStreams, setFavoriteStreams] = useState<XtreamLiveStream[]>([]);
+  const [showResumeDialog, setShowResumeDialog] = useState(false);
+  const [pendingWatch, setPendingWatch] = useState<{ progress: WatchProgress; vod?: XtreamVodStream; series?: XtreamSeries } | null>(null);
 
   useEffect(() => {
     loadSavedCredentials();
@@ -63,14 +66,48 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
   };
 
   const handleContinueWatching = useCallback((item: WatchProgress) => {
-    if (item.content_type === 'vod') {
-      const vod = vodStreams.find((v) => v.stream_id === item.stream_id);
-      if (vod) navigation.navigate('Details', { item: vod });
-    } else if (item.content_type === 'episode' && item.series_id) {
-      const series = seriesList.find((s) => s.series_id === item.series_id);
-      if (series) navigation.navigate('SeriesDetails', { item: series });
+    const vod = item.content_type === 'vod'
+      ? vodStreams.find((v) => v.stream_id === item.stream_id)
+      : undefined;
+    const series = item.content_type === 'episode' && item.series_id
+      ? seriesList.find((s) => s.series_id === item.series_id)
+      : undefined;
+    if (!vod && !series) return;
+
+    setPendingWatch({ progress: item, vod, series });
+    setShowResumeDialog(true);
+  }, [vodStreams, seriesList]);
+
+  const playContinueWatching = useCallback((startPosition?: number) => {
+    if (!pendingWatch) return;
+    const { progress, vod } = pendingWatch;
+    if (progress.content_type === 'vod' && vod) {
+      const streamUrl = getVodStreamUrl(vod.stream_id, vod.container_extension);
+      navigation.navigate('Player', {
+        streamUrl,
+        title: vod.name,
+        type: 'vod',
+        streamId: vod.stream_id,
+        startPosition,
+      });
+    } else if (progress.content_type === 'episode') {
+      const streamUrl = getSeriesStreamUrl(String(progress.stream_id));
+      const title = pendingWatch.series?.name
+        ? `${pendingWatch.series.name} - S${progress.season_number ?? '?'}`
+        : `Episode ${progress.stream_id}`;
+      navigation.navigate('Player', {
+        streamUrl,
+        title,
+        type: 'series',
+        streamId: progress.stream_id,
+        seriesId: progress.series_id,
+        seasonNumber: progress.season_number,
+        startPosition,
+      });
     }
-  }, [vodStreams, seriesList, navigation]);
+    setShowResumeDialog(false);
+    setPendingWatch(null);
+  }, [pendingWatch, navigation, getVodStreamUrl, getSeriesStreamUrl]);
 
   if (isLoading) {
     return (
@@ -108,6 +145,17 @@ export function HomeScreen({ navigation }: DrawerScreenPropsType<'Home'>) {
 
   return (
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <ResumeDialog
+        visible={showResumeDialog}
+        position={pendingWatch?.progress.position_seconds ?? 0}
+        duration={pendingWatch?.progress.duration_seconds}
+        onResume={() => playContinueWatching(pendingWatch?.progress.position_seconds)}
+        onStartOver={() => playContinueWatching(0)}
+        onDismiss={() => {
+          setShowResumeDialog(false);
+          setPendingWatch(null);
+        }}
+      />
       {/* Continue Watching Row */}
       {recentlyWatched.filter((w) => w.content_type !== 'live').length > 0 && (
         <View style={styles.rowContainer}>
@@ -341,11 +389,11 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   continueWatchingList: {
-    height: scaledPixels(230),
+    height: scaledPixels(390),
     overflow: 'visible',
   },
   continueCard: {
-    width: scaledPixels(180),
+    width: scaledPixels(200),
     marginHorizontal: scaledPixels(12),
     borderRadius: scaledPixels(8),
     borderWidth: 3,
@@ -367,7 +415,7 @@ const styles = StyleSheet.create({
   },
   continueCover: {
     width: '100%',
-    height: scaledPixels(160),
+    aspectRatio: 2 / 3,
     borderRadius: scaledPixels(8),
   },
   continueProgressBg: {
