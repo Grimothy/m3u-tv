@@ -17,6 +17,7 @@ win:
     - nsis
     - portable
 mac:
+  identity: null
   target:
     - dmg
 electronVersion: 41.0.3
