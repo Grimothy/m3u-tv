@@ -11,8 +11,8 @@ Pod::Spec.new do |s|
   s.author       = "m3u-tv"
   s.source       = { :git => ".", :tag => s.version }
 
-  s.ios.deployment_target = '16.0'
-  s.tvos.deployment_target = '16.0'
+  s.ios.deployment_target = '15.1'
+  s.tvos.deployment_target = '15.1'
 
   s.source_files = "ios/*.{h,m,mm,swift}"
   s.swift_version = "5.0"
@@ -23,6 +23,5 @@ Pod::Spec.new do |s|
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES' => 'YES',
-    'SWIFT_OBJC_BRIDGING_HEADER' => '$(PODS_TARGET_SRCROOT)/ios/react-native-mpv-Bridging-Header.h',
   }
 end

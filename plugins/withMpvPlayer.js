@@ -60,6 +60,16 @@ module.exports = (config) =>
       // Write the local MPVKit podspec into the ios/ directory
       fs.writeFileSync(path.join(iosDir, 'MPVKit.podspec'), LOCAL_MPVKIT_PODSPEC);
 
+      // Delete the bridging header from the module source if it was restored by an upstream merge.
+      // DEFINES_MODULE = YES makes the pod a framework target; bridging headers are forbidden there.
+      const bridgingHeader = path.join(
+        config.modRequest.projectRoot,
+        'modules/react-native-mpv/ios/react-native-mpv-Bridging-Header.h',
+      );
+      if (fs.existsSync(bridgingHeader)) {
+        fs.unlinkSync(bridgingHeader);
+      }
+
       // Patch the Podfile to use the local spec (overrides the broken trunk spec)
       const podfilePath = path.join(iosDir, 'Podfile');
       let podfile = fs.readFileSync(podfilePath, 'utf-8');

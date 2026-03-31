@@ -11,13 +11,13 @@ class MpvPlayerView: UIView {
     private var pendingPaused = false
     private var pendingSeek: Double = -1
 
-    // RN event callbacks
-    var onMpvLoad: (([String: Any]) -> Void)?
-    var onMpvProgress: (([String: Any]) -> Void)?
-    var onMpvBuffer: (([String: Any]) -> Void)?
-    var onMpvError: (([String: Any]) -> Void)?
-    var onMpvEnd: (([String: Any]) -> Void)?
-    var onMpvTracksChanged: (([String: Any]) -> Void)?
+    // RN event callbacks — must be @objc RCTDirectEventBlock so the bridge can set them via KVC
+    @objc var onMpvLoad: RCTDirectEventBlock?
+    @objc var onMpvProgress: RCTDirectEventBlock?
+    @objc var onMpvBuffer: RCTDirectEventBlock?
+    @objc var onMpvError: RCTDirectEventBlock?
+    @objc var onMpvEnd: RCTDirectEventBlock?
+    @objc var onMpvTracksChanged: RCTDirectEventBlock?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -100,7 +100,7 @@ class MpvPlayerView: UIView {
 
     // MARK: - Public API
 
-    func setUri(_ uri: String?) {
+    @objc func setUri(_ uri: String?) {
         guard let uri = uri, !uri.isEmpty else { return }
         if isInitialized {
             loadFile(uri)
@@ -109,19 +109,19 @@ class MpvPlayerView: UIView {
         }
     }
 
-    func setUserAgent(_ userAgent: String?) {
+    @objc func setUserAgent(_ userAgent: String?) {
         guard let ctx = mpv, let ua = userAgent else { return }
         mpv_set_option_string(ctx, "user-agent", ua)
     }
 
-    func setPaused(_ paused: Bool) {
+    @objc func setPaused(_ paused: Bool) {
         pendingPaused = paused
         guard let ctx = mpv, isInitialized else { return }
         var flag: Int32 = paused ? 1 : 0
         mpv_set_property(ctx, "pause", MPV_FORMAT_FLAG, &flag)
     }
 
-    func setStartPosition(_ seconds: Double) {
+    @objc func setStartPosition(_ seconds: Double) {
         if seconds > 0 {
             pendingSeek = seconds
         }
