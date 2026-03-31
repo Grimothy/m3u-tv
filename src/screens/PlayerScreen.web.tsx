@@ -55,6 +55,15 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
     const [epgCurrent, setEpgCurrent] = useState<{ title: string; progress: number } | null>(null);
     const [epgNext, setEpgNext] = useState<string | null>(null);
 
+    // Embedded mpv state (Electron only)
+    const [embeddedMpv, setEmbeddedMpv] = useState(false);
+    const [audioTracks, setAudioTracks] = useState<Array<{ id: number; name: string; language?: string }>>([]);
+    const [textTracks, setTextTracks] = useState<Array<{ id: number; name: string; language?: string }>>([]);
+    const [selectedAudioTrack, setSelectedAudioTrack] = useState(0);
+    const [selectedTextTrack, setSelectedTextTrack] = useState(0);
+    const [isBuffering, setIsBuffering] = useState(false);
+    const embeddedMpvRef = useRef(false);
+
     useEffect(() => {
         overlayVisibleRef.current = overlayVisible;
     }, [overlayVisible]);
@@ -62,6 +71,10 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
     const goBackSafe = useCallback(() => {
         if (exitGuardRef.current) return;
         exitGuardRef.current = true;
+        if (embeddedMpvRef.current) {
+            electronAPI?.mpv?.stop().catch(() => {});
+            embeddedMpvRef.current = false;
+        }
         navigation.goBack();
     }, [navigation]);
 
@@ -86,12 +99,21 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
     }, [fadeAnim, resetHideTimer]);
 
     const doSeek = useCallback((offset: number) => {
+        if (isLive) return;
+        if (embeddedMpvRef.current) {
+            electronAPI.mpv.seek(offset);
+            return;
+        }
         const video = videoRef.current;
-        if (!video || isLive) return;
+        if (!video) return;
         video.currentTime = Math.max(0, Math.min(video.currentTime + offset, video.duration || 0));
     }, [isLive]);
 
     const doTogglePlayPause = useCallback(() => {
+        if (embeddedMpvRef.current) {
+            electronAPI.mpv.togglePause();
+            return;
+        }
         const video = videoRef.current;
         if (!video) return;
         if (video.paused) {
@@ -178,8 +200,40 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
         const video = videoRef.current;
         if (!video) return;
 
-        // In Electron: always use external player (mpv/vlc)
-        // Chromium can't play raw MPEG-TS, MKV, or most IPTV formats
+        // In Electron: use embedded mpv for native playback inside the window.
+        // Falls back to external player if embedded start fails.
+        if (isElectron && electronAPI?.mpv) {
+            let cancelled = false;
+            const startEmbeddedMpv = async () => {
+                try {
+                    const result = await electronAPI.mpv.start(streamUrl, {
+                        startPosition: startPosition || 0,
+                        title: title || 'm3u-tv',
+                    });
+                    if (cancelled) return;
+                    if (result.success) {
+                        setEmbeddedMpv(true);
+                        embeddedMpvRef.current = true;
+                        setIsLoading(false);
+                    } else {
+                        openInExternalPlayer();
+                    }
+                } catch {
+                    if (!cancelled) openInExternalPlayer();
+                }
+            };
+            startEmbeddedMpv();
+            return () => {
+                cancelled = true;
+                if (embeddedMpvRef.current) {
+                    electronAPI.mpv.stop().catch(() => {});
+                    embeddedMpvRef.current = false;
+                    setEmbeddedMpv(false);
+                }
+            };
+        }
+
+        // Electron without embedded mpv support — use external player
         if (isElectron) {
             openInExternalPlayer();
             return;
@@ -270,8 +324,9 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
         }
     }, [streamUrl, isLive, startPosition]);
 
-    // Sync video element state
+    // Sync video element state (browser / HTML5 only — embedded mpv has its own events)
     useEffect(() => {
+        if (embeddedMpv) return;
         const video = videoRef.current;
         if (!video) return;
 
@@ -304,7 +359,48 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
             video.removeEventListener('pause', onPause);
             video.removeEventListener('ended', onEnded);
         };
-    }, [goBackSafe]);
+    }, [embeddedMpv, goBackSafe]);
+
+    // Embedded mpv event subscriptions
+    useEffect(() => {
+        if (!embeddedMpv || !electronAPI?.mpv) return;
+
+        const unsubs: Array<() => void> = [];
+
+        unsubs.push(electronAPI.mpv.onProgress((data: { property: string; value: number }) => {
+            if (data.property === 'time-pos') {
+                setCurrentTime(data.value);
+                currentTimeRef.current = data.value;
+            } else if (data.property === 'duration') {
+                if (Number.isFinite(data.value) && data.value > 0) {
+                    setDuration(data.value);
+                    durationRef.current = data.value;
+                }
+            }
+        }));
+
+        unsubs.push(electronAPI.mpv.onPause((data: { paused: boolean }) => {
+            setPaused(data.paused);
+        }));
+
+        unsubs.push(electronAPI.mpv.onTracks((data: {
+            audioTracks: Array<{ id: number; name: string; language?: string }>;
+            textTracks: Array<{ id: number; name: string; language?: string }>;
+        }) => {
+            if (data.audioTracks) setAudioTracks(data.audioTracks);
+            if (data.textTracks) setTextTracks(data.textTracks);
+        }));
+
+        unsubs.push(electronAPI.mpv.onBuffering((data: { isBuffering: boolean }) => {
+            setIsBuffering(data.isBuffering);
+        }));
+
+        unsubs.push(electronAPI.mpv.onEnd(() => {
+            goBackSafe();
+        }));
+
+        return () => unsubs.forEach((fn) => fn());
+    }, [embeddedMpv, goBackSafe]);
 
     // Mouse movement shows overlay
     useEffect(() => {
@@ -418,20 +514,22 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
 
     return (
         <View style={styles.container}>
-            <video
-                ref={videoRef as any}
-                style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    backgroundColor: '#000',
-                    objectFit: 'contain',
-                }}
-                autoPlay
-                playsInline
-            />
+            {!embeddedMpv && (
+                <video
+                    ref={videoRef as any}
+                    style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        backgroundColor: '#000',
+                        objectFit: 'contain',
+                    }}
+                    autoPlay
+                    playsInline
+                />
+            )}
 
             {externalPlaying && (
                 <View style={styles.centerOverlay}>
@@ -449,10 +547,12 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
                 </View>
             )}
 
-            {isLoading && !error && !externalPlaying && (
+            {((isLoading && !error && !externalPlaying) || isBuffering) && (
                 <View style={styles.centerOverlay} pointerEvents="none">
                     <ActivityIndicator color="#ffffff" size="large" />
-                    <Text style={styles.loadingText}>Loading stream...</Text>
+                    <Text style={styles.loadingText}>
+                        {isBuffering ? 'Buffering...' : 'Loading stream...'}
+                    </Text>
                 </View>
             )}
 
@@ -515,8 +615,12 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
                                     style={styles.progressTrack}
                                     onPress={(e: any) => {
                                         const rect = e.target?.getBoundingClientRect?.();
-                                        if (rect && videoRef.current) {
-                                            const fraction = (e.nativeEvent.pageX - rect.left) / rect.width;
+                                        if (!rect) return;
+                                        const fraction = Math.max(0, Math.min(1, (e.nativeEvent.pageX - rect.left) / rect.width));
+                                        if (embeddedMpvRef.current) {
+                                            const target = fraction * durationRef.current;
+                                            if (target >= 0) electronAPI.mpv.seekTo(target);
+                                        } else if (videoRef.current) {
                                             videoRef.current.currentTime = fraction * (videoRef.current.duration || 0);
                                         }
                                     }}
@@ -572,23 +676,69 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
                                 </FocusablePressable>
                             )}
 
-                            <View style={styles.controlsDivider} />
+                            {embeddedMpv && audioTracks.length > 1 && (
+                                <FocusablePressable
+                                    onSelect={() => {
+                                        const idx = audioTracks.findIndex(t => t.id === selectedAudioTrack);
+                                        const next = audioTracks[(idx + 1) % audioTracks.length];
+                                        setSelectedAudioTrack(next.id);
+                                        electronAPI.mpv.setAudioTrack(next.id);
+                                    }}
+                                    onFocus={resetHideTimer}
+                                    style={({ isFocused }) => [
+                                        styles.controlButton,
+                                        isFocused && styles.controlButtonFocused,
+                                    ]}
+                                >
+                                    <Text style={styles.trackButtonText}>
+                                        Audio: {audioTracks.find(t => t.id === selectedAudioTrack)?.name || 'Default'}
+                                    </Text>
+                                </FocusablePressable>
+                            )}
 
-                            <FocusablePressable
-                                onSelect={() => {
-                                    const video = videoRef.current;
-                                    if (video?.requestFullscreen) {
-                                        video.requestFullscreen().catch(() => { });
-                                    }
-                                }}
-                                onFocus={resetHideTimer}
-                                style={({ isFocused }) => [
-                                    styles.controlButton,
-                                    isFocused && styles.controlButtonFocused,
-                                ]}
-                            >
-                                <Icon name="Maximize" size={scaledPixels(16)} color={colors.text} />
-                            </FocusablePressable>
+                            {embeddedMpv && textTracks.length > 0 && (
+                                <FocusablePressable
+                                    onSelect={() => {
+                                        const allOpts = [{ id: -1, name: 'Off' }, ...textTracks];
+                                        const idx = allOpts.findIndex(t => t.id === selectedTextTrack);
+                                        const next = allOpts[(idx + 1) % allOpts.length];
+                                        setSelectedTextTrack(next.id);
+                                        electronAPI.mpv.setSubtitleTrack(next.id);
+                                    }}
+                                    onFocus={resetHideTimer}
+                                    style={({ isFocused }) => [
+                                        styles.controlButton,
+                                        isFocused && styles.controlButtonFocused,
+                                    ]}
+                                >
+                                    <Text style={styles.trackButtonText}>
+                                        {selectedTextTrack <= 0
+                                            ? 'Subs: Off'
+                                            : `Subs: ${textTracks.find(t => t.id === selectedTextTrack)?.name || 'On'}`}
+                                    </Text>
+                                </FocusablePressable>
+                            )}
+
+                            {!embeddedMpv && (
+                                <>
+                                    <View style={styles.controlsDivider} />
+                                    <FocusablePressable
+                                        onSelect={() => {
+                                            const video = videoRef.current;
+                                            if (video?.requestFullscreen) {
+                                                video.requestFullscreen().catch(() => { });
+                                            }
+                                        }}
+                                        onFocus={resetHideTimer}
+                                        style={({ isFocused }) => [
+                                            styles.controlButton,
+                                            isFocused && styles.controlButtonFocused,
+                                        ]}
+                                    >
+                                        <Icon name="Maximize" size={scaledPixels(16)} color={colors.text} />
+                                    </FocusablePressable>
+                                </>
+                            )}
                         </View>
                     </View>
                 </View>
@@ -762,5 +912,9 @@ const styles = StyleSheet.create({
         height: scaledPixels(20),
         backgroundColor: 'rgba(255,255,255,0.2)',
         marginHorizontal: scaledPixels(4),
+    },
+    trackButtonText: {
+        color: colors.text,
+        fontSize: scaledPixels(13),
     },
 });

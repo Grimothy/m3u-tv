@@ -9,6 +9,7 @@ import {
   ScrollView,
   FlatList,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { FocusGuide } from '../components/FocusGuide';
 import { useIsFocused } from '@react-navigation/native';
@@ -155,14 +156,12 @@ export const SeriesDetailsScreen = ({ route, navigation }: RootStackScreenProps<
       />
       <ImageBackground source={{ uri: item.cover }} style={styles.backdrop} blurRadius={5}>
         <LinearGradient colors={['rgba(0,0,0,0.2)', 'rgba(0,0,0,0.8)', colors.background]} style={styles.gradient}>
-          {Platform.OS === 'web' && (
-            <FocusablePressable
-              onSelect={() => navigation.goBack()}
-              style={({ isFocused: f }) => [styles.backButton, f && styles.backButtonFocused]}
-            >
-              <Icon name="ArrowLeft" size={scaledPixels(22)} color={colors.text} />
-            </FocusablePressable>
-          )}
+          <FocusablePressable
+            onSelect={() => navigation.goBack()}
+            style={({ isFocused: f }) => [styles.backButton, f && styles.backButtonFocused]}
+          >
+            <Icon name="ArrowLeft" size={scaledPixels(22)} color={colors.text} />
+          </FocusablePressable>
           <View style={styles.content}>
             <View style={styles.header}>
               <View style={styles.mainInfo}>
@@ -180,7 +179,11 @@ export const SeriesDetailsScreen = ({ route, navigation }: RootStackScreenProps<
             <View style={styles.navigationSection}>
               <FocusGuide style={styles.seasonsColumn} autoFocus>
                 <Text style={styles.sectionTitle}>Seasons</Text>
-                <ScrollView>
+                <ScrollView
+                  horizontal={!Platform.isTV}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={!Platform.isTV ? styles.seasonsRow : undefined}
+                >
                   {seriesInfo?.seasons.map((season, index) => (
                     <FocusablePressable
                       key={season.season_number}
@@ -223,11 +226,11 @@ export const SeriesDetailsScreen = ({ route, navigation }: RootStackScreenProps<
                       style={({ isFocused }) => [
                         styles.episodeItem,
                         isFocused && styles.itemFocused,
-                        { width: width - scaledPixels(450) },
+                        Platform.isTV && { width: width - scaledPixels(450) },
                       ]}
                     >
                       <View style={styles.episodeMain}>
-                        <Text style={styles.episodeNumber}>{ep.episode_num}</Text>
+                        {Platform.isTV && <Text style={styles.episodeNumber}>{ep.episode_num}</Text>}
                         <View style={styles.episodeImageWrapper}>
                           <Image
                             source={{ uri: ep.info?.movie_image || item.cover }}
@@ -247,22 +250,22 @@ export const SeriesDetailsScreen = ({ route, navigation }: RootStackScreenProps<
                         </View>
                         <View style={styles.episodeInfo}>
                           <Text style={styles.episodeTitle} numberOfLines={1}>
-                            {ep.title}
+                            {!Platform.isTV ? `${ep.episode_num}. ` : ''}{ep.title}
                           </Text>
                           <View style={styles.metaRow}>
-                            {ep.info?.rating && (
+                            {ep.info?.rating ? (
                               <Text style={styles.metaRating}>{`★ ${ep.info.rating}`}</Text>
-                            )}
-                            {ep.info?.release_date && (
+                            ) : null}
+                            {ep.info?.release_date ? (
                               <Text style={styles.metaText}>{ep.info.release_date.split('-')[0]}</Text>
-                            )}
-                            {ep.info?.duration && <Text style={styles.metaText}>{ep.info.duration}</Text>}
+                            ) : null}
+                            {ep.info?.duration ? <Text style={styles.metaText}>{ep.info.duration}</Text> : null}
                           </View>
-                          <Text style={styles.episodePlot} numberOfLines={3}>
+                          <Text style={styles.episodePlot} numberOfLines={Platform.isTV ? 3 : 2}>
                             {ep.info?.plot || 'No description available for this episode.'}
                           </Text>
                         </View>
-                        <Icon name="ChevronRight" size={scaledPixels(24)} color={colors.text} />
+                        {Platform.isTV && <Icon name="ChevronRight" size={scaledPixels(24)} color={colors.text} />}
                       </View>
                     </FocusablePressable>
                   )}
@@ -286,17 +289,16 @@ const styles = StyleSheet.create({
   },
   gradient: {
     flex: 1,
-    paddingHorizontal: scaledPixels(80),
-    paddingTop: scaledPixels(40),
+    paddingHorizontal: Platform.isTV ? scaledPixels(80) : scaledPixels(20),
+    paddingTop: Platform.isTV ? scaledPixels(40) : (StatusBar.currentHeight ?? 0) + scaledPixels(10),
   },
   backButton: {
-    position: 'absolute',
-    top: scaledPixels(20),
-    left: scaledPixels(20),
     padding: scaledPixels(10),
     borderRadius: scaledPixels(50),
     backgroundColor: 'rgba(0,0,0,0.5)',
     zIndex: 10,
+    alignSelf: 'flex-start',
+    marginBottom: scaledPixels(10),
   },
   backButtonFocused: {
     backgroundColor: colors.primary,
@@ -308,7 +310,7 @@ const styles = StyleSheet.create({
     marginBottom: scaledPixels(40),
   },
   mainInfo: {
-    maxWidth: '70%',
+    maxWidth: Platform.isTV ? '70%' : '100%',
   },
   title: {
     fontSize: scaledPixels(48),
@@ -343,12 +345,17 @@ const styles = StyleSheet.create({
   },
   navigationSection: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: Platform.isTV ? 'row' : 'column',
     marginTop: scaledPixels(20),
   },
   seasonsColumn: {
-    width: scaledPixels(250),
-    marginRight: scaledPixels(40),
+    ...(Platform.isTV
+      ? { width: scaledPixels(250), marginRight: scaledPixels(40) }
+      : { marginBottom: scaledPixels(15) }),
+  },
+  seasonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   episodesColumn: {
     flex: 1,
@@ -366,16 +373,18 @@ const styles = StyleSheet.create({
     paddingVertical: scaledPixels(15),
     paddingHorizontal: scaledPixels(20),
     borderRadius: scaledPixels(8),
-    marginBottom: scaledPixels(10),
+    marginBottom: Platform.isTV ? scaledPixels(10) : 0,
+    ...(!Platform.isTV && { marginRight: scaledPixels(10), flexShrink: 0 }),
     backgroundColor: 'rgba(255,255,255,0.05)',
-    overflow: 'hidden',
+    ...(Platform.isTV && { overflow: 'hidden' as const }),
     borderWidth: 2,
     borderColor: 'transparent',
   },
   seasonItemActive: {
     backgroundColor: 'rgba(236, 0, 63, 0.2)',
-    borderLeftWidth: 4,
-    borderLeftColor: colors.primary,
+    ...(Platform.isTV
+      ? { borderLeftWidth: 4, borderLeftColor: colors.primary }
+      : { borderBottomWidth: 3, borderBottomColor: colors.primary }),
   },
   seasonText: {
     color: colors.textSecondary,
@@ -397,15 +406,15 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   episodeMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scaledPixels(20),
-    height: scaledPixels(150),
+    flexDirection: Platform.isTV ? 'row' : 'column',
+    alignItems: Platform.isTV ? 'center' : 'flex-start',
+    gap: scaledPixels(Platform.isTV ? 20 : 10),
+    ...(Platform.isTV && { height: scaledPixels(150) }),
   },
   episodeNumber: {
     fontSize: scaledPixels(24),
     color: colors.text,
-    width: scaledPixels(50),
+    ...(Platform.isTV && { width: scaledPixels(50) }),
     fontWeight: 'bold',
   },
   episodeInfo: {
@@ -419,13 +428,14 @@ const styles = StyleSheet.create({
   },
   episodeImageWrapper: {
     position: 'relative',
-    width: scaledPixels(200),
-    aspectRatio: 3 / 2,
+    width: Platform.isTV ? scaledPixels(200) : '100%',
+    aspectRatio: 16 / 9,
+    borderRadius: scaledPixels(8),
+    overflow: 'hidden',
   },
   episodeImage: {
     width: '100%',
     height: '100%',
-    borderRadius: scaledPixels(8),
   },
   progressBarBg: {
     position: 'absolute',

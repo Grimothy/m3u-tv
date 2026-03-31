@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useViewer } from '../context/ViewerContext';
 import { useXtream } from '../context/XtreamContext';
 import {
@@ -14,9 +14,17 @@ import {
     Platform,
     Alert,
     ActionSheetIOS,
+    NativeSyntheticEvent,
 } from 'react-native';
-import Video, { OnLoadData, OnProgressData, OnVideoErrorData, OnAudioTracksData, OnTextTracksData, SelectedTrackType, ResizeMode, VideoRef } from 'react-native-video';
-import { VLCPlayer } from 'react-native-vlc-media-player';
+import {
+    MpvPlayer,
+    MpvPlayerRef,
+    MpvLoadEvent,
+    MpvProgressEvent,
+    MpvBufferEvent,
+    MpvErrorEvent,
+    MpvTrack,
+} from 'react-native-mpv';
 import { RootStackScreenProps } from '../navigation/types';
 import { colors } from '../theme';
 import { Icon } from '../components/Icon';
@@ -28,25 +36,11 @@ const OVERLAY_TIMEOUT = 8000;
 const SEEK_STEP = 10;
 const TIMELINE_SEEK_STEP = 30;
 const LOADING_TIMEOUT_MS = 20_000;
+const PROGRESS_INTERVAL_MS = 10_000;
 const USER_AGENT =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
-const VLC_ONLY_EXTENSIONS = ['.avi', '.mkv', '.wmv', '.flv', '.rmvb', '.rm', '.asf', '.divx', '.ogm'];
 
-type PlayerBackend = 'native' | 'vlc';
 type PlayerTrack = { id: number; name: string; language?: string };
-
-function getInitialBackend(url: string): PlayerBackend {
-    if (Platform.OS !== 'android') {
-        return 'vlc';
-    }
-
-    const path = url.split('?')[0].toLowerCase();
-    if (VLC_ONLY_EXTENSIONS.some((ext) => path.endsWith(ext))) {
-        return 'vlc';
-    }
-
-    return 'native';
-}
 
 function formatTime(seconds: number): string {
     const safeSeconds = Number.isFinite(seconds) ? seconds : 0;
@@ -56,20 +50,6 @@ function formatTime(seconds: number): string {
     const sec = s % 60;
     const pad = (n: number) => n.toString().padStart(2, '0');
     return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
-}
-
-function toErrorMessage(error: unknown): string {
-    if (error instanceof Error) return error.message;
-    if (typeof error === 'string') return error;
-    if (typeof error === 'object' && error !== null) {
-        try {
-            return JSON.stringify(error);
-        } catch {
-            return 'Unknown playback error';
-        }
-    }
-
-    return 'Unknown playback error';
 }
 
 function showNativeSelect(
@@ -99,10 +79,10 @@ function showNativeSelect(
         undefined,
         [
             ...options.map((option, index) => ({
-                text: index === selectedIndex ? `✓ ${option}` : option,
+                text: index === selectedIndex ? `\u2713 ${option}` : option,
                 onPress: () => onPick(index),
             })),
-            { text: 'Cancel', style: 'cancel' },
+            { text: 'Cancel', style: 'cancel' as const },
         ],
         { cancelable: true },
     );
@@ -111,42 +91,35 @@ function showNativeSelect(
 const isTV = Platform.isTV;
 const isTVOS = Platform.OS === 'ios' && isTV;
 
-// On tvOS, use TVFocusGuideView with autoFocus to guide focus into overlay regions.
-// On Android TV, spatial focus works natively — TVFocusGuideView interferes with FocusFinder.
 const FocusContainer = isTVOS
     ? ({ style, children }: { style?: any; children: React.ReactNode }) => (
-        <TVFocusGuideView style={style} autoFocus>{children}</TVFocusGuideView>
-    )
+          <TVFocusGuideView style={style} autoFocus>
+              {children}
+          </TVFocusGuideView>
+      )
     : ({ style, children }: { style?: any; children: React.ReactNode }) => (
-        <View style={style}>{children}</View>
-    );
-
-const PROGRESS_INTERVAL_MS = 10_000; // Report progress every 10 seconds
+          <View style={style}>{children}</View>
+      );
 
 export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player'>) => {
-    const { streamUrl, title, type, streamId, seriesId, seasonNumber, startPosition } = route.params;
+    const { streamUrl, title, type, streamId, seriesId, seasonNumber, startPosition, epgChannelId } =
+        route.params;
     const isLive = type === 'live';
 
     const { isM3UEditor } = useXtream();
     const { activeViewer, updateProgress } = useViewer();
 
-    const [currentStreamUrl, setCurrentStreamUrl] = useState(streamUrl);
-    const formatRetried = useRef(false);
+    const mpvRef = useRef<MpvPlayerRef>(null);
 
-    const initialBackend = useMemo(() => getInitialBackend(currentStreamUrl), [currentStreamUrl]);
-    const [backend, setBackend] = useState<PlayerBackend>(initialBackend);
-
-    const rewindButtonRef = useRef<FocusablePressableRef>(null);
     const playButtonRef = useRef<FocusablePressableRef>(null);
+    const rewindButtonRef = useRef<FocusablePressableRef>(null);
     const forwardButtonRef = useRef<FocusablePressableRef>(null);
     const timelineRef = useRef<FocusablePressableRef>(null);
     const timelineFocusedRef = useRef(false);
     const audioButtonRef = useRef<FocusablePressableRef>(null);
     const subtitleButtonRef = useRef<FocusablePressableRef>(null);
     const backButtonRef = useRef<FocusablePressableRef>(null);
-    const selectGuardRef = useRef(false);
 
-    // EPG info for live channels
     const [epgCurrent, setEpgCurrent] = useState<{ title: string; progress: number } | null>(null);
     const [epgNext, setEpgNext] = useState<string | null>(null);
 
@@ -155,33 +128,37 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
     const [paused, setPaused] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
-    const [vlcSeekValue, setVlcSeekValue] = useState(-1);
 
     const [audioTracks, setAudioTracks] = useState<PlayerTrack[]>([]);
     const [textTracks, setTextTracks] = useState<PlayerTrack[]>([]);
-    const [selectedAudioTrack, setSelectedAudioTrack] = useState<number | undefined>(undefined);
+    const [selectedAudioTrack, setSelectedAudioTrack] = useState<number>(-1);
     const [selectedTextTrack, setSelectedTextTrack] = useState<number>(-1);
 
-    const nativeRef = useRef<VideoRef>(null);
-    const vlcRef = useRef<any>(null);
-    const audioAutoSelectedRef = useRef(false);
-    const vlcTracksLoadedRef = useRef(false);
-    const userSelectedAudioRef = useRef(false);
-    const userSelectedTextRef = useRef(false);
     const seekingRef = useRef(false);
     const seekLockoutTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
     const exitGuardRef = useRef(false);
-    const startPositionRef = useRef(startPosition ?? 0);
-    const hasSeekedToStartRef = useRef(false);
+    const tracksLoadedRef = useRef(false);
     const loadingTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-    // Loading timeout: if stream never loads or errors, show a timeout message
+    const currentTimeRef = useRef(currentTime);
+    const durationRef = useRef(duration);
+
+    useEffect(() => {
+        currentTimeRef.current = currentTime;
+    }, [currentTime]);
+    useEffect(() => {
+        durationRef.current = duration;
+    }, [duration]);
+
+    // ── Loading timeout ──────────────────────────────────────────
     useEffect(() => {
         if (isLoading && !error) {
             loadingTimerRef.current = setTimeout(() => {
                 if (isLoading) {
                     setIsLoading(false);
-                    setError('Stream loading timed out. The server may be unreachable or the stream URL is invalid.');
+                    setError(
+                        'Stream loading timed out. The server may be unreachable or the stream URL is invalid.',
+                    );
                 }
             }, LOADING_TIMEOUT_MS);
         } else {
@@ -190,33 +167,15 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
         return () => clearTimeout(loadingTimerRef.current);
     }, [isLoading, error]);
 
-    const currentTimeRef = useRef(currentTime);
-    const durationRef = useRef(duration);
-    const backendRef = useRef(backend);
-
-    useEffect(() => {
-        currentTimeRef.current = currentTime;
-    }, [currentTime]);
-
-    useEffect(() => {
-        durationRef.current = duration;
-    }, [duration]);
-
-    useEffect(() => {
-        backendRef.current = backend;
-    }, [backend]);
-
-    // Watch progress tracking
+    // ── Watch progress tracking ──────────────────────────────────
     useEffect(() => {
         if (!isM3UEditor || !activeViewer || !streamId) return;
 
         if (isLive) {
-            // For live TV, report once on mount to increment watch count
             updateProgress({ content_type: 'live', stream_id: streamId });
             return;
         }
 
-        // For VOD/episode, report every 10 seconds
         const interval = setInterval(() => {
             updateProgress({
                 content_type: type === 'series' ? 'episode' : 'vod',
@@ -230,7 +189,6 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
 
         return () => {
             clearInterval(interval);
-            // Final update on unmount
             if (currentTimeRef.current > 0) {
                 updateProgress({
                     content_type: type === 'series' ? 'episode' : 'vod',
@@ -244,20 +202,15 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
         };
     }, [isM3UEditor, activeViewer, streamId, isLive, type, seriesId, seasonNumber]);
 
-    // Fetch EPG data for live channel
+    // ── Fetch EPG data for live channel ──────────────────────────
     useEffect(() => {
         if (!isLive || !streamId) return;
 
         let interval: ReturnType<typeof setInterval>;
         let cancelled = false;
 
-        const epgChannelId = route.params.epgChannelId;
-
         const updateEpg = async () => {
-            const data = await epgService.getCurrentAndNextAsync(
-                epgChannelId || '',
-                streamId,
-            );
+            const data = await epgService.getCurrentAndNextAsync(epgChannelId || '', streamId);
             if (cancelled) return;
 
             if (!data) {
@@ -277,8 +230,9 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
             cancelled = true;
             clearInterval(interval);
         };
-    }, [isLive, streamId, route.params.epgChannelId]);
+    }, [isLive, streamId, epgChannelId]);
 
+    // ── Overlay animation ────────────────────────────────────────
     const [overlayVisible, setOverlayVisible] = useState(true);
     const fadeAnim = useRef(new Animated.Value(1)).current;
     const hideTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -287,22 +241,6 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
     useEffect(() => {
         overlayVisibleRef.current = overlayVisible;
     }, [overlayVisible]);
-
-    const nativeSourceRef = useRef<any>(null);
-    const vlcSourceRef = useRef<any>(null);
-
-    if (!nativeSourceRef.current || nativeSourceRef.current.uri !== currentStreamUrl) {
-        nativeSourceRef.current = {
-            uri: currentStreamUrl,
-            headers: { 'User-Agent': USER_AGENT },
-            isNetwork: true,
-        };
-        vlcSourceRef.current = {
-            uri: currentStreamUrl,
-            initOptions: ['--network-caching=3000', `--http-user-agent=${USER_AGENT}`],
-            isNetwork: true,
-        };
-    }
 
     const hideOverlayAnim = useCallback(() => {
         Animated.timing(fadeAnim, {
@@ -323,13 +261,9 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
         setOverlayVisible(true);
         fadeAnim.setValue(1);
         resetHideTimer();
-
-        // Guard: prevent the same OK press from triggering play/pause
-        selectGuardRef.current = true;
         setTimeout(() => {
-            selectGuardRef.current = false;
             playButtonRef.current?.focus();
-        }, 200);
+        }, 150);
     }, [fadeAnim, resetHideTimer]);
 
     useEffect(() => {
@@ -339,309 +273,163 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
                 playButtonRef.current?.focus();
             }, 150);
         }
-
         return () => clearTimeout(hideTimer.current);
     }, [overlayVisible, resetHideTimer]);
 
+    // ── Navigation helpers ───────────────────────────────────────
     const goBackSafe = useCallback(() => {
-        if (exitGuardRef.current) {
-            return;
-        }
-
+        if (exitGuardRef.current) return;
         exitGuardRef.current = true;
         navigation.goBack();
     }, [navigation]);
 
-    const doSeekTo = useCallback((targetSeconds: number) => {
-        const dur = durationRef.current;
-        if (dur <= 0 || isLive) {
-            return;
-        }
+    const doSeekTo = useCallback(
+        (targetSeconds: number) => {
+            const dur = durationRef.current;
+            if (dur <= 0 || isLive) return;
 
-        const target = Math.max(0, Math.min(targetSeconds, dur));
-        seekingRef.current = true;
-        setCurrentTime(target);
+            const target = Math.max(0, Math.min(targetSeconds, dur));
+            seekingRef.current = true;
+            setCurrentTime(target);
 
-        if (seekLockoutTimer.current) {
-            clearTimeout(seekLockoutTimer.current);
-        }
+            if (seekLockoutTimer.current) {
+                clearTimeout(seekLockoutTimer.current);
+            }
+            seekLockoutTimer.current = setTimeout(() => {
+                seekingRef.current = false;
+            }, 1500);
 
-        seekLockoutTimer.current = setTimeout(() => {
-            seekingRef.current = false;
-        }, 1500);
+            mpvRef.current?.seekTo(target);
+        },
+        [isLive],
+    );
 
-        if (backendRef.current === 'native') {
-            nativeRef.current?.seek(target);
-        } else {
-            setVlcSeekValue(target / dur);
-            setTimeout(() => {
-                setVlcSeekValue(-1);
-            }, 300);
-        }
-    }, [isLive]);
-
-    const doSeek = useCallback((offset: number) => {
-        doSeekTo(currentTimeRef.current + offset);
-    }, [doSeekTo]);
+    const doSeek = useCallback(
+        (offset: number) => {
+            doSeekTo(currentTimeRef.current + offset);
+        },
+        [doSeekTo],
+    );
 
     const doTogglePlayPause = useCallback(() => {
-        if (selectGuardRef.current) return;
         setPaused((prev) => !prev);
     }, []);
 
+    // ── Track selectors ──────────────────────────────────────────
     const openAudioSelector = useCallback(() => {
-        if (selectGuardRef.current) return;
-        if (audioTracks.length === 0) {
-            return;
-        }
+        if (audioTracks.length === 0) return;
 
         const options = ['Disable', ...audioTracks.map((track) => track.name || `Track ${track.id}`)];
-        const selectedIndex = selectedAudioTrack === -1
-            ? 0
-            : audioTracks.findIndex((track) => track.id === selectedAudioTrack) + 1;
+        const selectedIndex =
+            selectedAudioTrack === -1
+                ? 0
+                : audioTracks.findIndex((track) => track.id === selectedAudioTrack) + 1;
 
         showNativeSelect('Audio Track', options, selectedIndex < 0 ? 0 : selectedIndex, (index) => {
-            userSelectedAudioRef.current = true;
-            if (index === 0) {
-                setSelectedAudioTrack(-1);
-            } else {
-                setSelectedAudioTrack(audioTracks[index - 1].id);
-            }
+            const newTrackId = index === 0 ? -1 : audioTracks[index - 1].id;
+            setSelectedAudioTrack(newTrackId);
+            mpvRef.current?.setAudioTrack(newTrackId);
             resetHideTimer();
         });
     }, [audioTracks, selectedAudioTrack, resetHideTimer]);
 
     const openSubtitleSelector = useCallback(() => {
-        if (selectGuardRef.current) return;
         const options = ['Off', ...textTracks.map((track) => track.name || `Track ${track.id}`)];
-        const selectedIndex = selectedTextTrack === -1
-            ? 0
-            : Math.max(0, textTracks.findIndex((track) => track.id === selectedTextTrack) + 1);
+        const selectedIndex =
+            selectedTextTrack === -1
+                ? 0
+                : Math.max(
+                      0,
+                      textTracks.findIndex((track) => track.id === selectedTextTrack) + 1,
+                  );
 
         showNativeSelect('Subtitle Track', options, selectedIndex, (index) => {
-            userSelectedTextRef.current = true;
-            if (index === 0) {
-                setSelectedTextTrack(-1);
-            } else {
-                const selectedTrack = textTracks[index - 1];
-                if (selectedTrack) {
-                    setSelectedTextTrack(selectedTrack.id);
-                }
-            }
-
+            const newTrackId = index === 0 ? -1 : textTracks[index - 1]?.id ?? -1;
+            setSelectedTextTrack(newTrackId);
+            mpvRef.current?.setSubtitleTrack(newTrackId);
             resetHideTimer();
         });
     }, [textTracks, selectedTextTrack, resetHideTimer]);
 
-    const handleNativeLoad = useCallback((data: OnLoadData) => {
+    // ── mpv event handlers ───────────────────────────────────────
+    const handleMpvLoad = useCallback((event: NativeSyntheticEvent<MpvLoadEvent>) => {
+        const data = event.nativeEvent;
         setError(null);
         setIsLoading(false);
-        const loadedDuration = data.duration || 0;
-        setDuration(loadedDuration);
+        const dur = data.duration || 0;
+        setDuration(dur);
 
-        if (startPositionRef.current > 0 && !hasSeekedToStartRef.current && loadedDuration > 0) {
-            hasSeekedToStartRef.current = true;
-            nativeRef.current?.seek(startPositionRef.current);
-        }
-
-        // react-native-video includes audioTracks in OnLoadData
-        const nativeAudio = (data as any).audioTracks as Array<{ index: number; title: string; language: string; type: string }> | undefined;
-        if (nativeAudio && nativeAudio.length > 0) {
-            const mapped: PlayerTrack[] = nativeAudio.map(t => ({
-                id: t.index,
-                name: t.title || t.language || `Track ${t.index}`,
-                language: t.language,
-            }));
-            setAudioTracks(mapped);
-            if (!audioAutoSelectedRef.current && mapped.length > 0) {
-                setSelectedAudioTrack(mapped[0].id);
-                audioAutoSelectedRef.current = true;
-            }
-        }
-
-        const nativeText = (data as any).textTracks as Array<{ index: number; title: string; language: string; type: string }> | undefined;
-        if (nativeText && nativeText.length > 0) {
-            const mapped: PlayerTrack[] = nativeText.map(t => ({
-                id: t.index,
-                name: t.title || t.language || `Track ${t.index}`,
-                language: t.language,
-            }));
-            setTextTracks(mapped);
-        }
-    }, []);
-
-    const handleNativeAudioTracks = useCallback((data: OnAudioTracksData) => {
-        if (data.audioTracks && data.audioTracks.length > 0) {
-            const mapped: PlayerTrack[] = data.audioTracks.map(t => ({
-                id: t.index,
-                name: t.title || t.language || `Track ${t.index}`,
-                language: t.language,
-            }));
-            setAudioTracks(mapped);
-            if (!audioAutoSelectedRef.current && mapped.length > 0) {
-                setSelectedAudioTrack(mapped[0].id);
-                audioAutoSelectedRef.current = true;
+        if (!tracksLoadedRef.current) {
+            const audio = (data.audioTracks ?? []).filter((t: MpvTrack) => t.id >= 0);
+            const text = (data.textTracks ?? []).filter((t: MpvTrack) => t.id >= 0);
+            if (audio.length > 0 || text.length > 0) {
+                tracksLoadedRef.current = true;
+                setAudioTracks(audio);
+                setTextTracks(text);
             }
         }
     }, []);
 
-    const handleNativeTextTracks = useCallback((data: OnTextTracksData) => {
-        if (data.textTracks && data.textTracks.length > 0) {
-            const mapped: PlayerTrack[] = data.textTracks.map(t => ({
-                id: t.index,
-                name: t.title || t.language || `Track ${t.index}`,
-                language: t.language,
-            }));
-            setTextTracks(mapped);
-        }
-    }, []);
+    const handleMpvProgress = useCallback(
+        (event: NativeSyntheticEvent<MpvProgressEvent>) => {
+            const data = event.nativeEvent;
+            if (isLoading) setIsLoading(false);
+            if (error) setError(null);
 
-    const handleNativeProgress = useCallback((data: OnProgressData) => {
-        if (!seekingRef.current) {
-            setCurrentTime(data.currentTime || 0);
-        }
-    }, []);
-
-    const handleNativeError = useCallback((nativeError: OnVideoErrorData) => {
-        const errorStr = JSON.stringify(nativeError).toLowerCase();
-
-        // Check if this is a non-recoverable HTTP error (403/404)
-        const isHttpForbidden = errorStr.includes('403') || errorStr.includes('io_bad_http_status');
-        const isHttpNotFound = errorStr.includes('404');
-
-        if (isHttpForbidden || isHttpNotFound) {
-            console.error('[PlayerScreen] HTTP error (non-recoverable)', nativeError);
-            setIsLoading(false);
-            setError(
-                isHttpForbidden
-                    ? 'Stream not available (403 Forbidden). The server rejected the connection.'
-                    : 'Stream not found (404). The channel may have been removed.',
-            );
-            return;
-        }
-
-        // If HLS parse error and we haven't tried swapping format yet, try .ts ↔ .m3u8
-        if (backendRef.current === 'native' && !formatRetried.current) {
-            const isFormatError = errorStr.includes('parserexception') ||
-                errorStr.includes('parsing_manifest') ||
-                errorStr.includes('contentismalformed');
-
-            if (isFormatError) {
-                formatRetried.current = true;
-                setCurrentStreamUrl((prev) => {
-                    const newUrl = prev.endsWith('.m3u8')
-                        ? prev.replace(/\.m3u8$/, '.ts')
-                        : prev.endsWith('.ts')
-                            ? prev.replace(/\.ts$/, '.m3u8')
-                            : prev;
-                    return newUrl;
-                });
-                setError(null);
-                setIsLoading(true);
-                return;
+            if (!seekingRef.current) {
+                if (data.duration > 0 && data.duration !== durationRef.current) {
+                    setDuration(data.duration);
+                }
+                setCurrentTime(data.currentTime);
             }
-        }
+        },
+        [isLoading, error],
+    );
 
-        console.error('[PlayerScreen] Playback error', nativeError);
-
-        if (backendRef.current === 'native') {
-            console.log('[PlayerScreen] Native failed, switching to VLC backend');
-            setBackend('vlc');
-            setError(null);
+    const handleMpvBuffer = useCallback((event: NativeSyntheticEvent<MpvBufferEvent>) => {
+        const { isBuffering } = event.nativeEvent;
+        if (isBuffering) {
             setIsLoading(true);
-            return;
-        }
-
-        setIsLoading(false);
-        setError(toErrorMessage(nativeError));
-    }, []);
-
-    const handleVlcLoad = useCallback((data: {
-        duration: number;
-        audioTracks?: PlayerTrack[];
-        textTracks?: PlayerTrack[];
-    }) => {
-        setError(null);
-        setIsLoading(false);
-        const durSeconds = (data.duration || 0) / 1000;
-        setDuration(durSeconds);
-
-        if (startPositionRef.current > 0 && !hasSeekedToStartRef.current && durSeconds > 0) {
-            hasSeekedToStartRef.current = true;
-            const fraction = startPositionRef.current / durSeconds;
-            setVlcSeekValue(fraction);
-            setTimeout(() => setVlcSeekValue(-1), 300);
-        }
-
-        // VLC re-fires onLoad when track state changes (e.g. subtitle switch),
-        // and track IDs can shift between calls. Only populate tracks on first load.
-        if (!vlcTracksLoadedRef.current) {
-            const realAudioTracks = (data.audioTracks ?? []).filter(t => t.id >= 0);
-            const realTextTracks = (data.textTracks ?? []).filter(t => t.id >= 0);
-
-            if (realAudioTracks.length > 0 || realTextTracks.length > 0) {
-                vlcTracksLoadedRef.current = true;
-                setAudioTracks(realAudioTracks);
-                setTextTracks(realTextTracks);
-
-                if (realAudioTracks.length > 0 && !audioAutoSelectedRef.current) {
-                    setSelectedAudioTrack(realAudioTracks[0].id);
-                    audioAutoSelectedRef.current = true;
-                }
-            }
-        }
-    }, []);
-
-    const handleVlcProgress = useCallback((data: {
-        currentTime: number;
-        duration: number;
-    }) => {
-        if (isLoading) {
+            setError(null);
+        } else {
             setIsLoading(false);
         }
-
-        if (!seekingRef.current) {
-            if (typeof data.duration === 'number' && data.duration > 0) {
-                const durSeconds = data.duration / 1000;
-                if (durSeconds !== durationRef.current) {
-                    setDuration(durSeconds);
-                }
-            }
-
-            if (typeof data.currentTime === 'number') {
-                setCurrentTime(data.currentTime / 1000);
-            }
-        }
-    }, [isLoading]);
-
-    const handleVlcError = useCallback((vlcError: unknown) => {
-        console.error('[PlayerScreen] VLC playback error', vlcError);
-        setIsLoading(false);
-
-        let message = 'Unknown playback error';
-        if (vlcError && typeof vlcError === 'object') {
-            const err = vlcError as Record<string, unknown>;
-            if (typeof err.message === 'string' && err.message) {
-                message = err.message;
-            } else if (typeof err.title === 'string' && err.title) {
-                message = [err.title, err.message].filter(Boolean).join(': ');
-            } else if (err.type === 'Error' && err.duration === 0 && err.currentTime === 0) {
-                message = 'Failed to open stream. Check that the URL is reachable and the format is supported.';
-            } else {
-                message = toErrorMessage(vlcError);
-            }
-        }
-
-        setError(message);
     }, []);
 
+    const handleMpvError = useCallback((event: NativeSyntheticEvent<MpvErrorEvent>) => {
+        const { error: errorMsg } = event.nativeEvent;
+        console.error('[PlayerScreen] mpv playback error', errorMsg);
+        setIsLoading(false);
+        setError(errorMsg || 'Unknown playback error');
+    }, []);
+
+    const handleMpvEnd = useCallback(() => {
+        goBackSafe();
+    }, [goBackSafe]);
+
+    const handleMpvTracksChanged = useCallback(
+        (
+            event: NativeSyntheticEvent<{
+                audioTracks: MpvTrack[];
+                textTracks: MpvTrack[];
+            }>,
+        ) => {
+            const data = event.nativeEvent;
+            const audio = (data.audioTracks ?? []).filter((t: MpvTrack) => t.id >= 0);
+            const text = (data.textTracks ?? []).filter((t: MpvTrack) => t.id >= 0);
+            if (audio.length > 0) setAudioTracks(audio);
+            if (text.length > 0) setTextTracks(text);
+        },
+        [],
+    );
+
+    // ── TV remote & back button handling ─────────────────────────
     useEffect(() => {
         const backAction = () => {
             if (overlayVisibleRef.current) {
                 hideOverlayAnim();
                 return true;
             }
-
             goBackSafe();
             return true;
         };
@@ -655,35 +443,13 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
         }
 
         const listener = (event: { eventType?: string }) => {
-            if (!event?.eventType) {
-                return;
-            }
+            if (!event?.eventType) return;
 
             if (!overlayVisibleRef.current) {
                 if (event.eventType === 'back' || event.eventType === 'menu') {
                     goBackSafe();
                     return;
                 }
-
-                if (!isLive) {
-                    if (event.eventType === 'left') {
-                        doSeek(-SEEK_STEP);
-                        return;
-                    }
-                    if (event.eventType === 'right') {
-                        doSeek(SEEK_STEP);
-                        return;
-                    }
-                    if (event.eventType === 'longLeft') {
-                        doSeek(-TIMELINE_SEEK_STEP);
-                        return;
-                    }
-                    if (event.eventType === 'longRight') {
-                        doSeek(TIMELINE_SEEK_STEP);
-                        return;
-                    }
-                }
-
                 showOverlay();
                 return;
             }
@@ -693,7 +459,6 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
                 return;
             }
 
-            // When timeline is focused, intercept left/right for scrubbing
             if (timelineFocusedRef.current) {
                 if (event.eventType === 'left') {
                     doSeek(-SEEK_STEP);
@@ -722,13 +487,11 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
                 resetHideTimer();
                 return;
             }
-
             if (event.eventType === 'fastForward') {
                 doSeek(SEEK_STEP);
                 resetHideTimer();
                 return;
             }
-
             if (event.eventType === 'rewind') {
                 doSeek(-SEEK_STEP);
                 resetHideTimer();
@@ -751,93 +514,52 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
             backHandler.remove();
             subscription?.remove?.();
         };
-    }, [doSeek, doTogglePlayPause, goBackSafe, hideOverlayAnim, isLive, resetHideTimer, showOverlay]);
+    }, [doSeek, doTogglePlayPause, goBackSafe, hideOverlayAnim, resetHideTimer, showOverlay]);
 
     useEffect(() => {
         return () => {
-            if (seekLockoutTimer.current) {
-                clearTimeout(seekLockoutTimer.current);
-            }
-            // Explicitly stop VLC on unmount to prevent "can't get VLCObject instance"
-            try {
-                vlcRef.current?.stopPlayer?.();
-            } catch (_) { /* ignore */ }
+            if (seekLockoutTimer.current) clearTimeout(seekLockoutTimer.current);
+            mpvRef.current?.stop();
         };
     }, []);
 
+    // ── Computed values ──────────────────────────────────────────
     const canSeek = !isLive && duration > 0;
     const progress = canSeek ? (currentTime / duration) * 100 : 0;
-    const selectedAudioLabel = selectedAudioTrack === -1
-        ? 'Disabled'
-        : (audioTracks.find((track) => track.id === selectedAudioTrack)?.name ?? 'Select');
-    const selectedSubtitleLabel = selectedTextTrack === -1
-        ? 'Off'
-        : (textTracks.find((track) => track.id === selectedTextTrack)?.name ?? 'Select');
+    const selectedAudioLabel =
+        selectedAudioTrack === -1
+            ? 'Disabled'
+            : (audioTracks.find((track) => track.id === selectedAudioTrack)?.name ?? 'Select');
+    const selectedSubtitleLabel =
+        selectedTextTrack === -1
+            ? 'Off'
+            : (textTracks.find((track) => track.id === selectedTextTrack)?.name ?? 'Select');
 
-    // For native player text track selection, prefer language-based selection (more reliable for HLS/ExoPlayer)
-    const nativeSelectedTextTrack = useMemo(() => {
-        if (!userSelectedTextRef.current || selectedTextTrack < 0) return undefined;
-        const track = textTracks.find(t => t.id === selectedTextTrack);
-        if (track?.language) {
-            return { type: SelectedTrackType.LANGUAGE, value: track.language };
-        }
-        return { type: SelectedTrackType.INDEX, value: selectedTextTrack };
-    }, [selectedTextTrack, textTracks]);
-
+    // ── Render ───────────────────────────────────────────────────
     return (
         <View style={styles.container}>
             <View style={StyleSheet.absoluteFill} pointerEvents="none">
-                {backend === 'native' ? (
-                    <Video
-                        key={`native-${currentStreamUrl}`}
-                        ref={nativeRef}
-                        source={{ ...nativeSourceRef.current }}
-                        style={styles.player}
-                        resizeMode={ResizeMode.CONTAIN}
-                        controls={false}
-                        paused={paused}
-                        selectedAudioTrack={
-                            userSelectedAudioRef.current && selectedAudioTrack != null && selectedAudioTrack >= 0
-                                ? { type: SelectedTrackType.INDEX, value: selectedAudioTrack }
-                                : undefined
-                        }
-                        selectedTextTrack={nativeSelectedTextTrack}
-                        onLoad={handleNativeLoad}
-                        onAudioTracks={handleNativeAudioTracks}
-                        onTextTracks={handleNativeTextTracks}
-                        onProgress={handleNativeProgress}
-                        onError={handleNativeError}
-                        progressUpdateInterval={500}
-                        onEnd={goBackSafe}
-                    />
-                ) : (
-                    <VLCPlayer
-                        key={`vlc-${currentStreamUrl}`}
-                        ref={vlcRef}
-                        style={styles.player}
-                        source={{ ...vlcSourceRef.current }}
-                        autoplay
-                        paused={paused}
-                        seek={vlcSeekValue}
-                        audioTrack={selectedAudioTrack}
-                        textTrack={selectedTextTrack}
-                        onBuffering={() => {
-                            setIsLoading(true);
-                            setError(null);
-                        }}
-                        onLoad={handleVlcLoad}
-                        onProgress={handleVlcProgress}
-                        onError={handleVlcError}
-                        onEnd={goBackSafe}
-                    />
-                )}
+                <MpvPlayer
+                    ref={mpvRef}
+                    uri={streamUrl}
+                    userAgent={USER_AGENT}
+                    paused={paused}
+                    startPosition={startPosition ?? 0}
+                    style={styles.player}
+                    onMpvLoad={handleMpvLoad}
+                    onMpvProgress={handleMpvProgress}
+                    onMpvBuffer={handleMpvBuffer}
+                    onMpvError={handleMpvError}
+                    onMpvEnd={handleMpvEnd}
+                    onMpvTracksChanged={handleMpvTracksChanged}
+                />
             </View>
 
             {isLoading && !error && (
                 <View style={styles.centerOverlay} pointerEvents="none">
                     <ActivityIndicator color="#ffffff" size="large" />
                     <Text style={styles.loadingText}>Loading stream...</Text>
-                    <Text style={styles.loadingSubtext}>Backend: {backend.toUpperCase()}</Text>
+                    <Text style={styles.loadingSubtext}>Powered by mpv</Text>
                 </View>
             )}
 
@@ -864,6 +586,7 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
                 pointerEvents={overlayVisible ? 'auto' : 'none'}
             >
                 <FocusContainer style={styles.overlayInner}>
+                    {/* Header: back button + title + EPG */}
                     <View style={styles.header}>
                         <FocusablePressable
                             ref={backButtonRef}
@@ -891,7 +614,14 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
                                         </Text>
                                     </View>
                                     <View style={styles.epgProgressBg}>
-                                        <View style={[styles.epgProgressFill, { width: `${Math.round(epgCurrent.progress * 100)}%` }]} />
+                                        <View
+                                            style={[
+                                                styles.epgProgressFill,
+                                                {
+                                                    width: `${Math.round(epgCurrent.progress * 100)}%`,
+                                                },
+                                            ]}
+                                        />
                                     </View>
                                     {epgNext && (
                                         <Text style={styles.epgNextText} numberOfLines={1}>
@@ -903,6 +633,7 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
                         </View>
                     </View>
 
+                    {/* Controls bar */}
                     <FocusContainer style={styles.controlsBar}>
                         {canSeek && (
                             <FocusablePressable
@@ -922,16 +653,22 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
                                 {({ isFocused }) => (
                                     <>
                                         <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
-                                        <View style={[
-                                            styles.progressTrack,
-                                            isFocused && styles.progressTrackFocused,
-                                        ]}>
-                                            <View style={[styles.progressFill, { width: `${progress}%` }]} />
+                                        <View
+                                            style={[
+                                                styles.progressTrack,
+                                                isFocused && styles.progressTrackFocused,
+                                            ]}
+                                        >
+                                            <View
+                                                style={[styles.progressFill, { width: `${progress}%` }]}
+                                            />
                                             {isFocused && (
-                                                <View style={[
-                                                    styles.progressThumb,
-                                                    { left: `${progress}%` },
-                                                ]} />
+                                                <View
+                                                    style={[
+                                                        styles.progressThumb,
+                                                        { left: `${progress}%` },
+                                                    ]}
+                                                />
                                             )}
                                         </View>
                                         <Text style={styles.timeText}>{formatTime(duration)}</Text>
@@ -967,7 +704,11 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
                                         isFocused && styles.controlButtonFocused,
                                     ]}
                                 >
-                                    <Icon name="SkipBack" size={scaledPixels(22)} color={colors.text} />
+                                    <Icon
+                                        name="SkipBack"
+                                        size={scaledPixels(22)}
+                                        color={colors.text}
+                                    />
                                 </FocusablePressable>
                             )}
 
@@ -981,7 +722,11 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
                                         isFocused && styles.controlButtonFocused,
                                     ]}
                                 >
-                                    <Icon name="SkipForward" size={scaledPixels(22)} color={colors.text} />
+                                    <Icon
+                                        name="SkipForward"
+                                        size={scaledPixels(22)}
+                                        color={colors.text}
+                                    />
                                 </FocusablePressable>
                             )}
 
@@ -996,7 +741,11 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
                                     isFocused && styles.controlButtonFocused,
                                 ]}
                             >
-                                <Icon name="Languages" size={scaledPixels(16)} color={colors.text} />
+                                <Icon
+                                    name="Languages"
+                                    size={scaledPixels(16)}
+                                    color={colors.text}
+                                />
                                 <Text style={styles.trackButtonText} numberOfLines={1}>
                                     {selectedAudioLabel}
                                 </Text>
@@ -1011,7 +760,11 @@ export const PlayerScreen = ({ route, navigation }: RootStackScreenProps<'Player
                                     isFocused && styles.controlButtonFocused,
                                 ]}
                             >
-                                <Icon name="Captions" size={scaledPixels(16)} color={colors.text} />
+                                <Icon
+                                    name="Captions"
+                                    size={scaledPixels(16)}
+                                    color={colors.text}
+                                />
                                 <Text style={styles.trackButtonText} numberOfLines={1}>
                                     {selectedSubtitleLabel}
                                 </Text>
@@ -1067,7 +820,7 @@ const styles = StyleSheet.create({
     },
     overlayInner: {
         flex: 1,
-        justifyContent: 'flex-end' as const,
+        justifyContent: 'flex-end',
     },
     header: {
         flexDirection: 'row',
@@ -1097,7 +850,6 @@ const styles = StyleSheet.create({
         textShadowOffset: { width: 1, height: 1 },
         textShadowRadius: 5,
     },
-    // EPG info in player overlay
     epgInfoRow: {
         marginTop: scaledPixels(8),
         gap: scaledPixels(4),

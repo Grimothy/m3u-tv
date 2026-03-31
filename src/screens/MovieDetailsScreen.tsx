@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, Image, ImageBackground, ScrollView, Platform } from 'react-native';
+import { View, Text, StyleSheet, Image, ImageBackground, ScrollView, Platform, StatusBar } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useXtream } from '../context/XtreamContext';
 import { useViewer } from '../context/ViewerContext';
@@ -97,15 +97,13 @@ export const MovieDetailsScreen = ({ route, navigation }: RootStackScreenProps<'
       />
       <ImageBackground source={{ uri: backdrop }} style={styles.backdrop}>
         <LinearGradient colors={['rgba(0,0,0,0.2)', 'rgba(0,0,0,0.8)', colors.background]} style={styles.gradient}>
-          {Platform.OS === 'web' && (
-            <FocusablePressable
-              onSelect={() => navigation.goBack()}
-              style={({ isFocused: f }) => [styles.backButton, f && styles.backButtonFocused]}
-            >
-              <Icon name="ArrowLeft" size={scaledPixels(22)} color={colors.text} />
-            </FocusablePressable>
-          )}
-          <ScrollView contentContainerStyle={[styles.scrollContent, { paddingLeft: scaledPixels(60) }]}>
+          <FocusablePressable
+            onSelect={() => navigation.goBack()}
+            style={({ isFocused: f }) => [styles.backButton, f && styles.backButtonFocused]}
+          >
+            <Icon name="ArrowLeft" size={scaledPixels(22)} color={colors.text} />
+          </FocusablePressable>
+          <ScrollView contentContainerStyle={styles.scrollContent}>
             <View style={styles.header}>
               <Image source={{ uri: item.stream_icon }} style={styles.poster} resizeMode="cover" />
               <View style={styles.mainInfo}>
@@ -170,17 +168,16 @@ const styles = StyleSheet.create({
   },
   gradient: {
     flex: 1,
-    paddingHorizontal: scaledPixels(80),
-    paddingTop: scaledPixels(60),
+    paddingHorizontal: Platform.isTV ? scaledPixels(80) : scaledPixels(20),
+    paddingTop: Platform.isTV ? scaledPixels(60) : (StatusBar.currentHeight ?? 0) + scaledPixels(10),
   },
   backButton: {
-    position: 'absolute',
-    top: scaledPixels(20),
-    left: scaledPixels(20),
     padding: scaledPixels(10),
     borderRadius: scaledPixels(50),
     backgroundColor: 'rgba(0,0,0,0.5)',
     zIndex: 10,
+    alignSelf: 'flex-start',
+    marginBottom: scaledPixels(10),
   },
   backButtonFocused: {
     backgroundColor: colors.primary,
@@ -189,20 +186,23 @@ const styles = StyleSheet.create({
     paddingBottom: scaledPixels(100),
   },
   header: {
-    flexDirection: 'row',
+    flexDirection: Platform.isTV ? 'row' : 'column',
+    alignItems: Platform.isTV ? 'flex-start' : 'center',
     marginBottom: scaledPixels(40),
   },
   poster: {
-    width: scaledPixels(300),
-    height: scaledPixels(450),
+    width: Platform.isTV ? scaledPixels(300) : scaledPixels(200),
+    height: Platform.isTV ? scaledPixels(450) : scaledPixels(300),
     borderRadius: scaledPixels(12),
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.1)',
   },
   mainInfo: {
-    flex: 1,
-    marginLeft: scaledPixels(40),
+    flex: Platform.isTV ? 1 : undefined,
+    marginLeft: Platform.isTV ? scaledPixels(40) : 0,
+    marginTop: Platform.isTV ? 0 : scaledPixels(20),
     justifyContent: 'center',
+    alignItems: Platform.isTV ? 'flex-start' : 'center',
   },
   title: {
     fontSize: scaledPixels(48),

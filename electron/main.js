@@ -2,6 +2,7 @@ const { app, BrowserWindow, globalShortcut, protocol, net, session, ipcMain, she
 const path = require('path');
 const url = require('url');
 const { spawn } = require('child_process');
+const { MpvController } = require('./mpvController');
 
 const DIST_DIR = path.join(__dirname, '..', 'dist');
 
@@ -27,7 +28,7 @@ function createWindow() {
 
   const isDev = process.env.ELECTRON_DEV === '1';
   if (isDev) {
-    mainWindow.loadURL('http://localhost:8081');
+    mainWindow.loadURL('http://0.0.0.0:8081');
   } else {
     mainWindow.loadURL('app://bundle/index.html');
   }
@@ -134,6 +135,58 @@ app.whenReady().then(() => {
       return { success: true, player: 'system' };
     } catch (err) {
       return { success: false, error: 'No compatible player found. Install mpv or VLC.' };
+    }
+  });
+
+  // ── Embedded mpv player (renders inside the Electron window) ──────
+  let mpvController = null;
+
+  ipcMain.handle('mpv:start', async (_event, streamUrl, options) => {
+    // Validate URL to prevent command injection
+    try {
+      const parsed = new URL(streamUrl);
+      if (!['http:', 'https:', 'rtmp:', 'rtsp:'].includes(parsed.protocol)) {
+        return { success: false, error: 'Invalid URL protocol' };
+      }
+    } catch {
+      return { success: false, error: 'Invalid URL' };
+    }
+
+    // Stop any existing embedded player
+    if (mpvController) {
+      await mpvController.stop();
+      mpvController = null;
+    }
+
+    mpvController = new MpvController(mainWindow);
+    try {
+      const result = await mpvController.start(streamUrl, options || {});
+      console.log('[mpv:start] Embedded mpv started successfully');
+      return { success: true, ...result };
+    } catch (err) {
+      console.error('[mpv:start] Failed to start embedded mpv:', err.message);
+      mpvController = null;
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('mpv:togglePause', () => mpvController?.togglePause());
+  ipcMain.handle('mpv:seek', (_event, seconds) => mpvController?.seek(seconds));
+  ipcMain.handle('mpv:seekTo', (_event, seconds) => mpvController?.seekTo(seconds));
+  ipcMain.handle('mpv:setAudioTrack', (_event, id) => mpvController?.setAudioTrack(id));
+  ipcMain.handle('mpv:setSubtitleTrack', (_event, id) => mpvController?.setSubtitleTrack(id));
+
+  ipcMain.handle('mpv:stop', async () => {
+    const controller = mpvController;
+    mpvController = null;
+    await controller?.stop();
+  });
+
+  // Clean up embedded mpv when the window closes
+  mainWindow.on('closed', () => {
+    if (mpvController) {
+      mpvController.stop();
+      mpvController = null;
     }
   });
 

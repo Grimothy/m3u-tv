@@ -34,6 +34,11 @@ release.keystore
 signing.properties
 src/config/devDefaults.ts
 
+# Environment
+.env
+.env.local
+
 # Build directories
 ios
 android
+release

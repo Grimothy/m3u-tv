@@ -2,27 +2,27 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, master]
+    branches: [main, master, dev]
   push:
-    branches: [main, master]
+    branches: [main, master, dev]
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # ───────────────────────────────────────────────
+  # Lint, Typecheck & Audit
+  # ───────────────────────────────────────────────
   node-ci:
-    name: Lint, Typecheck & Audit
+    name: Lint & Typecheck
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Enable Corepack
         run: corepack enable
@@ -33,18 +33,371 @@ jobs:
           path: |
             .yarn/cache
             .yarn/install-state.gz
-          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-
+          key: ${{ runner.os }}-yarn-${{ hashFiles('yarn.lock') }}
+          restore-keys: ${{ runner.os }}-yarn-
 
-      - name: Install dependencies (Yarn)
-        run: yarn install --immutable || yarn install --frozen-lockfile || yarn install
+      - name: Install dependencies
+        run: corepack yarn install --immutable || corepack yarn install
 
-      - name: Run ESLint
-        run: yarn run lint --max-warnings=0
+      - name: ESLint
+        run: corepack yarn lint:fix && git diff --exit-code
 
       - name: Typecheck
-        run: npm run typecheck
+        run: corepack yarn typecheck
 
-      - name: Run npm audit
-        run: yarn npm audit --severity critical
+  # ───────────────────────────────────────────────
+  # Android TV build
+  # ───────────────────────────────────────────────
+  android-tv:
+    name: Android TV Build
+    runs-on: ubuntu-latest
+    needs: node-ci
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Cache Yarn
+        uses: actions/cache@v5
+        with:
+          path: |
+            .yarn/cache
+            .yarn/install-state.gz
+          key: ${{ runner.os }}-yarn-${{ hashFiles('yarn.lock') }}
+          restore-keys: ${{ runner.os }}-yarn-
+
+      - name: Cache Gradle
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: Install dependencies
+        run: corepack yarn install --immutable || corepack yarn install
+
+      - name: Expo prebuild (Android TV)
+        run: EXPO_TV=1 npx expo prebuild --clean --platform android --no-install
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-tv-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+
+  # ───────────────────────────────────────────────
+  # Android Phone build
+  # ───────────────────────────────────────────────
+  android-phone:
+    name: Android Phone Build
+    runs-on: ubuntu-latest
+    needs: node-ci
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Cache Yarn
+        uses: actions/cache@v5
+        with:
+          path: |
+            .yarn/cache
+            .yarn/install-state.gz
+          key: ${{ runner.os }}-yarn-${{ hashFiles('yarn.lock') }}
+          restore-keys: ${{ runner.os }}-yarn-
+
+      - name: Cache Gradle
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: Install dependencies
+        run: corepack yarn install --immutable || corepack yarn install
+
+      - name: Expo prebuild (Android Phone)
+        run: npx expo prebuild --clean --platform android --no-install
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-phone-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+
+  # ───────────────────────────────────────────────
+  # tvOS build (Apple TV)
+  # ───────────────────────────────────────────────
+  tvos:
+    name: tvOS Build
+    runs-on: macos-15
+    needs: node-ci
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Cache Yarn
+        uses: actions/cache@v5
+        with:
+          path: |
+            .yarn/cache
+            .yarn/install-state.gz
+          key: ${{ runner.os }}-yarn-${{ hashFiles('yarn.lock') }}
+          restore-keys: ${{ runner.os }}-yarn-
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v5
+        with:
+          path: ios/Pods
+          key: ${{ runner.os }}-pods-tvos-${{ hashFiles('**/Podfile.lock') }}
+          restore-keys: ${{ runner.os }}-pods-tvos-
+
+      - name: Install dependencies
+        run: corepack yarn install --immutable || corepack yarn install
+
+      - name: Expo prebuild (tvOS)
+        run: EXPO_TV=1 npx expo prebuild --clean --platform ios --no-install
+
+      - name: Install CocoaPods
+        working-directory: ios
+        run: pod install
+
+      - name: Build tvOS (simulator)
+        working-directory: ios
+        run: |
+          xcodebuild build \
+            -workspace M3UTV.xcworkspace \
+            -scheme M3UTV \
+            -configuration Debug \
+            -destination 'platform=tvOS Simulator,name=Apple TV' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            | tail -30
+
+  # ───────────────────────────────────────────────
+  # iOS build (iPhone/iPad)
+  # ───────────────────────────────────────────────
+  ios:
+    name: iOS Build
+    runs-on: macos-15
+    needs: node-ci
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Cache Yarn
+        uses: actions/cache@v5
+        with:
+          path: |
+            .yarn/cache
+            .yarn/install-state.gz
+          key: ${{ runner.os }}-yarn-${{ hashFiles('yarn.lock') }}
+          restore-keys: ${{ runner.os }}-yarn-
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v5
+        with:
+          path: ios/Pods
+          key: ${{ runner.os }}-pods-ios-${{ hashFiles('**/Podfile.lock') }}
+          restore-keys: ${{ runner.os }}-pods-ios-
+
+      - name: Install dependencies
+        run: corepack yarn install --immutable || corepack yarn install
+
+      - name: Expo prebuild (iOS)
+        run: npx expo prebuild --clean --platform ios --no-install
+
+      - name: Install CocoaPods
+        working-directory: ios
+        run: pod install
+
+      - name: Build iOS (simulator)
+        working-directory: ios
+        run: |
+          xcodebuild build \
+            -workspace M3UTV.xcworkspace \
+            -scheme M3UTV \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            | tail -30
+
+  # ───────────────────────────────────────────────
+  # Electron Desktop (Linux)
+  # ───────────────────────────────────────────────
+  electron-linux:
+    name: Electron (Linux)
+    runs-on: ubuntu-latest
+    needs: node-ci
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Cache Yarn
+        uses: actions/cache@v5
+        with:
+          path: |
+            .yarn/cache
+            .yarn/install-state.gz
+          key: ${{ runner.os }}-yarn-${{ hashFiles('yarn.lock') }}
+          restore-keys: ${{ runner.os }}-yarn-
+
+      - name: Install dependencies
+        run: corepack yarn install --immutable || corepack yarn install
+
+      - name: Export web bundle
+        run: npx expo export --platform web
+
+      - name: Build Electron (Linux)
+        run: npx electron-builder --linux --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: electron-linux
+          path: release/*.AppImage
+          retention-days: 7
+
+  # ───────────────────────────────────────────────
+  # Electron Desktop (macOS)
+  # ───────────────────────────────────────────────
+  electron-macos:
+    name: Electron (macOS)
+    runs-on: macos-15
+    needs: node-ci
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Cache Yarn
+        uses: actions/cache@v5
+        with:
+          path: |
+            .yarn/cache
+            .yarn/install-state.gz
+          key: ${{ runner.os }}-yarn-${{ hashFiles('yarn.lock') }}
+          restore-keys: ${{ runner.os }}-yarn-
+
+      - name: Install dependencies
+        run: corepack yarn install --immutable || corepack yarn install
+
+      - name: Export web bundle
+        run: npx expo export --platform web
+
+      - name: Build Electron (macOS)
+        run: npx electron-builder --mac --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: electron-macos
+          path: release/*.dmg
+          retention-days: 7
+
+  # ───────────────────────────────────────────────
+  # Electron Desktop (Windows)
+  # ───────────────────────────────────────────────
+  electron-windows:
+    name: Electron (Windows)
+    runs-on: windows-latest
+    needs: node-ci
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Cache Yarn
+        uses: actions/cache@v5
+        with:
+          path: |
+            .yarn/cache
+            .yarn/install-state.gz
+          key: ${{ runner.os }}-yarn-${{ hashFiles('yarn.lock') }}
+          restore-keys: ${{ runner.os }}-yarn-
+
+      - name: Install dependencies
+        run: corepack yarn install --immutable || corepack yarn install
+
+      - name: Export web bundle
+        run: npx expo export --platform web
+
+      - name: Build Electron (Windows)
+        run: npx electron-builder --win --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: electron-windows
+          path: release/*.exe
+          retention-days: 7

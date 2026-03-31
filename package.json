@@ -1,6 +1,11 @@
 {
   "name": "m3u-tv",
   "version": "0.0.1",
+  "description": "Multi-platform IPTV player for TV, mobile, and desktop",
+  "author": {
+    "name": "sparkison",
+    "email": "sparkison@users.noreply.github.com"
+  },
   "main": "node_modules/expo/AppEntry.js",
   "private": true,
   "packageManager": "yarn@4.13.0",
@@ -44,13 +49,12 @@
     "react-dom": "19.1.0",
     "react-native": "npm:react-native-tvos@0.81-stable",
     "react-native-gesture-handler": "~2.28.0",
+    "react-native-mpv": "link:./modules/react-native-mpv",
     "react-native-pixel-perfect": "^1.0.2",
     "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-svg": "~15.12.1",
-    "react-native-video": "^6.19.0",
-    "react-native-vlc-media-player": "1.0.98",
     "react-native-web": "^0.21.2",
     "react-native-worklets": "0.5.1"
   },
@@ -104,6 +108,7 @@
       ]
     },
     "mac": {
+      "identity": null,
       "target": [
         "dmg"
       ]

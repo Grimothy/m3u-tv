@@ -1,0 +1,13 @@
+{
+  "name": "react-native-mpv",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.tsx",
+  "types": "src/index.tsx",
+  "react-native": "src/index.tsx",
+  "source": "src/index.tsx",
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*"
+  }
+}
