@@ -1,4 +1,5 @@
 import Foundation
+import React
 
 @objc(MpvPlayerViewManager)
 class MpvViewManager: RCTViewManager {
