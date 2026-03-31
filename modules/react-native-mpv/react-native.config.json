@@ -1,9 +1,14 @@
 {
-  "platforms": ["android", "ios"],
-  "android": {
-    "javaPackageName": "dev.sparkison.mpv"
-  },
-  "ios": {
-    "podspecPath": "./react-native-mpv.podspec"
+  "dependency": {
+    "platforms": {
+      "android": {
+        "sourceDir": "./android",
+        "packageImportPath": "import dev.sparkison.mpv.MpvPackage;",
+        "packageInstance": "new MpvPackage()"
+      },
+      "ios": {
+        "podspecPath": "./react-native-mpv.podspec"
+      }
+    }
   }
 }

@@ -1,8 +1,7 @@
 import Foundation
-import React
 
 @objc(MpvPlayerViewManager)
-class MpvPlayerViewManager: RCTViewManager {
+class MpvViewManager: RCTViewManager {
 
     override func view() -> UIView! {
         return MpvPlayerView()
@@ -10,6 +9,13 @@ class MpvPlayerViewManager: RCTViewManager {
 
     override static func requiresMainQueueSetup() -> Bool {
         return true
+    }
+
+    override func customBubblingEventTypes() -> [String] {
+        return [
+            "onMpvLoad", "onMpvProgress", "onMpvBuffer",
+            "onMpvError", "onMpvEnd", "onMpvTracksChanged"
+        ]
     }
 
     // Commands dispatched from JS

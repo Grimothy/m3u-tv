@@ -1,4 +1,5 @@
 #import <React/RCTViewManager.h>
+#import <React/RCTBridgeModule.h>
 
 @interface RCT_EXTERN_MODULE(MpvPlayerViewManager, RCTViewManager)
 
@@ -16,8 +17,8 @@ RCT_EXPORT_VIEW_PROPERTY(onMpvTracksChanged, RCTDirectEventBlock)
 
 RCT_EXTERN_METHOD(seekTo:(nonnull NSNumber *)node seconds:(double)seconds)
 RCT_EXTERN_METHOD(seekRelative:(nonnull NSNumber *)node seconds:(double)seconds)
-RCT_EXTERN_METHOD(setAudioTrack:(nonnull NSNumber *)node trackId:(int)trackId)
-RCT_EXTERN_METHOD(setSubtitleTrack:(nonnull NSNumber *)node trackId:(int)trackId)
+RCT_EXTERN_METHOD(setAudioTrack:(nonnull NSNumber *)node trackId:(NSInteger)trackId)
+RCT_EXTERN_METHOD(setSubtitleTrack:(nonnull NSNumber *)node trackId:(NSInteger)trackId)
 RCT_EXTERN_METHOD(stop:(nonnull NSNumber *)node)
 
 @end
