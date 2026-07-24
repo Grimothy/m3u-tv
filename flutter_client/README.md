@@ -108,7 +108,9 @@ Prefer Xcode's Organizer instead? Run the `flutter build ipa` command above firs
 
 ### Apple TV / tvOS (manual App Store submission)
 
-`flutter-tvos` has no `build ipa` equivalent, so the archive/export step is separate from the build:
+This project signs the tvOS target **Manually**, pinned to the `M3U TV (tvOS)` distribution profile (Signing & Capabilities in Xcode) — that's the config that has actually produced working App Store submissions. `flutter-tvos build tvos --release`, however, always forces `CODE_SIGN_STYLE=Automatic` on the `xcodebuild` invocation it runs internally, with no way to opt out — so running it end-to-end **will fail** with `Runner has conflicting provisioning settings`, unrelated to whether your Apple ID is signed into Xcode.
+
+Run it anyway, for one reason only: the Dart AOT compile step (where `--dart-define` values get baked in) completes and writes `tvos/Flutter/App.framework` to disk *before* that incompatible `xcodebuild` call runs, so the framework comes out correct even though the command as a whole reports failure:
 
 ```bash
 flutter-tvos build tvos --release \
@@ -116,7 +118,9 @@ flutter-tvos build tvos --release \
   --dart-define=TRAKT_CLIENT_SECRET=$TRAKT_CLIENT_SECRET
 ```
 
-Then either open `tvos/Runner.xcworkspace` in Xcode and **Product → Archive → Distribute App** (safe now, since the CLI step above already wrote the correct engine artifacts and dart-defines into `tvos/Flutter/Generated.xcconfig`), or stay fully on the CLI:
+Ignore the failure output — a fresh `tvos/Flutter/App.framework` with the Trakt credentials compiled in is what you need, and it's already there. Then open `tvos/Runner.xcworkspace` in Xcode and **Product → Archive → Distribute App**, exactly as before; the project's own "Embed App.framework" build phase picks up the file that's already on disk and doesn't re-run flutter-tvos itself, so the Manual-signing Archive path is untouched by any of this.
+
+If you'd rather not rely on flutter-tvos's `build tvos` reporting a "failure" that isn't one, the fully-CLI archive/export path also works once you're archiving (not just building):
 
 ```bash
 xcodebuild archive \
@@ -133,9 +137,13 @@ xcodebuild -exportArchive \
 
 Upload `build/export/Runner.ipa` the same way as iOS. `tvos/ExportOptions.plist` is checked into the repo alongside the iOS one.
 
-`-allowProvisioningUpdates` requires Xcode to have a currently-authenticated Apple ID for the app's team in **Xcode → Settings → Accounts** — a stale/expired session there surfaces as a confusing `Communication with Apple failed: Your team has no devices...` error instead of an auth error, since Xcode falls back to a degraded provisioning path when it can't reach the account. If you hit that, re-sign into the right account before retrying, rather than registering a device.
+If a plain `xcodebuild archive`/`-allowProvisioningUpdates` run (not `flutter-tvos build`) ever reports `Communication with Apple failed: Your team has no devices...`, that's not really about registering a device — `flutter-tvos` (and a bare `xcodebuild` invocation with no `DEVELOPMENT_TEAM` build setting) resolves the team from whichever certificate your local keychain happens to surface first, which can be a different team than this project's. Pass the right one explicitly and it goes away:
 
-> **Always launch tvOS via `flutter-tvos run`/`build` first — never press Run or Archive in Xcode cold.** `flutter-tvos` swaps the entire `Flutter.xcframework` per build mode/environment (debug/release × device/simulator); a stale one left over from, say, a prior release archive breaks simulator runs with a "no library for this platform" error, and skipping the CLI step is also how the dart-defines above go missing. See the [tvOS setup section in the root README](../README.md#apple-tv-tvos) for one-time install instructions. Likewise, never run `pod install` by hand in `tvos/` — it reads the plugin list from `.flutter-plugins-dependencies`, which is only populated correctly as a side effect of `flutter-tvos build`/`run`; running `pod install` standalone (before that list is populated) silently strips tvOS-only pods like `sqflite_tvos` from `Podfile.lock`. If pods look wrong, re-run `flutter-tvos build tvos`/`run` — don't call `pod install` directly.
+```bash
+export DEVELOPMENT_TEAM=5AMT94T836   # this project's team ID
+```
+
+> **Run `flutter-tvos run -d <simulator-id>` at least once before opening Xcode for simulator debugging.** `flutter-tvos` swaps the entire `Flutter.xcframework` per build mode/environment (debug/release × device/simulator); a stale one left over from a prior release build breaks simulator runs in Xcode with a "no library for this platform" error. `flutter-tvos build tvos --release` (used above to bake in dart-defines) doesn't fix this itself — its own `xcodebuild` step always fails against this project's Manual-signing config, so it never gets to regenerate the simulator slice. If you need to go back to simulator debugging afterward, run `flutter-tvos run -d <simulator-id>` again to restore it. See the [tvOS setup section in the root README](../README.md#apple-tv-tvos) for one-time install instructions. Likewise, never run `pod install` by hand in `tvos/` — it reads the plugin list from `.flutter-plugins-dependencies`, which is only populated correctly as a side effect of `flutter-tvos build`/`run`; running `pod install` standalone (before that list is populated) silently strips tvOS-only pods like `sqflite_tvos` from `Podfile.lock`. If pods look wrong, re-run `flutter-tvos build tvos`/`run` — don't call `pod install` directly.
 
 ### macOS (via GitHub Actions — not the Mac App Store)
 
