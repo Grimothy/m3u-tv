@@ -9,8 +9,17 @@
 #   brew install librsvg imagemagick
 #
 # Run from anywhere — the script resolves its own paths.
+#
+# Pass --tvos-only to regenerate just the tvOS Top Shelf / App Icon assets
+# (Steps 1 and 5), skipping flutter_launcher_icons and flutter_native_splash
+# entirely — those touch Android/iOS/macOS/Web/Windows/Linux icons and splash
+# screens (and flutter_native_splash rewrites styles.xml) even when the SVG
+# source hasn't changed, which is unwanted noise for a tvOS-only asset fix.
 
 set -euo pipefail
+
+TVOS_ONLY=0
+[[ "${1:-}" == "--tvos-only" ]] && TVOS_ONLY=1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FLUTTER_DIR="$(dirname "$SCRIPT_DIR")"   # flutter_client/
@@ -70,6 +79,7 @@ gradient_bg() {
         "$output"
 }
 
+if [[ "$TVOS_ONLY" -eq 0 ]]; then
 # ---------------------------------------------------------------------------
 echo "=== Step 1: Render source PNGs from SVG ==="
 # ---------------------------------------------------------------------------
@@ -112,6 +122,7 @@ echo ""
 echo "=== Step 4: Generate splash screens (Android + iOS) ==="
 # ---------------------------------------------------------------------------
 dart run flutter_native_splash:create
+fi
 
 # ---------------------------------------------------------------------------
 echo ""
@@ -122,16 +133,25 @@ echo "=== Step 5: Generate tvOS layered icons and Top Shelf image ==="
 # for the parallax effect.  Required sizes:
 #   Large icon (focused):  1280×768 px
 #   Small icon (shelf):     400×240 px (1x),  800×480 px (2x)
-#   Top Shelf image:       2320×720 px (Top Shelf Image Wide)
+#   Top Shelf image:       1920×720 px (1x), 3840×1440 px (2x)
+#   Top Shelf image (wide): 2320×720 px (1x), 4640×1440 px (2x)
+#
+# Top Shelf Image Wide is required by App Store validation (ITMS-90471) even
+# though Apple's own docs call it optional — a submission missing it, or
+# missing either variant's 2x, gets rejected as an invalid binary.
 
 LOGO_640=$(render_logo 640)
+LOGO_480=$(render_logo 480)
+LOGO_960=$(render_logo 960)
 LOGO_580=$(render_logo 580)
+LOGO_1160=$(render_logo 1160)
 LOGO_200=$(render_logo 200)
 LOGO_400=$(render_logo 400)
 
 LARGE="$TVOS_ASSETS/App Icon - Large.imagestack"
 SMALL="$TVOS_ASSETS/App Icon - Small.imagestack"
 SHELF="$TVOS_ASSETS/Top Shelf Image.imageset"
+SHELF_WIDE="$TVOS_ASSETS/Top Shelf Image Wide.imageset"
 
 # Large — Back: dark background only
 magick -size 1280x768 xc:"$TVOS_BG" -depth 8 \
@@ -159,11 +179,90 @@ for layer in Front Middle; do
         -depth 8 "PNG32:$SMALL/${layer}.imagestacklayer/Content.imageset/small_${lower}@2x.png"
 done
 
-# Top Shelf — dark background, logo centred and proportional (2320×720, Wide)
-magick -size 2320x720 xc:"$TVOS_BG" "$LOGO_580" -gravity center -composite \
+# Top Shelf — dark background, logo centred and proportional (1x + 2x)
+mkdir -p "$SHELF" "$SHELF_WIDE"
+magick -size 1920x720 xc:"$TVOS_BG" "$LOGO_480" -gravity center -composite \
     -depth 8 "$SHELF/top_shelf.png"
+magick -size 3840x1440 xc:"$TVOS_BG" "$LOGO_960" -gravity center -composite \
+    -depth 8 "$SHELF/top_shelf@2x.png"
 
-echo "  tvOS layered icons and Top Shelf image written to $TVOS_ASSETS"
+# Top Shelf Wide — dark background, logo centred and proportional (1x + 2x)
+magick -size 2320x720 xc:"$TVOS_BG" "$LOGO_580" -gravity center -composite \
+    -depth 8 "$SHELF_WIDE/top_shelf_wide.png"
+magick -size 4640x1440 xc:"$TVOS_BG" "$LOGO_1160" -gravity center -composite \
+    -depth 8 "$SHELF_WIDE/top_shelf_wide@2x.png"
+
+cat > "$SHELF/Contents.json" <<'EOF'
+{
+  "images" : [
+    {
+      "idiom" : "tv",
+      "filename" : "top_shelf.png",
+      "scale" : "1x"
+    },
+    {
+      "idiom" : "tv",
+      "filename" : "top_shelf@2x.png",
+      "scale" : "2x"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
+EOF
+
+cat > "$SHELF_WIDE/Contents.json" <<'EOF'
+{
+  "images" : [
+    {
+      "idiom" : "tv",
+      "filename" : "top_shelf_wide.png",
+      "scale" : "1x"
+    },
+    {
+      "idiom" : "tv",
+      "filename" : "top_shelf_wide@2x.png",
+      "scale" : "2x"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
+EOF
+
+python3 - "$TVOS_ASSETS/Contents.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as f:
+    data = json.load(f)
+
+wide_entry = {
+    "filename": "Top Shelf Image Wide.imageset",
+    "idiom": "tv",
+    "role": "top-shelf-image-wide",
+    "size": "2320x720",
+}
+if not any(a.get("filename") == wide_entry["filename"] for a in data["assets"]):
+    data["assets"].append(wide_entry)
+
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PYEOF
+
+echo "  tvOS layered icons and Top Shelf image (regular + wide, 1x/2x) written to $TVOS_ASSETS"
+
+if [[ "$TVOS_ONLY" -eq 1 ]]; then
+    echo ""
+    echo "=== Done (tvOS-only) ==="
+    exit 0
+fi
 
 # ---------------------------------------------------------------------------
 echo ""
