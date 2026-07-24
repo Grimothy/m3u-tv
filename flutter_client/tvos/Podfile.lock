@@ -2,14 +2,14 @@ PODS:
   - sqflite_tvos (0.0.1)
 
 DEPENDENCIES:
-  - sqflite_tvos (from `/Users/shaunparkison/.pub-cache/hosted/pub.dev/sqflite_tvos-0.0.2/tvos`)
+  - sqflite_tvos (from `/Users/shaunparkison/Sites/m3ue/m3u-tv/flutter_client/packages/sqflite_tvos/tvos`)
 
 EXTERNAL SOURCES:
   sqflite_tvos:
-    :path: "/Users/shaunparkison/.pub-cache/hosted/pub.dev/sqflite_tvos-0.0.2/tvos"
+    :path: "/Users/shaunparkison/Sites/m3ue/m3u-tv/flutter_client/packages/sqflite_tvos/tvos"
 
 SPEC CHECKSUMS:
-  sqflite_tvos: c473ff0295bc0c18f416393eed404091eb1598a5
+  sqflite_tvos: ad70d2fd9909389a6ce3bc252d24390b287db14d
 
 PODFILE CHECKSUM: cd74662feb9fedc377318fa5ea7137fe8fd8fc48
 
