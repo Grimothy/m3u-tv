@@ -511,6 +511,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiostreamsSearchAll => '全部';
 
   @override
+  String get requestsTitle => '请求';
+
+  @override
   String get requestsTabSearch => '搜索';
 
   @override

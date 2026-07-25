@@ -1052,6 +1052,12 @@ abstract class AppLocalizations {
   /// **'All'**
   String get aiostreamsSearchAll;
 
+  /// No description provided for @requestsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Requests'**
+  String get requestsTitle;
+
   /// No description provided for @requestsTabSearch.
   ///
   /// In en, this message translates to:

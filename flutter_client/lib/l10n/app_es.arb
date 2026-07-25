@@ -249,6 +249,7 @@
   "aiostreamsSearchResults": "Resultados de búsqueda",
   "aiostreamsNoResults": "No se encontraron resultados",
   "aiostreamsSearchAll": "Todo",
+  "requestsTitle": "Solicitudes",
   "requestsTabSearch": "Buscar",
   "requestsTabMyRequests": "Mis Solicitudes",
   "requestsSearchHint": "Buscar películas y series…",

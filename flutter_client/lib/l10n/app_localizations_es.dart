@@ -524,6 +524,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get aiostreamsSearchAll => 'Todo';
 
   @override
+  String get requestsTitle => 'Solicitudes';
+
+  @override
   String get requestsTabSearch => 'Buscar';
 
   @override

@@ -249,6 +249,7 @@
   "aiostreamsSearchResults": "搜索结果",
   "aiostreamsNoResults": "未找到结果",
   "aiostreamsSearchAll": "全部",
+  "requestsTitle": "请求",
   "requestsTabSearch": "搜索",
   "requestsTabMyRequests": "我的请求",
   "requestsSearchHint": "搜索电影和剧集…",
