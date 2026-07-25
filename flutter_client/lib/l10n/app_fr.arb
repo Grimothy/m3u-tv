@@ -55,6 +55,8 @@
   },
   "playerStartFromBeginning": "Recommencer depuis le début",
   "playerResume": "Reprendre",
+  "playerSkipPreviousTooltip": "Chaîne précédente",
+  "playerSkipNextTooltip": "Chaîne suivante",
   "searchHint": "Rechercher Télévision en direct, films et séries…",
   "searchSectionLiveTv": "Télévision en direct",
   "searchSectionMovies": "Films",

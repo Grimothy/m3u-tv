@@ -55,6 +55,8 @@
   },
   "playerStartFromBeginning": "Von vorne abspielen",
   "playerResume": "Fortsetzen",
+  "playerSkipPreviousTooltip": "Vorheriger Sender",
+  "playerSkipNextTooltip": "Nächster Sender",
   "searchHint": "Live-TV, Filme und Serien durchsuchen …",
   "searchSectionLiveTv": "Live-TV",
   "searchSectionMovies": "Filme",

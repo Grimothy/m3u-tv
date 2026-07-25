@@ -55,6 +55,8 @@
   },
   "playerStartFromBeginning": "Start from Beginning",
   "playerResume": "Resume",
+  "playerSkipPreviousTooltip": "Previous channel",
+  "playerSkipNextTooltip": "Next channel",
   "searchHint": "Search live TV, movies, and series...",
   "searchSectionLiveTv": "Live TV",
   "searchSectionMovies": "Movies",
