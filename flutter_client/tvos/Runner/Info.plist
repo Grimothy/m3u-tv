@@ -37,6 +37,13 @@
     <key>TVTopShelfPrimaryImageWide</key>
     <string>Top Shelf Image</string>
   </dict>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>M3U TV needs local network access to connect to your streaming server.</string>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <true/>
+  </dict>
   <key>UIMainStoryboardFile</key>
   <string>Main</string>
   <key>UIRequiredDeviceCapabilities</key>
