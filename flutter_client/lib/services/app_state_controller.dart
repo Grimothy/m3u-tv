@@ -1462,6 +1462,25 @@ class AppStateController extends ChangeNotifier {
     final remote = await xtreamService.getRecentlyWatched(viewerId);
     final local = await resumeService.all(viewerId);
 
+    // First time this viewer has anything server-side (e.g. a fresh per-auth
+    // viewer created after upgrading from before per-auth viewer isolation
+    // was enforced, so old progress is sitting under the admin viewer
+    // instead): treat the device's local cache as the source of truth and
+    // seed the server from it via the existing single-item write path. Safe
+    // because it only ever fires while the server has nothing at all for
+    // this viewer, and is naturally self-limiting — once seeded, remote is
+    // no longer empty, so this never runs again for this viewer.
+    if (remote.isEmpty && local.isNotEmpty) {
+      for (final p in local) {
+        try {
+          await xtreamService.updateProgress(p);
+        } on Object catch (error) {
+          debugPrint('Progress: seed push failed for viewer $viewerId: $error');
+        }
+      }
+      return local;
+    }
+
     // Regular items: keyed by (contentType, streamId).
     // AIO items: keyed separately by aioItemId — all AIO items share streamId=0
     // so a single map would collapse them.
