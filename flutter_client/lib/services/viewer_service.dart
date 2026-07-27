@@ -8,16 +8,28 @@ class ViewerService {
     : _memory = memory ?? <String, Object?>{},
       _store = store;
 
-  static const _activeViewerKey = 'm3ue_tv_active_viewer';
+  static const _activeViewerKeyBase = 'm3ue_tv_active_viewer';
 
   final Map<String, Object?> _memory;
   final PersistentJsonStore? _store;
 
-  Future<Viewer?> resolveActiveViewer(List<Viewer> viewers) async {
+  /// Scopes the saved active-viewer ulid to a specific server+login so that
+  /// switching logins on the same device can never reuse a viewer ulid saved
+  /// under a different login (which would misattribute watch progress /
+  /// favorites to the wrong person). [loginKey] should uniquely identify
+  /// "this server + this username", e.g. `'$server|$username'`.
+  static String _keyFor(String? loginKey) =>
+      loginKey == null || loginKey.isEmpty
+      ? _activeViewerKeyBase
+      : '${_activeViewerKeyBase}_$loginKey';
+
+  Future<Viewer?> resolveActiveViewer(
+    List<Viewer> viewers, {
+    String? loginKey,
+  }) async {
     if (viewers.isEmpty) return null;
-    final savedRaw = _store == null
-        ? _memory[_activeViewerKey]
-        : await _store.read(_activeViewerKey);
+    final key = _keyFor(loginKey);
+    final savedRaw = _store == null ? _memory[key] : await _store.read(key);
     final savedUlid = savedRaw as String?;
     final saved = savedUlid == null
         ? null
@@ -26,13 +38,14 @@ class ViewerService {
         saved ??
         viewers.where((viewer) => viewer.isAdmin).firstOrNull ??
         viewers.first;
-    await setActiveViewer(active);
+    await setActiveViewer(active, loginKey: loginKey);
     return active;
   }
 
-  Future<void> setActiveViewer(Viewer viewer) async {
-    _memory[_activeViewerKey] = viewer.ulid;
-    await _store?.write(_activeViewerKey, viewer.ulid);
+  Future<void> setActiveViewer(Viewer viewer, {String? loginKey}) async {
+    final key = _keyFor(loginKey);
+    _memory[key] = viewer.ulid;
+    await _store?.write(key, viewer.ulid);
   }
 }
 

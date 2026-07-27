@@ -1111,7 +1111,7 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> switchViewer(Viewer viewer) async {
-    await viewerService.setActiveViewer(viewer);
+    await viewerService.setActiveViewer(viewer, loginKey: _currentLoginKey());
     _activeViewer = viewer;
     _progressList = await _loadRecentlyWatched(viewer.ulid);
     notifyListeners();
@@ -1314,7 +1314,10 @@ class AppStateController extends ChangeNotifier {
       final dvrRecordings = results[6] as List<DvrRecording>;
       final mediaRequests = results[8] as List<MediaRequestSummary>;
 
-      final activeViewer = await viewerService.resolveActiveViewer(viewers);
+      final activeViewer = await viewerService.resolveActiveViewer(
+        viewers,
+        loginKey: _currentLoginKey(),
+      );
       final fetched = activeViewer == null
           ? const <Progress>[]
           : await _loadRecentlyWatchedDeduped(activeViewer.ulid);
@@ -1414,7 +1417,10 @@ class AppStateController extends ChangeNotifier {
     _recordingChannelIds = const <int>{};
     _mediaRequests = const <MediaRequestSummary>[];
     _viewers = viewers;
-    _activeViewer = await viewerService.resolveActiveViewer(viewers);
+    _activeViewer = await viewerService.resolveActiveViewer(
+      viewers,
+      loginKey: _currentLoginKey(),
+    );
     final activeViewer = _activeViewer;
     _progressList = activeViewer == null
         ? const <Progress>[]
@@ -1630,6 +1636,15 @@ class AppStateController extends ChangeNotifier {
       first.server == second.server &&
       first.username == second.username &&
       first.password == second.password;
+
+  // Scopes ViewerService's saved active-viewer ulid to this server+login so
+  // switching logins on the same device can never reuse a viewer ulid saved
+  // under a different login.
+  String? _currentLoginKey() {
+    final credentials = authNotifier.credentials;
+    if (credentials == null) return null;
+    return '${credentials.server}|${credentials.username}';
+  }
 
   // Bounded like TvNotificationStore's own cap, so a long-running session
   // can't grow this set without limit.
