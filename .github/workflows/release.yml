@@ -903,21 +903,13 @@ jobs:
           ASSETS=(
             "artifacts/android-apks/m3u-tv-v${V}-android.apk"
             "artifacts/android-apks/m3u-tv-v${V}-android.apk.sha256"
+            "artifacts/linux-zips/m3u-tv-v${V}-linux.zip"
+            "artifacts/linux-zips/m3u-tv-v${V}-linux.zip.sha256"
+            "artifacts/windows-zips/m3u-tv-v${V}-windows.zip"
+            "artifacts/windows-zips/m3u-tv-v${V}-windows.zip.sha256"
           )
 
           if gh release view "$TAG" > /dev/null 2>&1; then
-            EXISTING_ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[].name')
-            for blocked_asset in \
-              "m3u-tv-v${V}-linux.zip" \
-              "m3u-tv-v${V}-linux.zip.sha256" \
-              "m3u-tv-v${V}-linux.tar.gz" \
-              "m3u-tv-v${V}-linux.tar.gz.sha256" \
-              "m3u-tv-v${V}-windows.zip" \
-              "m3u-tv-v${V}-windows.zip.sha256"; do
-              if grep -Fxq "$blocked_asset" <<< "$EXISTING_ASSETS"; then
-                gh release delete-asset "$TAG" "$blocked_asset" --yes
-              fi
-            done
             gh release edit "$TAG" --title "$TAG" --notes-file release-notes.md
             gh release upload "$TAG" --clobber "${ASSETS[@]}"
           else
@@ -937,6 +929,8 @@ jobs:
           echo "| Platform | Artifact |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Android + Android TV | \`m3u-tv-${V}-android.apk\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux | \`m3u-tv-${V}-linux.zip\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows | \`m3u-tv-${V}-windows.zip\` |" >> $GITHUB_STEP_SUMMARY
 
   # ── Apple Release ─────────────────────────────────────────────────────────
   release-apple:
