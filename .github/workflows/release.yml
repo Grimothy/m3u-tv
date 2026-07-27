@@ -881,18 +881,24 @@ jobs:
             (cd "$(dirname "$asset")" && sha256sum -c "$(basename "$asset").sha256")
           done
 
+      - name: Generate release notes
+        run: |
+          set -euo pipefail
+          TAG="v${{ needs.validate.outputs.version }}"
+          PREV_TAG="${{ needs.validate.outputs.prev_tag }}"
+          if [ -n "$PREV_TAG" ]; then
+            flutter_client/scripts/generate-release-log.sh "$PREV_TAG" "$TAG" > release-notes.md
+          else
+            flutter_client/scripts/generate-release-log.sh "$TAG" > release-notes.md
+          fi
+          cat release-notes.md
+
       - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           TAG="v${{ needs.validate.outputs.version }}"
-          PREV_TAG="${{ needs.validate.outputs.prev_tag }}"
-          PREV_FLAG=""
-          if [ -n "$PREV_TAG" ]; then
-            PREV_FLAG="--notes-start-tag $PREV_TAG"
-          fi
-
           V="${{ needs.validate.outputs.version }}"
           ASSETS=(
             "artifacts/android-apks/m3u-tv-v${V}-android.apk"
@@ -912,13 +918,12 @@ jobs:
                 gh release delete-asset "$TAG" "$blocked_asset" --yes
               fi
             done
-            gh release edit "$TAG" --title "$TAG"
+            gh release edit "$TAG" --title "$TAG" --notes-file release-notes.md
             gh release upload "$TAG" --clobber "${ASSETS[@]}"
           else
             gh release create "$TAG" \
               --title "$TAG" \
-              --generate-notes \
-              $PREV_FLAG \
+              --notes-file release-notes.md \
               "${ASSETS[@]}"
           fi
 
