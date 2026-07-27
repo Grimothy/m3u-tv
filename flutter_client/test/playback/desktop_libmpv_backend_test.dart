@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/playback/desktop_libmpv_backend.dart';
@@ -7,18 +9,38 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('DesktopLibmpvBackend', () {
-    const channel = MethodChannel('m3u_tv/desktop_libmpv_test');
+    const methodChannel = MethodChannel('m3u_tv/desktop_libmpv');
+    const eventChannel = EventChannel('m3u_tv/desktop_libmpv/events');
 
     tearDown(() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null);
+          .setMockMethodCallHandler(methodChannel, null);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockStreamHandler(eventChannel, null);
     });
 
+    StreamController<Map<String, Object?>> setupMockEvents() {
+      final events = StreamController<Map<String, Object?>>.broadcast();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockStreamHandler(
+            eventChannel,
+            MockStreamHandler.inline(
+              onListen: (arguments, eventSink) {
+                events.stream.listen((event) {
+                  eventSink.success(event);
+                });
+              },
+            ),
+          );
+      return events;
+    }
+
     test(
-      'maps missing libmpv load response to typed BackendUnavailable',
+      'maps missing libmpv response only to the load Future',
       () async {
+        final events = setupMockEvents();
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(channel, (call) async {
+            .setMockMethodCallHandler(methodChannel, (call) async {
               expect(call.method, 'load');
               return <String, Object?>{
                 'ok': false,
@@ -27,7 +49,7 @@ void main() {
                     'mpv_create returned null; library=libmpv.so.2; LC_NUMERIC=C; ensure LC_NUMERIC is C or C.UTF-8 before creating libmpv',
               };
             });
-        final backend = DesktopLibmpvBackend(channel: channel);
+        final backend = DesktopLibmpvBackend();
         final errors = <PlaybackError>[];
         final subscription = backend.onError.listen(errors.add);
 
@@ -39,21 +61,19 @@ void main() {
         );
 
         await pumpEventQueue();
-        expect(errors, hasLength(1));
-        expect(errors.single.code, BackendUnavailableException.unavailableCode);
-        expect(errors.single.message, contains('library=libmpv.so.2'));
-        expect(errors.single.message, contains('LC_NUMERIC=C'));
-        expect(errors.single.recoverable, isTrue);
+        expect(errors, isEmpty);
         expect(backend.textureId, isNull);
 
         await subscription.cancel();
         await backend.dispose();
+        await events.close();
       },
     );
 
     test('probe reports missing libmpv with fallback decision', () async {
+      final events = setupMockEvents();
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, (call) async {
+          .setMockMethodCallHandler(methodChannel, (call) async {
             expect(call.method, 'probe');
             return <String, Object?>{
               'platform': 'linux',
@@ -70,7 +90,7 @@ void main() {
             };
           });
 
-      final backend = DesktopLibmpvBackend(channel: channel);
+      final backend = DesktopLibmpvBackend();
       final probe = await backend.probe();
 
       expect(probe.platform, 'linux');
@@ -81,12 +101,14 @@ void main() {
       expect(probe.passed, isFalse);
 
       await backend.dispose();
+      await events.close();
     });
 
     test('normal texture path never invokes the process-launch seam', () async {
+      final events = setupMockEvents();
       final calls = <String>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, (call) async {
+          .setMockMethodCallHandler(methodChannel, (call) async {
             calls.add(call.method);
             switch (call.method) {
               case 'probe':
@@ -104,6 +126,15 @@ void main() {
                       'libmpv client/render symbols resolved; texture=Flutter pixel buffer',
                 };
               case 'load':
+                scheduleMicrotask(() {
+                  events.add(<String, Object?>{
+                    'schemaVersion': 1,
+                    'handle': 7,
+                    'sequence': 0,
+                    'kind': 'FILE_LOADED',
+                    'videoAspectRatio': 1.78,
+                  });
+                });
                 return <String, Object?>{
                   'ok': true,
                   'handle': 7,
@@ -114,7 +145,7 @@ void main() {
             }
           });
 
-      final backend = DesktopLibmpvBackend(channel: channel);
+      final backend = DesktopLibmpvBackend();
 
       final probe = await backend.probe();
       await backend.load(
@@ -133,11 +164,10 @@ void main() {
       await backend.stop();
 
       expect(probe.passed, isTrue);
-      expect(backend.textureId, 99);
+      expect(backend.textureId, isNull);
       expect(calls, <String>[
         'probe',
         'load',
-        'getVideoAspectRatio',
         'play',
         'pause',
         'seek',
@@ -145,59 +175,17 @@ void main() {
         'setSubtitleTrack',
         'setPlaybackSpeed',
         'stop',
+        'dispose',
       ]);
 
       await backend.dispose();
+      await events.close();
     });
 
-    test(
-      'polls libmpv video dimensions when load response lacks aspect ratio',
-      () async {
-        final states = <PlaybackState>[];
-        final calls = <String>[];
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(channel, (call) async {
-              calls.add(call.method);
-              switch (call.method) {
-                case 'load':
-                  return <String, Object?>{
-                    'ok': true,
-                    'handle': 77,
-                    'textureId': 7700,
-                  };
-                case 'getVideoAspectRatio':
-                  expect(call.arguments, <String, Object?>{'handle': 77});
-                  return <String, Object?>{
-                    'videoWidth': 720,
-                    'videoHeight': 576,
-                  };
-                default:
-                  return null;
-              }
-            });
-
-        final backend = DesktopLibmpvBackend(channel: channel);
-        final subscription = backend.onState.listen(states.add);
-
-        await backend.load(
-          const PlaybackSource(uri: 'https://example.test/4-3.ts'),
-        );
-        await pumpEventQueue();
-
-        expect(
-          calls,
-          containsAllInOrder(<String>['load', 'getVideoAspectRatio']),
-        );
-        expect(states.last.videoAspectRatio, 1.25);
-
-        await subscription.cancel();
-        await backend.dispose();
-      },
-    );
-
     test('windows probe reports bundled DLL diagnostics', () async {
+      final events = setupMockEvents();
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, (call) async {
+          .setMockMethodCallHandler(methodChannel, (call) async {
             expect(call.method, 'probe');
             return <String, Object?>{
               'platform': 'windows',
@@ -214,7 +202,7 @@ void main() {
             };
           });
 
-      final backend = DesktopLibmpvBackend(channel: channel);
+      final backend = DesktopLibmpvBackend();
       final probe = await backend.probe();
 
       expect(probe.platform, 'windows');
@@ -226,14 +214,16 @@ void main() {
       expect(probe.passed, isFalse);
 
       await backend.dispose();
+      await events.close();
     });
 
     test(
       'windows load sends shared contract and maps missing DLL typed error',
       () async {
+        final events = setupMockEvents();
         MethodCall? loadCall;
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(channel, (call) async {
+            .setMockMethodCallHandler(methodChannel, (call) async {
               loadCall = call;
               return <String, Object?>{
                 'ok': false,
@@ -243,7 +233,7 @@ void main() {
               };
             });
 
-        final backend = DesktopLibmpvBackend(channel: channel);
+        final backend = DesktopLibmpvBackend();
 
         await expectLater(
           backend.load(
@@ -271,15 +261,25 @@ void main() {
         expect(backend.textureId, isNull);
 
         await backend.dispose();
+        await events.close();
       },
     );
 
     test('windows texture controls stay on method channel commands', () async {
+      final events = setupMockEvents();
       final calls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, (call) async {
+          .setMockMethodCallHandler(methodChannel, (call) async {
             calls.add(call);
             if (call.method == 'load') {
+              scheduleMicrotask(() {
+                events.add(<String, Object?>{
+                  'schemaVersion': 1,
+                  'handle': 41,
+                  'sequence': 0,
+                  'kind': 'FILE_LOADED',
+                });
+              });
               return <String, Object?>{
                 'ok': true,
                 'handle': 41,
@@ -291,7 +291,7 @@ void main() {
             return null;
           });
 
-      final backend = DesktopLibmpvBackend(channel: channel);
+      final backend = DesktopLibmpvBackend();
       await backend.load(
         const PlaybackSource(uri: 'https://example.test/live.m3u8'),
       );
@@ -307,7 +307,6 @@ void main() {
       expect(backend.textureId, isNull);
       expect(calls.map((call) => call.method), <String>[
         'load',
-        'getVideoAspectRatio',
         'play',
         'pause',
         'seek',
@@ -317,23 +316,117 @@ void main() {
         'stop',
         'dispose',
       ]);
-      expect(calls[2].arguments, <String, Object?>{'handle': 41});
-      expect(calls[4].arguments, <String, Object?>{
+      expect(calls[1].arguments, <String, Object?>{'handle': 41});
+      expect(calls[3].arguments, <String, Object?>{
         'handle': 41,
         'positionMs': 2500,
       });
-      expect(calls[5].arguments, <String, Object?>{
+      expect(calls[4].arguments, <String, Object?>{
         'handle': 41,
         'trackId': null,
       });
-      expect(calls[6].arguments, <String, Object?>{
+      expect(calls[5].arguments, <String, Object?>{
         'handle': 41,
         'trackId': '3',
       });
-      expect(calls[7].arguments, <String, Object?>{
+      expect(calls[6].arguments, <String, Object?>{
         'handle': 41,
         'speed': 0.75,
       });
+      await events.close();
     });
+
+    test(
+      'dispose during a pending load releases the returned handle without publishing after close',
+      () async {
+        final events = setupMockEvents();
+        final loadResponse = Completer<Map<String, Object?>>();
+        final calls = <MethodCall>[];
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(methodChannel, (call) async {
+              calls.add(call);
+              if (call.method == 'load') return loadResponse.future;
+              return null;
+            });
+
+        final backend = DesktopLibmpvBackend();
+        final states = <PlaybackState>[];
+        final errors = <PlaybackError>[];
+        final stateSub = backend.onState.listen(states.add);
+        final errorSub = backend.onError.listen(errors.add);
+        final load = backend.load(
+          const PlaybackSource(uri: 'https://example.test/pending.m3u8'),
+        );
+
+        await pumpEventQueue();
+        await backend.dispose();
+        loadResponse.complete(<String, Object?>{
+          'ok': true,
+          'handle': 77,
+          'textureId': 7700,
+        });
+
+        await expectLater(load, completes);
+        await pumpEventQueue();
+
+        final disposeCalls = calls
+            .where((call) => call.method == 'dispose')
+            .toList();
+        expect(disposeCalls, hasLength(1));
+        expect(disposeCalls.single.arguments, <String, Object?>{'handle': 77});
+        expect(backend.textureId, isNull);
+        expect(states, isEmpty);
+        expect(errors, isEmpty);
+
+        await stateSub.cancel();
+        await errorSub.cancel();
+        await events.close();
+      },
+    );
+
+    test(
+      'stop during a pending load settles it and disposes the late handle once',
+      () async {
+        final events = setupMockEvents();
+        final loadResponse = Completer<Map<String, Object?>>();
+        final calls = <MethodCall>[];
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(methodChannel, (call) async {
+              calls.add(call);
+              if (call.method == 'load') return loadResponse.future;
+              return null;
+            });
+
+        final backend = DesktopLibmpvBackend();
+        final load = backend.load(
+          const PlaybackSource(uri: 'https://example.test/pending-stop.m3u8'),
+        );
+
+        await pumpEventQueue();
+        await backend.stop().timeout(const Duration(seconds: 1));
+        loadResponse.complete(<String, Object?>{
+          'ok': true,
+          'handle': 78,
+          'textureId': 7800,
+        });
+
+        await expectLater(
+          load.timeout(const Duration(seconds: 1)),
+          completes,
+        );
+        await pumpEventQueue();
+
+        final disposeCalls = calls
+            .where((call) => call.method == 'dispose')
+            .toList();
+        expect(disposeCalls, hasLength(1));
+        expect(disposeCalls.single.arguments, <String, Object?>{'handle': 78});
+        expect(calls.where((call) => call.method == 'stop'), isEmpty);
+        expect(backend.textureId, isNull);
+
+        await backend.dispose();
+        await events.close();
+      },
+    );
   });
 }
