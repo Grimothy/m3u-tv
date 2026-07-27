@@ -745,6 +745,82 @@ class XtreamService {
         .toList(growable: false);
   }
 
+  /// Server-authoritative favorites for a viewer. Each entry is a raw map with
+  /// `content_type`, `stream_id`, `aio_item_id`, `imdb_id`, `tmdb_id`, and (for
+  /// aiostreams entries) `title`, `thumbnail_url`, `item_type`,
+  /// `aio_integration_id`, `favorited_at`.
+  ///
+  /// Pass [imdbId] instead of/alongside [contentType] to cross-reference: find
+  /// every favorite of a title regardless of which content_type or source it
+  /// was favorited under (e.g. an AIOStreams favorite showing up as "already
+  /// favorited" on the equivalent Xtream VOD entry).
+  Future<List<Map<String, Object?>>> getFavorites(
+    String viewerId, {
+    String? contentType,
+    String? imdbId,
+  }) async {
+    final response = await _request(
+      'get_favorites',
+      params: {
+        'viewer_id': viewerId,
+        'content_type': ?contentType,
+        'imdb_id': ?imdbId,
+      },
+    );
+    return _asList(response).map(_asMap).toList(growable: false);
+  }
+
+  /// [imdbId]/[tmdbId] are only honored by the server for `aiostreams`
+  /// favorites (addon content the server can't independently verify) — for
+  /// `vod`/`series` the server always resolves cross-reference ids itself
+  /// from the local Channel/Series row, ignoring any value passed here.
+  Future<void> toggleFavorite({
+    required String viewerId,
+    required String contentType,
+    int? streamId,
+    String? aioItemId,
+    required bool favorited,
+    String? imdbId,
+    String? tmdbId,
+    String? title,
+    String? thumbnailUrl,
+    String? itemType,
+    int? aioIntegrationId,
+  }) async {
+    await _request(
+      'toggle_favorite',
+      method: 'POST',
+      body: {
+        'viewer_id': viewerId,
+        'content_type': contentType,
+        'stream_id': ?streamId?.toString(),
+        'aio_item_id': ?aioItemId,
+        'favorited': '$favorited',
+        'imdb_id': ?imdbId,
+        'tmdb_id': ?tmdbId,
+        'title': ?title,
+        'thumbnail_url': ?thumbnailUrl,
+        'item_type': ?itemType,
+        'aio_integration_id': ?aioIntegrationId?.toString(),
+      },
+    );
+  }
+
+  /// One-time reconciliation of pre-existing local-only favorites into the
+  /// account. Returns the merged, now-authoritative server set. Server only
+  /// ever adds — never deletes — so this is safe to call speculatively.
+  Future<List<Map<String, Object?>>> syncFavorites(
+    String viewerId,
+    List<Map<String, Object?>> favorites,
+  ) async {
+    final response = await _request(
+      'sync_favorites',
+      method: 'POST',
+      body: {'viewer_id': viewerId, 'favorites': favorites},
+    );
+    return _asList(response).map(_asMap).toList(growable: false);
+  }
+
   Future<List<EpgProgram>> getShortEpg(
     int streamId, {
     String? channelId,

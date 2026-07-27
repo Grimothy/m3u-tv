@@ -9,8 +9,8 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 ///
 /// Connects to the private TV playlist channel, authenticates via the custom
 /// `/api/tv/broadcasting/auth` endpoint (no user session required), and
-/// forwards incoming `tv.notification` and `dvr.status` events to the
-/// supplied callbacks.
+/// forwards incoming `tv.notification`, `dvr.status`, `request.status`, and
+/// `favorite.toggled` events to the supplied callbacks.
 ///
 /// Call `connect` after a successful Xtream login. Call `pause`/`resume`
 /// around app background/foreground transitions, and `disconnect` on logout.
@@ -31,6 +31,7 @@ class ReverbService {
   void Function(TvNotificationItem)? _onNotification;
   void Function(DvrRecording)? _onDvrStatus;
   void Function(MediaRequestSummary)? _onRequestStatus;
+  void Function(FavoriteToggleEvent)? _onFavoriteToggled;
   void Function()? _onConnected;
 
   WebSocketChannel? _ws;
@@ -55,6 +56,7 @@ class ReverbService {
     required void Function(TvNotificationItem) onNotification,
     void Function(DvrRecording)? onDvrStatus,
     void Function(MediaRequestSummary)? onRequestStatus,
+    void Function(FavoriteToggleEvent)? onFavoriteToggled,
     void Function()? onConnected,
   }) async {
     _session = session;
@@ -63,6 +65,7 @@ class ReverbService {
     _onNotification = onNotification;
     _onDvrStatus = onDvrStatus;
     _onRequestStatus = onRequestStatus;
+    _onFavoriteToggled = onFavoriteToggled;
     _onConnected = onConnected;
     _disposed = false;
     _paused = false;
@@ -138,6 +141,13 @@ class ReverbService {
         if (!_connected) return;
         final payload = _parseData(msg['data']);
         _onRequestStatus?.call(MediaRequestSummary.fromJson(payload));
+
+      case 'favorite.toggled':
+        if (!_connected) return;
+        final payload = _parseData(msg['data']);
+        final favoriteEvent = FavoriteToggleEvent.tryFromJson(payload);
+        if (favoriteEvent == null) return;
+        _onFavoriteToggled?.call(favoriteEvent);
     }
   }
 

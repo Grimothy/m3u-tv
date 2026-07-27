@@ -341,6 +341,7 @@ class _RecordingReverbService extends ReverbService {
     required void Function(TvNotificationItem) onNotification,
     void Function(DvrRecording)? onDvrStatus,
     void Function(MediaRequestSummary)? onRequestStatus,
+    void Function(FavoriteToggleEvent)? onFavoriteToggled,
     void Function()? onConnected,
   }) async {
     connectedUsers.add(credentials.username);

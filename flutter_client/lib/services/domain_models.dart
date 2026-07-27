@@ -493,6 +493,57 @@ class DvrRecording {
   }
 }
 
+/// Pushed over Reverb when a favorite is toggled on another device signed
+/// into the same viewer, so this device can apply the change immediately
+/// instead of waiting for its next `get_favorites` pull.
+class FavoriteToggleEvent {
+  const FavoriteToggleEvent({
+    required this.viewerId,
+    required this.contentType,
+    required this.favorited,
+    this.streamId,
+    this.aioItemId,
+    this.title,
+    this.thumbnailUrl,
+    this.itemType,
+    this.aioIntegrationId,
+  });
+
+  final String viewerId;
+
+  /// 'live' | 'vod' | 'series' | 'aiostreams'
+  final String contentType;
+  final int? streamId;
+  final String? aioItemId;
+  final bool favorited;
+
+  /// AIOStreams-only metadata, carried so a favorite pushed from another
+  /// device can be rendered immediately without a live re-fetch from the
+  /// addon. Always null for live/vod/series.
+  final String? title;
+  final String? thumbnailUrl;
+  final String? itemType;
+  final int? aioIntegrationId;
+
+  static FavoriteToggleEvent? tryFromJson(Map<String, Object?> json) {
+    final viewerId = json['viewer_id'];
+    final contentType = json['content_type'];
+    if (viewerId is! String || viewerId.isEmpty) return null;
+    if (contentType is! String || contentType.isEmpty) return null;
+    return FavoriteToggleEvent(
+      viewerId: viewerId,
+      contentType: contentType,
+      streamId: _asIntOrNull(json['stream_id']),
+      aioItemId: _asNullableString(json['aio_item_id']),
+      favorited: json['favorited'] == true,
+      title: _asNullableString(json['title']),
+      thumbnailUrl: _asNullableString(json['thumbnail_url']),
+      itemType: _asNullableString(json['item_type']),
+      aioIntegrationId: _asIntOrNull(json['aio_integration_id']),
+    );
+  }
+}
+
 enum MediaRequestStatus {
   pendingApproval,
   approved,

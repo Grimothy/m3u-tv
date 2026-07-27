@@ -111,11 +111,21 @@ class AppStateController extends ChangeNotifier {
     required this.aioFavoritesService,
     required this.proxyPlaybackSettings,
     required this._pushNotificationService,
-  });
+  }) {
+    favoritesService.onChanged = (streamId, {required favorited}) =>
+        _pushFavoriteChange('live', streamId, favorited: favorited);
+    vodFavoritesService.onChanged = (streamId, {required favorited}) =>
+        _pushFavoriteChange('vod', streamId, favorited: favorited);
+    seriesFavoritesService.onChanged = (streamId, {required favorited}) =>
+        _pushFavoriteChange('series', streamId, favorited: favorited);
+    aioFavoritesService.onAdded = _pushAioFavoriteAdded;
+    aioFavoritesService.onRemoved = _pushAioFavoriteRemoved;
+  }
 
   static const _sourceKey = 'm3ue_tv_source';
   static const _epgIntervalKey = 'm3ue_tv_epg_interval_minutes';
   static const _localeKey = 'm3ue_tv_locale';
+  static const _favoritesMigratedKey = 'm3ue_tv_favorites_migrated_viewers';
 
   static const List<Duration> epgRefreshOptions = <Duration>[
     Duration(minutes: 30),
@@ -457,6 +467,7 @@ class AppStateController extends ChangeNotifier {
         onNotification: _onPushNotification,
         onDvrStatus: _onDvrStatusPush,
         onRequestStatus: _onRequestStatusPush,
+        onFavoriteToggled: _onFavoriteTogglePush,
         // Reconciles any status pushes missed while disconnected (app
         // suspended, network drop) — cheap, status-filtered fetch, not a poll.
         onConnected: () => unawaited(refreshActiveDvrRecordings()),
@@ -794,6 +805,238 @@ class AppStateController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Pushes a local Live/VOD/Series favorite change to the server. No-op for
+  /// local M3U sources (nothing to sync to) — mirrors the same
+  /// `sourceType == xtream` gate used for progress pushes in app_shell.dart.
+  void _pushFavoriteChange(
+    String contentType,
+    int streamId, {
+    required bool favorited,
+  }) {
+    if (_sourceType != AppSourceType.xtream) return;
+    final viewer = _activeViewer;
+    if (viewer == null) return;
+    unawaited(
+      xtreamService
+          .toggleFavorite(
+            viewerId: viewer.ulid,
+            contentType: contentType,
+            streamId: streamId,
+            favorited: favorited,
+          )
+          .catchError((Object error) {
+            debugPrint('Favorites: push $contentType/$streamId failed: $error');
+          }),
+    );
+  }
+
+  /// Pushes a local AIOStreams favorite add to the server, carrying its full
+  /// metadata — the server has no other way to learn an addon item's
+  /// title/poster/type, and other devices need that to render the favorite
+  /// without a live re-fetch from the addon.
+  void _pushAioFavoriteAdded(AIOStreamsFavoriteItem item) {
+    if (_sourceType != AppSourceType.xtream) return;
+    final viewer = _activeViewer;
+    if (viewer == null) return;
+    unawaited(
+      xtreamService
+          .toggleFavorite(
+            viewerId: viewer.ulid,
+            contentType: 'aiostreams',
+            aioItemId: item.id,
+            favorited: true,
+            title: item.name,
+            thumbnailUrl: item.poster,
+            itemType: item.type,
+            aioIntegrationId: item.integrationId,
+          )
+          .catchError((Object error) {
+            debugPrint('Favorites: push aiostreams/${item.id} failed: $error');
+          }),
+    );
+  }
+
+  void _pushAioFavoriteRemoved(String itemId) {
+    if (_sourceType != AppSourceType.xtream) return;
+    final viewer = _activeViewer;
+    if (viewer == null) return;
+    unawaited(
+      xtreamService
+          .toggleFavorite(
+            viewerId: viewer.ulid,
+            contentType: 'aiostreams',
+            aioItemId: itemId,
+            favorited: false,
+          )
+          .catchError((Object error) {
+            debugPrint(
+              'Favorites: push aiostreams/$itemId removal failed: $error',
+            );
+          }),
+    );
+  }
+
+  /// Applies a favorite/unfavorite pushed from another device signed into the
+  /// same viewer. Ignores events for a viewer other than the currently
+  /// active one.
+  void _onFavoriteTogglePush(FavoriteToggleEvent event) {
+    final viewer = _activeViewer;
+    if (viewer == null || viewer.ulid != event.viewerId) return;
+
+    if (event.contentType == 'aiostreams') {
+      final aioItemId = event.aioItemId;
+      if (aioItemId == null) return;
+      unawaited(
+        aioFavoritesService.applyRemote(
+          aioItemId,
+          favorited: event.favorited,
+          item: event.favorited ? _aioItemFromEvent(event) : null,
+        ),
+      );
+      return;
+    }
+
+    final streamId = event.streamId;
+    if (streamId == null) return;
+    final service = switch (event.contentType) {
+      'live' => favoritesService,
+      'vod' => vodFavoritesService,
+      'series' => seriesFavoritesService,
+      _ => null,
+    };
+    unawaited(service?.applyRemote(streamId, favorited: event.favorited));
+  }
+
+  AIOStreamsFavoriteItem? _aioItemFromEvent(FavoriteToggleEvent event) {
+    final aioItemId = event.aioItemId;
+    if (aioItemId == null) return null;
+    return AIOStreamsFavoriteItem(
+      id: aioItemId,
+      type: event.itemType ?? '',
+      name: event.title ?? '',
+      integrationId: event.aioIntegrationId ?? 0,
+      poster: event.thumbnailUrl,
+    );
+  }
+
+  /// Reconciles Live/VOD/Series/AIOStreams favorites for the active viewer
+  /// with the server. The first time a given viewer is seen, pre-existing
+  /// local-only favorites are unioned into the account via `sync_favorites`
+  /// (never deletes) rather than overwritten — except for a non-admin (child)
+  /// viewer, which never had its own local favorites (there was only ever
+  /// one shared local list before server sync existed) and so just pulls.
+  /// After that one-time reconciliation, the server is authoritative and
+  /// every call here simply replaces the local cache with `get_favorites`.
+  Future<void> _syncFavoritesForActiveViewer() async {
+    if (_sourceType != AppSourceType.xtream) return;
+    final viewer = _activeViewer;
+    if (viewer == null) return;
+    try {
+      final migrated = await _readMigratedFavoriteViewers();
+      if (!migrated.contains(viewer.ulid)) {
+        if (viewer.isAdmin) {
+          await _pushLocalFavoritesOnce(viewer);
+        } else {
+          await _pullFavorites(viewer);
+        }
+        await _markFavoritesMigrated(viewer.ulid);
+      } else {
+        await _pullFavorites(viewer);
+      }
+    } on Object catch (error) {
+      debugPrint('Favorites: sync failed for viewer ${viewer.ulid}: $error');
+    }
+  }
+
+  Future<void> _pushLocalFavoritesOnce(Viewer viewer) async {
+    final payload = <Map<String, Object?>>[
+      for (final id in await favoritesService.all())
+        {'content_type': 'live', 'stream_id': id},
+      for (final id in await vodFavoritesService.all())
+        {'content_type': 'vod', 'stream_id': id},
+      for (final id in await seriesFavoritesService.all())
+        {'content_type': 'series', 'stream_id': id},
+      for (final item in await aioFavoritesService.all())
+        {
+          'content_type': 'aiostreams',
+          'aio_item_id': item.id,
+          'title': item.name,
+          'thumbnail_url': item.poster,
+          'item_type': item.type,
+          'aio_integration_id': item.integrationId,
+        },
+    ];
+    final merged = await xtreamService.syncFavorites(viewer.ulid, payload);
+    await _applyServerFavorites(merged);
+  }
+
+  Future<void> _pullFavorites(Viewer viewer) async {
+    final favorites = await xtreamService.getFavorites(viewer.ulid);
+    await _applyServerFavorites(favorites);
+  }
+
+  Future<void> _applyServerFavorites(
+    List<Map<String, Object?>> favorites,
+  ) async {
+    final live = <int>{};
+    final vod = <int>{};
+    final series = <int>{};
+    final aio = <AIOStreamsFavoriteItem>[];
+    for (final item in favorites) {
+      final contentType = item['content_type'];
+      if (contentType == 'aiostreams') {
+        final aioItemId = item['aio_item_id'];
+        if (aioItemId is! String || aioItemId.isEmpty) continue;
+        aio.add(
+          AIOStreamsFavoriteItem(
+            id: aioItemId,
+            type: '${item['item_type'] ?? ''}',
+            name: '${item['title'] ?? ''}',
+            integrationId: (item['aio_integration_id'] as num?)?.toInt() ?? 0,
+            poster: item['thumbnail_url'] as String?,
+          ),
+        );
+        continue;
+      }
+      final streamId = item['stream_id'];
+      final id = streamId is int ? streamId : int.tryParse('$streamId');
+      if (id == null) continue;
+      switch (contentType) {
+        case 'live':
+          live.add(id);
+        case 'vod':
+          vod.add(id);
+        case 'series':
+          series.add(id);
+      }
+    }
+    await Future.wait(<Future<void>>[
+      favoritesService.replaceAll(live),
+      vodFavoritesService.replaceAll(vod),
+      seriesFavoritesService.replaceAll(series),
+      aioFavoritesService.replaceAll(aio),
+    ]);
+  }
+
+  Future<Set<String>> _readMigratedFavoriteViewers() async {
+    final raw = await secureStorage.read(_favoritesMigratedKey);
+    if (raw == null) return <String>{};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) return decoded.map((e) => '$e').toSet();
+    } on Object catch (_) {}
+    return <String>{};
+  }
+
+  Future<void> _markFavoritesMigrated(String viewerUlid) async {
+    final viewers = await _readMigratedFavoriteViewers()
+      ..add(viewerUlid);
+    await secureStorage.write(
+      _favoritesMigratedKey,
+      jsonEncode(viewers.toList()),
+    );
+  }
+
   Future<void> receiveTvNotification(TvNotificationItem item) async {
     final inserted = await notificationStore.add(item);
     if (!inserted) return;
@@ -872,6 +1115,7 @@ class AppStateController extends ChangeNotifier {
     _activeViewer = viewer;
     _progressList = await _loadRecentlyWatched(viewer.ulid);
     notifyListeners();
+    unawaited(_syncFavoritesForActiveViewer());
   }
 
   Future<Viewer?> createViewer(String name) async {
@@ -1094,6 +1338,7 @@ class AppStateController extends ChangeNotifier {
       _progressList = progress;
       _error = null;
       notifyListeners();
+      unawaited(_syncFavoritesForActiveViewer());
 
       // Prime EPG for the first screen's worth of channels only; the rest is
       // fetched lazily as screens request it via [ensureEpgForChannels] (e.g.
@@ -1175,6 +1420,7 @@ class AppStateController extends ChangeNotifier {
         ? const <Progress>[]
         : await resumeService.all(activeViewer.ulid);
     _error = null;
+    unawaited(_syncFavoritesForActiveViewer());
     return true;
   }
 

@@ -21,11 +21,19 @@ class FavoritesService extends ChangeNotifier {
   final Map<String, Object?> _memory;
   final PersistentJsonStore? _store;
 
+  /// Invoked after a local add/remove made through [add]/[remove]/[toggle]
+  /// succeeds, so the app layer can push the change to a sync backend.
+  /// Fire-and-forget from this service's perspective — it does not await or
+  /// retry the callback. Not invoked by [replaceAll]/[applyRemote], which
+  /// exist specifically to apply server/remote state without echoing it back.
+  void Function(int streamId, {required bool favorited})? onChanged;
+
   Future<bool> add(int streamId) async {
     final ids = await all();
     ids.add(streamId);
     await _write(_favoritesKey, ids.toList()..sort());
     notifyListeners();
+    onChanged?.call(streamId, favorited: true);
     return true;
   }
 
@@ -34,11 +42,30 @@ class FavoritesService extends ChangeNotifier {
     ids.remove(streamId);
     await _write(_favoritesKey, ids.toList()..sort());
     notifyListeners();
+    onChanged?.call(streamId, favorited: false);
     return false;
   }
 
   Future<bool> toggle(int streamId) async =>
       await isFavorite(streamId) ? remove(streamId) : add(streamId);
+
+  /// Applies a single favorite/unfavorite pushed from another device (e.g. a
+  /// Reverb `favorite.toggled` event) without re-triggering [onChanged].
+  Future<void> applyRemote(int streamId, {required bool favorited}) async {
+    final ids = await all();
+    final changed = favorited ? ids.add(streamId) : ids.remove(streamId);
+    if (!changed) return;
+    await _write(_favoritesKey, ids.toList()..sort());
+    notifyListeners();
+  }
+
+  /// Overwrites the full local set from the server's authoritative list
+  /// (e.g. after `get_favorites` on connect/viewer switch), without
+  /// triggering [onChanged].
+  Future<void> replaceAll(Iterable<int> streamIds) async {
+    await _write(_favoritesKey, streamIds.toSet().toList()..sort());
+    notifyListeners();
+  }
 
   Future<bool> isFavorite(int streamId) async =>
       (await all()).contains(streamId);

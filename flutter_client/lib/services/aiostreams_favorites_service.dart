@@ -48,6 +48,14 @@ class AIOStreamsFavoritesService extends ChangeNotifier {
   /// In-memory cache so reads after the first load are synchronous.
   Map<String, AIOStreamsFavoriteItem>? _cache;
 
+  /// Invoked after [add] persists a new favorite locally, so the app layer
+  /// can push it (with its full metadata — the server has no other way to
+  /// learn an AIOStreams item's title/poster/type) to a sync backend.
+  void Function(AIOStreamsFavoriteItem item)? onAdded;
+
+  /// Invoked after [remove] persists locally, mirroring [onAdded].
+  void Function(String itemId)? onRemoved;
+
   Future<Map<String, AIOStreamsFavoriteItem>> _all() async {
     if (_cache != null) return _cache!;
     final raw = await _store?.read(_key);
@@ -83,6 +91,7 @@ class AIOStreamsFavoritesService extends ChangeNotifier {
     all[item.id] = item;
     await _persist();
     notifyListeners();
+    onAdded?.call(item);
   }
 
   Future<void> remove(String itemId) async {
@@ -90,6 +99,7 @@ class AIOStreamsFavoritesService extends ChangeNotifier {
     all.remove(itemId);
     await _persist();
     notifyListeners();
+    onRemoved?.call(itemId);
   }
 
   Future<bool> toggle(AIOStreamsFavoriteItem item) async {
@@ -100,6 +110,36 @@ class AIOStreamsFavoritesService extends ChangeNotifier {
       await add(item);
       return true;
     }
+  }
+
+  /// Applies a favorite/unfavorite pushed from another device (e.g. a Reverb
+  /// `favorite.toggled` event) without re-triggering [onAdded]/[onRemoved]. A
+  /// remote "favorited" push with no [item] metadata attached is dropped
+  /// rather than stored as a bare id — this shouldn't happen in practice
+  /// since the server always carries title/poster/type for aiostreams rows.
+  Future<void> applyRemote(
+    String itemId, {
+    required bool favorited,
+    AIOStreamsFavoriteItem? item,
+  }) async {
+    final all = await _all();
+    if (favorited) {
+      if (item == null) return;
+      all[itemId] = item;
+    } else {
+      if (all.remove(itemId) == null) return;
+    }
+    await _persist();
+    notifyListeners();
+  }
+
+  /// Overwrites the full local set from the server's authoritative list
+  /// (e.g. after `get_favorites` on connect/viewer switch), without
+  /// triggering [onAdded]/[onRemoved].
+  Future<void> replaceAll(Iterable<AIOStreamsFavoriteItem> items) async {
+    _cache = {for (final item in items) item.id: item};
+    await _persist();
+    notifyListeners();
   }
 
   /// Returns favorites in most-recently-added order (reversed insertion).
