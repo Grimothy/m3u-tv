@@ -36,15 +36,12 @@ void main() {
     expect(workflow, contains('run: flutter test'));
   });
 
-  test('release builds use only the public Trakt client id', () {
+  test('release builds rely on the built-in public Trakt client id', () {
     final releaseWorkflow = readFile(releaseWorkflowPath);
 
     expect(releaseWorkflow, isNot(contains('TRAKT_CLIENT_SECRET')));
     expect(releaseWorkflow, isNot(contains('secrets.TRAKT_CLIENT_SECRET')));
-    expect(
-      releaseWorkflow,
-      isNot(contains('--dart-define=TRAKT_CLIENT_SECRET')),
-    );
+    expect(releaseWorkflow, isNot(contains('TRAKT_CLIENT_ID')));
 
     for (final stepName in <String>[
       'Build APK',
@@ -55,12 +52,12 @@ void main() {
       'Build Windows app',
     ]) {
       final step = workflowStep(releaseWorkflow, stepName);
-      expect(step, contains('--dart-define=TRAKT_CLIENT_ID'));
       expect(
         step,
-        isNot(contains('TRAKT_CLIENT_SECRET')),
+        isNot(contains('TRAKT_CLIENT')),
         reason:
-            '$stepName must not compile a client secret into release output',
+            '$stepName should use the built-in Trakt client id, not a '
+            '--dart-define override',
       );
     }
   });

@@ -68,34 +68,32 @@ flutter-tvos build tvos --simulator --debug   # build only
 
 ## Release builds
 
-All release builds require the public Trakt client id passed via `--dart-define`.
-Set the environment variable first (see [Trakt setup](#trakt-setup)), then use the commands below.
+Release builds work with no extra setup — the app ships with a built-in public Trakt
+client id. See the [Trakt setup](#trakt-setup) note at the end of this section if
+you're maintaining a fork and want to use your own client id instead.
 
 ### Android TV / Android (release APK / App Bundle)
 
 ```bash
 # App Bundle (Play Store / sideload)
-flutter build appbundle --release \
-  --dart-define=TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID
+flutter build appbundle --release
 
 # APK (direct sideload)
-flutter build apk --release \
-  --dart-define=TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID
+flutter build apk --release
 ```
 
 `release.yml` builds iOS and tvOS on every tag push too, but only as **unsigned** sideload artifacts attached to the GitHub Release (see `build-ios`/`build-tvos` jobs) - it does not submit to App Store Connect. Actual App Store/TestFlight submission for iOS and tvOS is a manual step you run locally, below.
 
 ### iOS (manual App Store submission)
 
-`--dart-define` values are baked into `ios/Flutter/Generated.xcconfig` only as a side effect of a CLI `flutter build`/`flutter run` - if you skip straight to Xcode's **Archive** action without running one first, the archive silently ships without the Trakt credentials (whatever was last written to that file, possibly nothing).
-
 Build, archive, and export in one step from the CLI:
 
 ```bash
 flutter build ipa --release \
-  --dart-define=TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID \
   --export-options-plist=ios/ExportOptions.plist
 ```
+
+(If you're overriding `TRAKT_CLIENT_ID` for a fork, note that `--dart-define` values are baked into `ios/Flutter/Generated.xcconfig` only as a side effect of a CLI `flutter build`/`flutter run` - if you skip straight to Xcode's **Archive** action without running one first, the archive silently ships without your override (whatever was last written to that file, possibly nothing).)
 
 This produces `build/ios/ipa/Runner.ipa` - upload it with [Transporter](https://apps.apple.com/app/transporter/id1450874784) or `xcrun altool --upload-app`.
 
@@ -107,11 +105,10 @@ Prefer Xcode's Organizer instead? Run the `flutter build ipa` command above firs
 
 This project signs the tvOS target **Manually**, pinned to the `M3U TV (tvOS)` distribution profile (Signing & Capabilities in Xcode) - that's the config that has actually produced working App Store submissions. `flutter-tvos build tvos --release`, however, always forces `CODE_SIGN_STYLE=Automatic` on the `xcodebuild` invocation it runs internally, with no way to opt out - so running it end-to-end **will fail** with `Runner has conflicting provisioning settings`, unrelated to whether your Apple ID is signed into Xcode.
 
-Run it anyway, for one reason only: the Dart AOT compile step (where `--dart-define` values get baked in) completes and writes `tvos/Flutter/App.framework` to disk *before* that incompatible `xcodebuild` call runs, so the framework comes out correct even though the command as a whole reports failure:
+Run it anyway, for one reason only: the Dart AOT compile step completes and writes `tvos/Flutter/App.framework` to disk *before* that incompatible `xcodebuild` call runs, so the framework comes out correct even though the command as a whole reports failure:
 
 ```bash
-flutter-tvos build tvos --release \
-  --dart-define=TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID
+flutter-tvos build tvos --release
 ```
 
 Ignore the failure output. A fresh `tvos/Flutter/App.framework` with the Trakt client id compiled in is what you need, and it's already there. Then open `tvos/Runner.xcworkspace` in Xcode and **Product → Archive → Distribute App**, exactly as before; the project's own "Embed App.framework" build phase picks up the file that's already on disk and doesn't re-run flutter-tvos itself, so the Manual-signing Archive path is untouched by any of this.
@@ -148,22 +145,19 @@ Unlike iOS/tvOS/Android, macOS release builds are never submitted to an app stor
 To build a local macOS release for testing only (not signed or notarized, so not distributable):
 
 ```bash
-flutter build macos --release \
-  --dart-define=TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID
+flutter build macos --release
 ```
 
 ### Linux
 
 ```bash
-flutter build linux --release \
-  --dart-define=TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID
+flutter build linux --release
 ```
 
 ### Windows
 
 ```bash
-flutter build windows --release \
-  --dart-define=TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID
+flutter build windows --release
 ```
 
 ## Updating icons and splash screens
@@ -263,7 +257,7 @@ To use your own registered app instead of the built-in default:
      -d <device-id>
    ```
 
-For CI (GitHub Actions), store `TRAKT_CLIENT_ID` as a repository secret and reference it in your workflow to override the default:
+`.github/workflows/release.yml` does not pass `TRAKT_CLIENT_ID` at all — release builds use the built-in default. If you fork this repo and want your CI to build with your own app instead, add `TRAKT_CLIENT_ID` as a repository secret and add the define back to the relevant `flutter build`/`flutter-tvos build` steps:
 
 ```yaml
 --dart-define=TRAKT_CLIENT_ID=${{ secrets.TRAKT_CLIENT_ID }}
