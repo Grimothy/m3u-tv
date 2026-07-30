@@ -244,7 +244,9 @@ The feature graphic and TV banner are generated from `../logo.svg` on the app's 
 
 ## Trakt setup
 
-Trakt uses a public client id for device authorization in this app. It is injected at compile time via `--dart-define` and is not stored in source control.
+Trakt uses a public client id for device authorization in this app. The app ships with a default client id built in, so Trakt scrobbling works out of the box with no `--dart-define` needed. A client id is not a secret — it's sent as the `trakt-api-key` header on every API request, the same way it's visible to anyone who inspects the built app.
+
+To use your own registered app instead of the built-in default:
 
 1. Register an app at <https://trakt.tv/oauth/applications>
    - Redirect URI: `urn:ietf:wg:oauth:2.0:oob`
@@ -261,7 +263,7 @@ Trakt uses a public client id for device authorization in this app. It is inject
      -d <device-id>
    ```
 
-For CI (GitHub Actions), store `TRAKT_CLIENT_ID` as a repository secret and reference it in your workflow:
+For CI (GitHub Actions), store `TRAKT_CLIENT_ID` as a repository secret and reference it in your workflow to override the default:
 
 ```yaml
 --dart-define=TRAKT_CLIENT_ID=${{ secrets.TRAKT_CLIENT_ID }}
@@ -273,7 +275,7 @@ These compile-time flags are for local development and debugging. Pass them via 
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `TRAKT_CLIENT_ID` | _(empty)_ | Trakt API client ID - required for Trakt scrobbling. See [Trakt setup](#trakt-setup). |
+| `TRAKT_CLIENT_ID` | built-in app client id | Overrides the default Trakt API client ID. See [Trakt setup](#trakt-setup). |
 | `M3U_TV_SHOW_PLAYBACK_DIAGNOSTICS` | `false` | Renders the in-player backend diagnostics panel and fallback reason badge. Useful when debugging playback fallback behaviour. |
 
 Example enabling diagnostics on a debug run:
