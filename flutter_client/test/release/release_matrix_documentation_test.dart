@@ -733,7 +733,7 @@ void main() {
 
     expect(ciWorkflow, contains('workflow_dispatch'));
     expect(ciWorkflow, contains('name: Detect desktop-affecting changes'));
-    expect(ciWorkflow, contains('uses: dorny/paths-filter@v3'));
+    expect(ciWorkflow, contains('uses: dorny/paths-filter@v4'));
     expect(
       ciWorkflow,
       contains(
