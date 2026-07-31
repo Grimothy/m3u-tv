@@ -593,6 +593,30 @@ class AppShellState extends ConsumerState<AppShell>
     }
   }
 
+  /// Stops a scheduled or in-progress recording and deletes the row from the
+  /// editor — the "Delete recording" choice on the Recordings screen's stop
+  /// dialog (see DvrRecordingsScreen._confirmCancel). m3u-editor's
+  /// `cancel_dvr_recording` only marks the recording `cancelled` (a stop +
+  /// history-keep operation), so this chains a follow-up `delete_dvr_recording`
+  /// once the row is in a deletable state. The "Keep recording" choice instead
+  /// calls `AppStateController.cancelDvrRecording` directly and stops here.
+  ///
+  /// If the cancel succeeds but the delete fails (e.g. transient server
+  /// hiccup), the recording is still stopped and stays in the local list with
+  /// its Cancelled status — the user can retry Delete from there. The delete
+  /// failure is rethrown (not swallowed) so DvrRecordingsScreen's
+  /// _runWithFeedback shows the "could not delete" SnackBar instead of a
+  /// false "deleted" success message for a recording that's still there.
+  Future<void> _cancelAndDeleteRecording(String uuid) async {
+    await _appState.cancelDvrRecording(uuid);
+    try {
+      await _appState.deleteDvrRecording(uuid);
+    } on Object catch (error) {
+      debugPrint('DVR: post-cancel delete failed: $error');
+      rethrow;
+    }
+  }
+
   Future<void> _pushDetail(String path, {Object? extra}) async {
     await Future<void>.microtask(() {});
     final savedFocus = FocusManager.instance.primaryFocus;
@@ -778,6 +802,9 @@ class AppShellState extends ConsumerState<AppShell>
             isLoading: _appState.isLoadingContent,
             isConfigured: _appState.isConfigured,
             onPlay: _openPlayerDirect,
+            onCancelRecording: (uuid) => _appState.cancelDvrRecording(uuid),
+            onCancelAndDeleteRecording: _cancelAndDeleteRecording,
+            onDeleteRecording: (uuid) => _appState.deleteDvrRecording(uuid),
             onSidebarActivate: _activateSidebar,
           );
         },
