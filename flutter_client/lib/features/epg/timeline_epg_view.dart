@@ -144,11 +144,12 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
         : requested.isAfter(latest)
         ? latest
         : requested;
-    if (selected == _selectedDate) return;
-    setState(() {
-      _selectedDate = selected;
-      _initWindow();
-    });
+    if (selected != _selectedDate) {
+      setState(() {
+        _selectedDate = selected;
+        _initWindow();
+      });
+    }
     WidgetsBinding.instance.addPostFrameCallback(_scrollToNow);
   }
 
