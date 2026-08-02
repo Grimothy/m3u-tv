@@ -71,6 +71,7 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
   late DateTime _windowStart;
   late DateTime _windowEnd;
   late double _totalW;
+  late double _nowOffset;
 
   @override
   void initState() {
@@ -79,7 +80,7 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
     _initWindow();
     _leftVCtrl = ScrollController();
     _rightVCtrl = ScrollController();
-    _headerHCtrl = ScrollController();
+    _headerHCtrl = ScrollController(initialScrollOffset: _nowOffset);
     _rowHCtrls = _makeRowCtrls(widget.channels.length);
     _leftVCtrl.addListener(_onLeftV);
     _rightVCtrl.addListener(_onRightV);
@@ -95,13 +96,10 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
       widget.windowHours,
     );
     _totalW = _windowEnd.difference(_windowStart).inMinutes * _kPxPerMin;
+    _nowOffset = _computeNowOffset();
   }
 
-  List<ScrollController> _makeRowCtrls(int count) =>
-      List.generate(count, (_) => ScrollController());
-
-  void _scrollToNow(_) {
-    if (!mounted) return;
+  double _computeNowOffset() {
     final now = widget.clock();
     final anchor = DateTime(
       _selectedDate.year,
@@ -111,10 +109,24 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
       now.minute,
     );
     final nowOffset = anchor.difference(_windowStart).inMinutes * _kPxPerMin;
-    final target = math.max(0, nowOffset - 80.0);
+    return math.max(0, nowOffset - 80.0).toDouble();
+  }
+
+  // Rows are built lazily by ListView.builder as they scroll into view, so a
+  // row's ScrollController may attach long after the "now" jump below has
+  // already run. Baking the target into initialScrollOffset means a
+  // late-attaching row still lands on the current time instead of 12am.
+  List<ScrollController> _makeRowCtrls(int count) => List.generate(
+    count,
+    (_) => ScrollController(initialScrollOffset: _nowOffset),
+  );
+
+  void _scrollToNow(_) {
+    if (!mounted) return;
+    final target = _computeNowOffset();
     for (final c in [_headerHCtrl, ..._rowHCtrls]) {
       if (c.hasClients) {
-        c.jumpTo(target.clamp(0.0, c.position.maxScrollExtent).toDouble());
+        c.jumpTo(target.clamp(0.0, c.position.maxScrollExtent));
       }
     }
   }
