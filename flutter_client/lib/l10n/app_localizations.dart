@@ -374,6 +374,24 @@ abstract class AppLocalizations {
   /// **'Next channel'**
   String get playerSkipNextTooltip;
 
+  /// No description provided for @playerNowPlayingMovie.
+  ///
+  /// In en, this message translates to:
+  /// **'Movie'**
+  String get playerNowPlayingMovie;
+
+  /// No description provided for @playerNowPlayingSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'Series'**
+  String get playerNowPlayingSeries;
+
+  /// No description provided for @playerNowPlayingSeasonEpisode.
+  ///
+  /// In en, this message translates to:
+  /// **'S{season} · E{episode}'**
+  String playerNowPlayingSeasonEpisode(int season, int episode);
+
   /// No description provided for @searchHint.
   ///
   /// In en, this message translates to:

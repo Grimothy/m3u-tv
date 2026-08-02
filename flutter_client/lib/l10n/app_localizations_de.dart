@@ -153,6 +153,17 @@ class AppLocalizationsDe extends AppLocalizations {
   String get playerSkipNextTooltip => 'Nächster Sender';
 
   @override
+  String get playerNowPlayingMovie => 'Film';
+
+  @override
+  String get playerNowPlayingSeries => 'Serie';
+
+  @override
+  String playerNowPlayingSeasonEpisode(int season, int episode) {
+    return 'S$season · F$episode';
+  }
+
+  @override
   String get searchHint => 'Live-TV, Filme und Serien durchsuchen …';
 
   @override

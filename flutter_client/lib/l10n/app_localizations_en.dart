@@ -152,6 +152,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get playerSkipNextTooltip => 'Next channel';
 
   @override
+  String get playerNowPlayingMovie => 'Movie';
+
+  @override
+  String get playerNowPlayingSeries => 'Series';
+
+  @override
+  String playerNowPlayingSeasonEpisode(int season, int episode) {
+    return 'S$season · E$episode';
+  }
+
+  @override
   String get searchHint => 'Search live TV, movies, and series...';
 
   @override

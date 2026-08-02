@@ -152,6 +152,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get playerSkipNextTooltip => '下一个频道';
 
   @override
+  String get playerNowPlayingMovie => '电影';
+
+  @override
+  String get playerNowPlayingSeries => '剧集';
+
+  @override
+  String playerNowPlayingSeasonEpisode(int season, int episode) {
+    return '第$season季 · 第$episode集';
+  }
+
+  @override
   String get searchHint => '搜索直播电视、电影和剧集…';
 
   @override
