@@ -240,6 +240,7 @@ class AppStateController extends ChangeNotifier {
   List<VodItem> _vodItems = const <VodItem>[];
   List<Series> _seriesList = const <Series>[];
   List<DvrRecording> _dvrRecordings = const <DvrRecording>[];
+  DvrStorageInfo? _dvrStorageInfo;
   Set<int> _recordingChannelIds = const <int>{};
   List<MediaRequestSummary> _mediaRequests = const <MediaRequestSummary>[];
   List<Progress> _progressList = const <Progress>[];
@@ -270,6 +271,7 @@ class AppStateController extends ChangeNotifier {
   List<VodItem> get vodItems => _vodItems;
   List<Series> get seriesList => _seriesList;
   List<DvrRecording> get dvrRecordings => _dvrRecordings;
+  DvrStorageInfo? get dvrStorageInfo => _dvrStorageInfo;
   Set<int> get recordingChannelIds => _recordingChannelIds;
   List<Progress> get progressList => _progressList;
   List<MediaRequestSummary> get mediaRequests => _mediaRequests;
@@ -433,6 +435,7 @@ class AppStateController extends ChangeNotifier {
       _vodItems = const <VodItem>[];
       _seriesList = const <Series>[];
       _dvrRecordings = const <DvrRecording>[];
+      _dvrStorageInfo = null;
       _recordingChannelIds = const <int>{};
       _mediaRequests = const <MediaRequestSummary>[];
       _activeViewer = const Viewer(
@@ -1085,6 +1088,7 @@ class AppStateController extends ChangeNotifier {
     _vodItems = const <VodItem>[];
     _seriesList = const <Series>[];
     _dvrRecordings = const <DvrRecording>[];
+    _dvrStorageInfo = null;
     _recordingChannelIds = const <int>{};
     _mediaRequests = const <MediaRequestSummary>[];
     _progressList = const <Progress>[];
@@ -1182,6 +1186,7 @@ class AppStateController extends ChangeNotifier {
       debugPrintStack(stackTrace: stackTrace);
     }
     notifyListeners();
+    unawaited(refreshDvrStorage());
     for (final recording in _dvrRecordings) {
       if (recording.channelId != channel.id) continue;
       final start = recording.scheduledStart;
@@ -1251,6 +1256,7 @@ class AppStateController extends ChangeNotifier {
         .toList(growable: false);
     _recordingChannelIds = _extractRecordingChannelIds(_dvrRecordings);
     notifyListeners();
+    unawaited(refreshDvrStorage());
   }
 
   /// Lightweight poll for which channels are currently recording, used to
@@ -1272,6 +1278,21 @@ class AppStateController extends ChangeNotifier {
     } on Object catch (error) {
       debugPrint('DVR: refresh active recordings failed: $error');
     }
+  }
+
+  /// Refreshes DVR storage usage against quota via `get_dvr_storage`.
+  /// Older m3u-editor servers without this action fail the request, which
+  /// we treat as "unsupported" — the storage display just stays hidden
+  /// rather than surfacing an error.
+  Future<void> refreshDvrStorage() async {
+    if (!hasDvrFeature) return;
+    try {
+      _dvrStorageInfo = await xtreamService.getDvrStorage();
+    } on Object catch (error) {
+      debugPrint('DVR: refresh storage failed: $error');
+      _dvrStorageInfo = null;
+    }
+    notifyListeners();
   }
 
   /// Searches guest-enabled Arr integrations via `request_search`. Thin
@@ -1413,6 +1434,7 @@ class AppStateController extends ChangeNotifier {
       _error = null;
       notifyListeners();
       unawaited(_syncFavoritesForActiveViewer());
+      unawaited(refreshDvrStorage());
 
       // Prime EPG for the first screen's worth of channels only; the rest is
       // fetched lazily as screens request it via [ensureEpgForChannels] (e.g.
@@ -1485,6 +1507,7 @@ class AppStateController extends ChangeNotifier {
     _vodItems = vodItems;
     _seriesList = seriesList;
     _dvrRecordings = const <DvrRecording>[];
+    _dvrStorageInfo = null;
     _recordingChannelIds = const <int>{};
     _mediaRequests = const <MediaRequestSummary>[];
     _viewers = viewers;
@@ -1498,6 +1521,7 @@ class AppStateController extends ChangeNotifier {
         : await resumeService.all(activeViewer.ulid);
     _error = null;
     unawaited(_syncFavoritesForActiveViewer());
+    unawaited(refreshDvrStorage());
     return true;
   }
 

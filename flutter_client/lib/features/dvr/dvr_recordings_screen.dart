@@ -15,6 +15,7 @@ class DvrRecordingsScreen extends StatelessWidget {
     required this.isLoading,
     required this.isConfigured,
     required this.onPlay,
+    this.storageInfo,
     this.onCancelRecording,
     this.onCancelAndDeleteRecording,
     this.onDeleteRecording,
@@ -24,6 +25,7 @@ class DvrRecordingsScreen extends StatelessWidget {
   final List<DvrRecording> recordings;
   final bool isLoading;
   final bool isConfigured;
+  final DvrStorageInfo? storageInfo;
   final void Function(PlayerArgs args) onPlay;
   final Future<void> Function(String uuid)? onCancelRecording;
   final Future<void> Function(String uuid)? onCancelAndDeleteRecording;
@@ -60,6 +62,10 @@ class DvrRecordingsScreen extends StatelessWidget {
               l10n.dvrRecordingsSubtitle,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
+            if (storageInfo != null) ...[
+              const SizedBox(height: 12),
+              _DvrStorageSummary(info: storageInfo!),
+            ],
             const SizedBox(height: MediaBrowsingMetrics.contentPadding),
             Expanded(
               child: isLoading
@@ -84,6 +90,145 @@ class DvrRecordingsScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Non-interactive DVR storage meter, shown in the screen header. `info` is
+/// only ever passed when the server supports `get_dvr_storage`, so this
+/// widget doesn't need its own "unsupported" state — the caller simply
+/// omits it. The bar is color-coded by percent used, matching the
+/// success/warning/danger thresholds (<75% / 75-89% / >=90%) used by
+/// m3u-editor's admin-side DvrStorageOverviewWidget.
+class _DvrStorageSummary extends StatelessWidget {
+  const _DvrStorageSummary({required this.info});
+
+  final DvrStorageInfo info;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final quotaBytes = info.quotaBytes;
+    final percentUsed = info.percentUsed;
+    final hasQuota = quotaBytes != null && percentUsed != null;
+
+    final usedLabel = _formatBytes(info.usedBytes);
+    final summary = quotaBytes == null
+        ? l10n.dvrStorageUsedUnlimited(usedLabel)
+        : l10n.dvrStorageUsedWithQuota(usedLabel, _formatBytes(quotaBytes));
+
+    final Color barColor;
+    if (percentUsed == null) {
+      barColor = colorScheme.primary;
+    } else if (percentUsed >= 90) {
+      barColor = colorScheme.error;
+    } else if (percentUsed >= 75) {
+      barColor = Colors.amber.shade600;
+    } else {
+      barColor = colorScheme.primary;
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: barColor.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.sd_storage, color: barColor, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      l10n.dvrStorageTitle,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Text(
+                      summary,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              if (hasQuota)
+                Text(
+                  '${percentUsed.round()}%',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: barColor,
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    l10n.dvrStorageUnlimited,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: colorScheme.onPrimaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            l10n.dvrStorageRecordingCount(info.recordingCount),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (hasQuota) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: (percentUsed / 100).clamp(0.0, 1.0),
+                minHeight: 10,
+                backgroundColor: colorScheme.surfaceContainerHighest,
+                valueColor: AlwaysStoppedAnimation<Color>(barColor),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _formatBytes(int bytes) {
+    final gib = bytes / (1024 * 1024 * 1024);
+    if (gib >= 1) return '${gib.toStringAsFixed(1)} GB';
+    final mib = bytes / (1024 * 1024);
+    return '${mib.toStringAsFixed(0)} MB';
   }
 }
 

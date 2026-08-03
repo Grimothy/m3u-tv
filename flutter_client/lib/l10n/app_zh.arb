@@ -365,5 +365,34 @@
   "dvrDeleteFailed": "无法删除录制",
   "liveTvStopRecording": "停止录制",
   "playerRecordNowTooltip": "录制当前节目",
-  "playerStopRecordingTooltip": "停止录制"
+  "playerStopRecordingTooltip": "停止录制",
+  "dvrStorageTitle": "DVR 存储",
+  "dvrStorageUnlimited": "无限",
+  "dvrStorageUsedUnlimited": "已使用 {used}",
+  "@dvrStorageUsedUnlimited": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      }
+    }
+  },
+  "dvrStorageUsedWithQuota": "已使用 {used}，共 {quota}",
+  "@dvrStorageUsedWithQuota": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "quota": {
+        "type": "String"
+      }
+    }
+  },
+  "dvrStorageRecordingCount": "{count} 个录制",
+  "@dvrStorageRecordingCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

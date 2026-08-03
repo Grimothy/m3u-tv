@@ -365,5 +365,34 @@
   "dvrDeleteFailed": "No se pudo eliminar la grabación",
   "liveTvStopRecording": "Detener grabación",
   "playerRecordNowTooltip": "Grabar programa actual",
-  "playerStopRecordingTooltip": "Detener grabación"
+  "playerStopRecordingTooltip": "Detener grabación",
+  "dvrStorageTitle": "Almacenamiento DVR",
+  "dvrStorageUnlimited": "Ilimitado",
+  "dvrStorageUsedUnlimited": "{used} utilizado",
+  "@dvrStorageUsedUnlimited": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      }
+    }
+  },
+  "dvrStorageUsedWithQuota": "{used} de {quota} utilizado",
+  "@dvrStorageUsedWithQuota": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "quota": {
+        "type": "String"
+      }
+    }
+  },
+  "dvrStorageRecordingCount": "{count} grabaciones",
+  "@dvrStorageRecordingCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

@@ -493,6 +493,35 @@ class DvrRecording {
   }
 }
 
+/// DVR storage usage for the current playlist/guest, from m3u-editor's
+/// `get_dvr_storage` action. `quotaBytes` and `percentUsed` are null when
+/// the account/guest has no configured quota (unlimited storage).
+class DvrStorageInfo {
+  const DvrStorageInfo({
+    required this.usedBytes,
+    required this.recordingCount,
+    required this.scope,
+    this.quotaBytes,
+    this.percentUsed,
+  });
+
+  final int usedBytes;
+  final int? quotaBytes;
+  final double? percentUsed;
+  final int recordingCount;
+  final String scope;
+
+  factory DvrStorageInfo.fromXtream(Map<String, Object?> json) {
+    return DvrStorageInfo(
+      usedBytes: _asIntOrNull(json['used_bytes']) ?? 0,
+      quotaBytes: _asIntOrNull(json['quota_bytes']),
+      percentUsed: _asDoubleOrNull(json['percent_used']),
+      recordingCount: _asIntOrNull(json['recording_count']) ?? 0,
+      scope: _asNullableString(json['scope']) ?? 'account',
+    );
+  }
+}
+
 /// Pushed over Reverb when a favorite is toggled on another device signed
 /// into the same viewer, so this device can apply the change immediately
 /// instead of waiting for its next `get_favorites` pull.

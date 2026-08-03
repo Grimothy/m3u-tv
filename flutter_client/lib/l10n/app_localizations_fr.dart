@@ -727,4 +727,25 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get playerStopRecordingTooltip => 'Arrêter l\'enregistrement';
+
+  @override
+  String get dvrStorageTitle => 'Stockage DVR';
+
+  @override
+  String get dvrStorageUnlimited => 'Illimité';
+
+  @override
+  String dvrStorageUsedUnlimited(String used) {
+    return '$used utilisé';
+  }
+
+  @override
+  String dvrStorageUsedWithQuota(String used, String quota) {
+    return '$used sur $quota utilisé';
+  }
+
+  @override
+  String dvrStorageRecordingCount(int count) {
+    return '$count enregistrements';
+  }
 }
