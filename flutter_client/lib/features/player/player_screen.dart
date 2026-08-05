@@ -684,8 +684,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 final mediaQuery = MediaQuery.of(context);
                 final isCompact = mediaQuery.size.width < 600;
                 final overlayLeft = isCompact ? 16.0 : 104.0;
+                // On compact/portrait layouts the back button lives in
+                // PlaybackControls' own top-left corner (40px padding + a
+                // ~44px circular hit target); the overlay must clear that
+                // whole row instead of overlapping it.
                 final overlayTop =
-                    mediaQuery.padding.top + (isCompact ? 16.0 : 40.0);
+                    mediaQuery.padding.top + (isCompact ? 96.0 : 40.0);
                 final overlayWidth = isCompact
                     ? mediaQuery.size.width - overlayLeft * 2
                     : 420.0;
