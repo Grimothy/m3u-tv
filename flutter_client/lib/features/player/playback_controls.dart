@@ -37,6 +37,8 @@ class PlaybackControls extends StatelessWidget {
     this.playPauseFocusNode,
     this.onNextChannel,
     this.onPreviousChannel,
+    this.onRecordNow,
+    this.isRecording = false,
     super.key,
   });
 
@@ -60,6 +62,8 @@ class PlaybackControls extends StatelessWidget {
   final FocusNode? playPauseFocusNode;
   final VoidCallback? onNextChannel;
   final VoidCallback? onPreviousChannel;
+  final VoidCallback? onRecordNow;
+  final bool isRecording;
 
   static const Duration seekStep = Duration(seconds: 10);
 
@@ -180,7 +184,16 @@ class PlaybackControls extends StatelessWidget {
   }
 
   bool get _hasChannelControls =>
-      isLive && (onPreviousChannel != null || onNextChannel != null);
+      isLive &&
+      (onPreviousChannel != null ||
+          onNextChannel != null ||
+          onRecordNow != null);
+
+  int get _liveButtonCount =>
+      1 + // play/pause
+      (onPreviousChannel != null ? 1 : 0) +
+      (onNextChannel != null ? 1 : 0) +
+      (onRecordNow != null ? 1 : 0);
 
   Widget _buildControlRow(BuildContext context, ColorScheme colorScheme) {
     final transportControls = Row(
@@ -230,6 +243,18 @@ class PlaybackControls extends StatelessWidget {
               tooltip: AppLocalizations.of(context).playerSkipNextTooltip,
             ),
           ),
+        if (isLive && onRecordNow != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: AppIconButton(
+              icon: isRecording ? Icons.stop_circle : Icons.fiber_manual_record,
+              onPressed: onRecordNow,
+              variant: AppButtonVariant.destructive,
+              tooltip: isRecording
+                  ? AppLocalizations.of(context).playerStopRecordingTooltip
+                  : AppLocalizations.of(context).playerRecordNowTooltip,
+            ),
+          ),
         if (!isLive)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -256,7 +281,7 @@ class PlaybackControls extends StatelessWidget {
             ? TrackSelector.controlsWidth
             : 0.0;
         final transportWidth = isLive
-            ? (_hasChannelControls ? 168.0 : 56.0)
+            ? (_hasChannelControls ? _liveButtonCount * 56.0 : 56.0)
             : 168.0;
         final hasRoomForCenteredTransport =
             constraints.maxWidth >= transportWidth + (trackControlsWidth * 2);
