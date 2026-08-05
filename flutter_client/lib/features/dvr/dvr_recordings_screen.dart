@@ -391,8 +391,12 @@ class _CardTrailing extends StatelessWidget {
         actions: [
           DpadRegion(
             memoryKey: 'dvr/stop-dialog-actions',
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            // OverflowBar (not Row) so three buttons on a narrow TV dialog
+            // stack vertically instead of overflowing horizontally.
+            child: OverflowBar(
+              alignment: MainAxisAlignment.end,
+              spacing: 8,
+              overflowSpacing: 8,
               children: [
                 AppButton(
                   label: l10n.dvrStopBack,
@@ -400,7 +404,6 @@ class _CardTrailing extends StatelessWidget {
                     dialogContext,
                   ).pop(_StopRecordingChoice.back),
                 ),
-                const SizedBox(width: 8),
                 AppButton(
                   label: l10n.dvrStopDelete,
                   variant: AppButtonVariant.destructive,
@@ -408,7 +411,6 @@ class _CardTrailing extends StatelessWidget {
                     dialogContext,
                   ).pop(_StopRecordingChoice.delete),
                 ),
-                const SizedBox(width: 8),
                 AppButton(
                   label: l10n.dvrStopKeep,
                   variant: AppButtonVariant.primary,
@@ -457,15 +459,18 @@ class _CardTrailing extends StatelessWidget {
         actions: [
           DpadRegion(
             memoryKey: 'dvr/delete-dialog-actions',
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            // OverflowBar (not Row) so buttons on a narrow TV dialog stack
+            // vertically instead of overflowing horizontally.
+            child: OverflowBar(
+              alignment: MainAxisAlignment.end,
+              spacing: 8,
+              overflowSpacing: 8,
               children: [
                 AppButton(
                   label: l10n.dvrDeleteDismiss,
                   autofocus: true,
                   onPressed: () => Navigator.of(dialogContext).pop(false),
                 ),
-                const SizedBox(width: 8),
                 AppButton(
                   label: l10n.dvrDeleteConfirm,
                   variant: AppButtonVariant.destructive,
