@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:m3u_tv/app/app_shell.dart' show shouldUseSidebar;
+import 'package:m3u_tv/app/app_shell.dart' show DeviceType, shouldUseSidebar;
 import 'package:m3u_tv/app/device_type_resolver.dart';
 import 'package:m3u_tv/app/system_ui_policy.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
@@ -193,7 +193,10 @@ class _MyAppState extends State<MyApp> {
                   }
                 }
               : null,
-          child: child ?? const SizedBox.shrink(),
+          child: _TvZoom(
+            deviceType: deviceType,
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
       },
       theme: ThemeData(
@@ -245,6 +248,42 @@ class _MyAppState extends State<MyApp> {
         ),
       ),
       themeMode: ThemeMode.dark,
+    );
+  }
+}
+
+/// Renders the app on a smaller virtual canvas and stretches it to fill the
+/// real screen, so text/icons/nav read clearly from a couch-length distance.
+/// TV-only: on the couch, physical viewing distance is far larger than a
+/// desktop/tablet/phone, so the same logical layout reads too small.
+class _TvZoom extends StatelessWidget {
+  const _TvZoom({required this.deviceType, required this.child});
+
+  static const double _scale = 1.6;
+
+  final DeviceType deviceType;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (deviceType != DeviceType.tv) return child;
+
+    final mediaQuery = MediaQuery.of(context);
+    final realSize = mediaQuery.size;
+    final virtualSize = realSize / _scale;
+
+    return SizedBox.fromSize(
+      size: realSize,
+      child: FittedBox(
+        fit: BoxFit.fill,
+        child: SizedBox.fromSize(
+          size: virtualSize,
+          child: MediaQuery(
+            data: mediaQuery.copyWith(size: virtualSize),
+            child: child,
+          ),
+        ),
+      ),
     );
   }
 }
