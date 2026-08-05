@@ -111,13 +111,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-            child: Text(
-              l.notificationsTitle,
-              style: theme.textTheme.headlineMedium,
-            ),
-          ),
+          const SizedBox(height: 24),
           DpadTabBar(
             controller: _tabController,
             tabs: [

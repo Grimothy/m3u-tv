@@ -58,11 +58,17 @@ class InlineMediaSearchField extends StatefulWidget {
 
 class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
   late final TextEditingController _controller;
+  FocusNode? _internalFocusNode;
+  bool _focused = false;
+
+  FocusNode get _focusNode =>
+      widget.focusNode ?? (_internalFocusNode ??= FocusNode());
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.query);
+    _focusNode.addListener(_handleFocusChange);
   }
 
   @override
@@ -74,12 +80,24 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
         selection: TextSelection.collapsed(offset: widget.query.length),
       );
     }
+    if (oldWidget.focusNode != widget.focusNode) {
+      (oldWidget.focusNode ?? _internalFocusNode)?.removeListener(
+        _handleFocusChange,
+      );
+      _focusNode.addListener(_handleFocusChange);
+    }
   }
 
   @override
   void dispose() {
+    _focusNode.removeListener(_handleFocusChange);
+    _internalFocusNode?.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  void _handleFocusChange() {
+    if (mounted) setState(() => _focused = _focusNode.hasFocus);
   }
 
   void _clear() {
@@ -90,28 +108,58 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return TextField(
-      controller: _controller,
-      focusNode: widget.focusNode,
-      autofocus: widget.autofocus,
-      textInputAction: widget.textInputAction,
-      decoration: InputDecoration(
-        hintText: widget.hintText,
-        prefixIcon: const Icon(Icons.search),
-        suffixIcon: widget.query.isEmpty
-            ? null
-            : IconButton(
-                tooltip: 'Clear search',
-                icon: const Icon(Icons.clear),
-                onPressed: _clear,
-              ),
-        filled: true,
-        fillColor: colorScheme.surfaceContainerHigh,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(MediaBrowsingMetrics.cardRadius),
+    const radius = BorderRadius.all(
+      Radius.circular(MediaBrowsingMetrics.cardRadius),
+    );
+    const noBorder = OutlineInputBorder(
+      borderRadius: radius,
+      borderSide: BorderSide.none,
+    );
+    return Stack(
+      children: [
+        TextField(
+          controller: _controller,
+          focusNode: _focusNode,
+          autofocus: widget.autofocus,
+          textInputAction: widget.textInputAction,
+          decoration: InputDecoration(
+            hintText: widget.hintText,
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: widget.query.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear search',
+                    icon: const Icon(Icons.clear),
+                    onPressed: _clear,
+                  ),
+            filled: true,
+            fillColor: colorScheme.surfaceContainerHigh,
+            border: noBorder,
+            enabledBorder: noBorder,
+            focusedBorder: noBorder,
+          ),
+          onChanged: widget.onChanged,
         ),
-      ),
-      onChanged: widget.onChanged,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: AnimatedOpacity(
+              opacity: _focused ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 150),
+              child: CustomPaint(
+                painter: GradientBorderPainter(
+                  borderRadius: radius,
+                  width: 2.5,
+                  gradient: LinearGradient(
+                    begin: Alignment.topRight,
+                    end: Alignment.bottomLeft,
+                    colors: [colorScheme.primary, colorScheme.secondary],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

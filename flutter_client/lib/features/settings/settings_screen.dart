@@ -421,18 +421,10 @@ class _ConnectedViewState extends State<_ConnectedView>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-          child: Text(
-            AppLocalizations.of(context).settingsTitle,
-            style: theme.textTheme.headlineMedium,
-          ),
-        ),
+        const SizedBox(height: 24),
         DpadTabBar(
           controller: _tabController,
           tabs: [

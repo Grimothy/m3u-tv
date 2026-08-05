@@ -1182,7 +1182,9 @@ class AppShellState extends ConsumerState<AppShell>
             backgroundColor: Theme.of(context).colorScheme.surface,
             body: Stack(
               children: [
-                const Positioned.fill(child: DecoratedBox(decoration: kAppGradientBg)),
+                const Positioned.fill(
+                  child: DecoratedBox(decoration: kAppGradientBg),
+                ),
                 Positioned.fill(
                   child: Padding(
                     padding: const EdgeInsets.only(left: 64),
@@ -1748,7 +1750,6 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
     final seriesList = ref.watch(seriesListProvider);
     final epgService = ref.watch(epgServiceProvider);
     final dvrRecordings = ref.watch(dvrRecordingsProvider);
-    final sourceLabel = ref.watch(sourceLabelProvider);
     final sourceError = ref.watch(sourceErrorProvider);
     final hasDvrFeature = ref.watch(hasDvrFeatureProvider);
 
@@ -1880,17 +1881,10 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
       body: ListView(
         padding: const EdgeInsets.all(MediaBrowsingMetrics.pagePadding),
         children: [
-          Text(
-            AppLocalizations.of(context).navHome,
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
-          const SizedBox(height: MediaBrowsingMetrics.chipGap),
-          Text(l.homeConnectedSource(sourceLabel)),
           if (sourceError != null && sourceError.isNotEmpty) ...[
-            const SizedBox(height: MediaBrowsingMetrics.chipGap),
             _OfflineBanner(message: sourceError),
+            const SizedBox(height: MediaBrowsingMetrics.pagePadding),
           ],
-          const SizedBox(height: MediaBrowsingMetrics.pagePadding),
           if (continueWatchingItems.isNotEmpty) continueWatchingSection,
           liveSection,
           moviesSection,

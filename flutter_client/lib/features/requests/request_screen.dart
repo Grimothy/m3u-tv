@@ -179,13 +179,7 @@ class _RequestScreenState extends ConsumerState<RequestScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-              child: Text(
-                l.requestsTitle,
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-            ),
+            const SizedBox(height: 24),
             DpadTabBar(
               controller: _tabController,
               tabs: [l.requestsTabSearch, l.requestsTabMyRequests],
@@ -224,6 +218,7 @@ class _RequestScreenState extends ConsumerState<RequestScreen>
             query: _query,
             hintText: l.requestsSearchHint,
             onChanged: _onQueryChanged,
+            autofocus: true,
           ),
         ),
         if (contentTypes.length > 1)

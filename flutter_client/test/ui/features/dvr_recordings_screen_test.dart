@@ -16,7 +16,6 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('DVR Recordings'), findsOneWidget);
       expect(find.text('Evening Movie'), findsOneWidget);
       expect(find.text('Director Cut'), findsOneWidget);
       expect(find.text('Completed'), findsOneWidget);

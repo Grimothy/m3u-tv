@@ -14,7 +14,6 @@ import 'package:m3u_tv/services/aiostreams_favorites_service.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
-import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
 /// Returns a display-friendly title for a catalog, appending the media type
@@ -257,6 +256,43 @@ class _AIOStreamsCatalogScreenState extends State<AIOStreamsCatalogScreen> {
   }
 }
 
+/// Large, always-focusable search affordance shown at the top of the
+/// AIOStreams home tab in place of a small header icon button, so it's
+/// easy to hit with a remote and stays reachable via D-pad navigation.
+class _AIOStreamsSearchEntry extends StatelessWidget {
+  const _AIOStreamsSearchEntry({required this.hintText, required this.onTap});
+
+  final String hintText;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return DpadInkWell(
+      onTap: onTap,
+      borderRadius: const BorderRadius.all(Radius.circular(12)),
+      color: colorScheme.surfaceContainerHigh,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(Icons.search, color: colorScheme.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                hintText,
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _CatalogItemCard extends StatelessWidget {
   const _CatalogItemCard({required this.item});
 
@@ -459,7 +495,6 @@ class _AIOStreamsHomeScreenState extends State<AIOStreamsHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
-    final theme = Theme.of(context);
 
     if (widget.integrations.isEmpty) {
       return Scaffold(
@@ -470,7 +505,6 @@ class _AIOStreamsHomeScreenState extends State<AIOStreamsHomeScreen> {
     final continueWatching = widget.progressList
         .where((p) => p.aioItemId != null && !p.completed)
         .toList(growable: false);
-    final logoUrl = widget.integrations.firstOrNull?.logoUrl;
 
     return Scaffold(
       body: DpadRegion(
@@ -483,45 +517,13 @@ class _AIOStreamsHomeScreenState extends State<AIOStreamsHomeScreen> {
         child: ListView(
           padding: const EdgeInsets.all(MediaBrowsingMetrics.pagePadding),
           children: [
-            // Header row: logo + title + optional search button
-            Row(
-              children: [
-                if (logoUrl != null) ...[
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.network(
-                      logoUrl,
-                      width: 40,
-                      height: 40,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                ],
-                Expanded(
-                  child: Text(
-                    l.navAioStreams,
-                    style: theme.textTheme.headlineMedium,
-                  ),
-                ),
-                if (_hasSearchableCatalog)
-                  DpadFocusable(
-                    onSelect: () => _openSearch(context),
-                    effects: const [
-                      GradientBorderEffect(
-                        borderRadius: BorderRadius.all(Radius.circular(50)),
-                      ),
-                    ],
-                    child: IconButton(
-                      tooltip: l.aiostreamsSearch,
-                      icon: const Icon(Icons.search),
-                      onPressed: () => _openSearch(context),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: MediaBrowsingMetrics.pagePadding),
+            if (_hasSearchableCatalog) ...[
+              _AIOStreamsSearchEntry(
+                hintText: l.aiostreamsSearchHint,
+                onTap: () => _openSearch(context),
+              ),
+              const SizedBox(height: MediaBrowsingMetrics.pagePadding),
+            ],
 
             // Continue Watching row (landscape style to match home screen)
             if (continueWatching.isNotEmpty)
