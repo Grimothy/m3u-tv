@@ -30,6 +30,7 @@ import 'package:m3u_tv/services/desktop_notification_presenter.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/services/tv_notification_service.dart';
+import 'package:m3u_tv/shared/app_background.dart';
 import 'package:m3u_tv/shared/dvr_action_dialogs.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
@@ -1181,6 +1182,7 @@ class AppShellState extends ConsumerState<AppShell>
             backgroundColor: Theme.of(context).colorScheme.surface,
             body: Stack(
               children: [
+                const Positioned.fill(child: DecoratedBox(decoration: kAppGradientBg)),
                 Positioned.fill(
                   child: Padding(
                     padding: const EdgeInsets.only(left: 64),
@@ -1360,14 +1362,16 @@ class NavigationSidebar extends StatelessWidget {
         width: width,
         clipBehavior: Clip.hardEdge,
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHigh,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 8,
-              offset: const Offset(2, 0),
-            ),
-          ],
+          color: expanded ? theme.colorScheme.surface : Colors.transparent,
+          boxShadow: expanded
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(2, 0),
+                  ),
+                ]
+              : null,
         ),
         child: FocusScope(
           node: scopeNode,
