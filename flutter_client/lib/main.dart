@@ -20,6 +20,7 @@ import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
+import 'package:window_manager/window_manager.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,6 +30,9 @@ Future<void> main() async {
   // MediaKit (libmpv) is used on desktop and iOS. tvOS uses AVKit exclusively.
   if (!kIsWeb && !Platform.isAndroid && Platform.operatingSystem != 'tvos') {
     MediaKit.ensureInitialized();
+  }
+  if (!kIsWeb && Platform.isMacOS) {
+    await _configureMacOSWindow();
   }
   final appState = await _buildAppState();
   final nativeTelevisionHint = await resolveNativeTelevisionHint();
@@ -45,6 +49,23 @@ Future<void> main() async {
       ),
     ),
   );
+}
+
+/// Hides the native titlebar and lets app content extend under the traffic
+/// lights (macOS "hidden inline titlebar" look). AppShell adds a
+/// DragToMoveArea + top inset for macOS desktop so the window stays
+/// draggable and the sidebar logo doesn't sit under the traffic lights.
+Future<void> _configureMacOSWindow() async {
+  await windowManager.ensureInitialized();
+  const windowOptions = WindowOptions(
+    titleBarStyle: TitleBarStyle.hidden,
+    windowButtonVisibility: true,
+  );
+  await windowManager.waitUntilReadyToShow(windowOptions, () async {
+    await windowManager.setTitle('');
+    await windowManager.show();
+    await windowManager.focus();
+  });
 }
 
 /// Push is mobile-only: TV builds (Android TV, tvOS) rely on the existing

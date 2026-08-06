@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
@@ -35,6 +36,15 @@ import 'package:m3u_tv/shared/dvr_action_dialogs.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/notification_toast.dart';
+import 'package:window_manager/window_manager.dart';
+
+/// Height of the transparent hidden-titlebar drag strip on macOS desktop —
+/// keeps the window draggable and clears the floating traffic-light buttons,
+/// which content would otherwise render underneath (see main.dart's
+/// TitleBarStyle.hidden setup).
+const double _kMacTitlebarInset = 28;
+
+bool get _isMacDesktopWindow => Platform.isMacOS;
 
 /// Device type enum matching the RN useDeviceType hook.
 enum DeviceType { tv, desktop, tablet, phone }
@@ -1180,6 +1190,10 @@ class AppShellState extends ConsumerState<AppShell>
             return Scaffold(body: contentShell);
           }
 
+          final macTitlebarInset = _isMacDesktopWindow
+              ? _kMacTitlebarInset
+              : 0.0;
+
           return Scaffold(
             backgroundColor: Theme.of(context).colorScheme.surface,
             body: Stack(
@@ -1189,7 +1203,10 @@ class AppShellState extends ConsumerState<AppShell>
                 ),
                 Positioned.fill(
                   child: Padding(
-                    padding: const EdgeInsets.only(left: 64),
+                    padding: EdgeInsets.only(
+                      left: 64,
+                      top: macTitlebarInset,
+                    ),
                     child: DpadRegion(
                       memoryKey: 'content',
                       horizontalEdge: DpadEdgeBehavior.stop,
@@ -1203,7 +1220,7 @@ class AppShellState extends ConsumerState<AppShell>
                   ),
                 ),
                 Positioned(
-                  top: 0,
+                  top: macTitlebarInset,
                   left: 0,
                   bottom: 0,
                   child: NavigationSidebar(
@@ -1218,6 +1235,14 @@ class AppShellState extends ConsumerState<AppShell>
                     onDeactivateSidebar: _deactivateSidebar,
                   ),
                 ),
+                if (_isMacDesktopWindow)
+                  const Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: _kMacTitlebarInset,
+                    child: DragToMoveArea(child: SizedBox.expand()),
+                  ),
               ],
             ),
           );
