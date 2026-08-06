@@ -327,6 +327,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsProxyNoProfiles => '没有可用的转码配置——将使用直连代理播放。';
 
   @override
+  String get settingsDvr => 'DVR';
+
+  @override
+  String get settingsDvrSubtitle => '录制内容播放设置。';
+
+  @override
   String get settingsComskip => '广告跳过';
 
   @override

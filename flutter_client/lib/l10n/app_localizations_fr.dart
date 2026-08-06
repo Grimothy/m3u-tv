@@ -332,6 +332,13 @@ class AppLocalizationsFr extends AppLocalizations {
       'Aucun profil de transcodage disponible — les flux utilisent le proxy direct.';
 
   @override
+  String get settingsDvr => 'DVR';
+
+  @override
+  String get settingsDvrSubtitle =>
+      'Paramètres de lecture du contenu enregistré.';
+
+  @override
   String get settingsComskip => 'Suppression des publicités';
 
   @override

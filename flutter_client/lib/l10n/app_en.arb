@@ -153,6 +153,8 @@
   "settingsProxyProfileDefault": "Default",
   "settingsProxyProfileDirect": "Direct (no transcoding)",
   "settingsProxyNoProfiles": "No transcoding profiles available — streams use the direct proxy.",
+  "settingsDvr": "DVR",
+  "settingsDvrSubtitle": "Settings for recorded content playback.",
   "settingsComskip": "Commercial Skipping",
   "settingsComskipSubtitle": "Controls how the player reacts to commercial breaks detected in DVR recordings.",
   "settingsComskipAutoSkip": "Auto-skip commercials",

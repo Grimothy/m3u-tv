@@ -332,6 +332,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'No transcoding profiles available — streams use the direct proxy.';
 
   @override
+  String get settingsDvr => 'DVR';
+
+  @override
+  String get settingsDvrSubtitle => 'Settings for recorded content playback.';
+
+  @override
   String get settingsComskip => 'Commercial Skipping';
 
   @override
