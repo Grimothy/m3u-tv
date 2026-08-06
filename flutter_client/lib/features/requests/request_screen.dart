@@ -179,7 +179,6 @@ class _RequestScreenState extends ConsumerState<RequestScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 24),
             DpadTabBar(
               controller: _tabController,
               tabs: [l.requestsTabSearch, l.requestsTabMyRequests],

@@ -424,7 +424,6 @@ class _ConnectedViewState extends State<_ConnectedView>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 24),
         DpadTabBar(
           controller: _tabController,
           tabs: [
