@@ -18,6 +18,16 @@ This is the TV frontend for the `m3u-editor` system. It focuses on video playbac
 - **Player**: `video_player` / platform player via `PlaybackOrchestrator`.
 - **UI**: Material 3, `DpadFocusable` for all interactive items, `DpadRegion` for focus grouping.
 
+## Working Model
+
+Design and implementation are separate roles on this project.
+
+- The coordinating session (AO orchestrator, team lead, or equivalent) owns diagnosis, design, and final verification. It reads the code and writes the spec; it does not write the code.
+- Implementers work from a spec that names the files, the root cause, and the concrete change — never from a forwarded one-line bug report.
+- The design is shown to CJ for correction BEFORE implementation starts.
+- Implementers decompose their work to sub-agents where the task splits cleanly.
+- Work counts as done only after the coordinating session verifies the diff against the spec.
+
 ## Rules
 
 ### TV Interaction
