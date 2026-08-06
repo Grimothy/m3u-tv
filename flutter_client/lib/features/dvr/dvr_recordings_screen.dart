@@ -170,16 +170,6 @@ class _RecordingListState extends ConsumerState<_RecordingList> {
     );
   }
 
-  Future<void> _playFirstSelected() async {
-    for (final recording in widget.recordings) {
-      if (_selectedUuids.contains(recording.uuid) && recording.isPlayable) {
-        _openRecording(recording);
-        return;
-      }
-}
-}
-
-
   Future<void> _deleteSelected() async {
     final delete = widget.onDeleteRecording;
     if (delete == null) return;
@@ -254,11 +244,6 @@ class _RecordingListState extends ConsumerState<_RecordingList> {
           _SelectionActionBar(
             count: _selectedUuids.length,
             onExit: _exitSelectMode,
-            onPlay: widget.recordings.any(
-              (r) => _selectedUuids.contains(r.uuid) && r.isPlayable,
-            )
-                ? _playFirstSelected
-                : null,
             onDelete: widget.onDeleteRecording != null
                 ? _deleteSelected
                 : null,
@@ -656,13 +641,11 @@ class _SelectionActionBar extends StatelessWidget {
   const _SelectionActionBar({
     required this.count,
     required this.onExit,
-    this.onPlay,
     this.onDelete,
   });
 
   final int count;
   final VoidCallback onExit;
-  final VoidCallback? onPlay;
   final VoidCallback? onDelete;
 
   @override
@@ -695,14 +678,6 @@ class _SelectionActionBar extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (onPlay != null) ...[
-                FilledButton.icon(
-                  onPressed: onPlay,
-                  icon: const Icon(Icons.play_arrow),
-                  label: Text(l10n.dvrPlay),
-                ),
-                const SizedBox(width: 8),
-              ],
               if (onDelete != null)
                 FilledButton.icon(
                   onPressed: onDelete,
