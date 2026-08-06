@@ -223,13 +223,13 @@ class _DvrStorageSummary extends StatelessWidget {
       ),
     );
   }
+}
 
-  String _formatBytes(int bytes) {
-    final gib = bytes / (1024 * 1024 * 1024);
-    if (gib >= 1) return '${gib.toStringAsFixed(1)} GB';
-    final mib = bytes / (1024 * 1024);
-    return '${mib.toStringAsFixed(0)} MB';
-  }
+String _formatBytes(int bytes) {
+  final gib = bytes / (1024 * 1024 * 1024);
+  if (gib >= 1) return '${gib.toStringAsFixed(1)} GB';
+  final mib = bytes / (1024 * 1024);
+  return '${mib.toStringAsFixed(0)} MB';
 }
 
 class _RecordingList extends StatelessWidget {
@@ -393,7 +393,7 @@ class _RecordingCard extends StatelessWidget {
                             if (recording.fileSizeBytes != null &&
                                 recording.fileSizeBytes! > 0)
                               _Badge(
-                                label: _sizeLabel(recording.fileSizeBytes!),
+                                label: _formatBytes(recording.fileSizeBytes!),
                               ),
                           ],
                         ),
@@ -436,13 +436,6 @@ class _RecordingCard extends StatelessWidget {
     if (hours > 0 && minutes > 0) return '${hours}h ${minutes}m';
     if (hours > 0) return '${hours}h';
     return '${minutes}m';
-  }
-
-  String _sizeLabel(int bytes) {
-    final gib = bytes / (1024 * 1024 * 1024);
-    if (gib >= 1) return '${gib.toStringAsFixed(1)} GB';
-    final mib = bytes / (1024 * 1024);
-    return '${mib.toStringAsFixed(0)} MB';
   }
 }
 
