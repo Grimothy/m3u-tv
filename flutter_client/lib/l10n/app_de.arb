@@ -367,5 +367,21 @@
   "dvrDeleteFailed": "Aufnahme konnte nicht gelöscht werden",
   "liveTvStopRecording": "Aufnahme stoppen",
   "playerRecordNowTooltip": "Aktuelle Sendung aufnehmen",
-  "playerStopRecordingTooltip": "Aufnahme stoppen"
+  "playerStopRecordingTooltip": "Aufnahme stoppen",
+  "dvrMoreActions": "Weitere Aktionen",
+  "dvrPlay": "Abspielen",
+  "dvrSelect": "Auswählen",
+  "dvrStop": "Stoppen",
+  "dvrStatusRecording": "Aufnahme läuft",
+  "dvrStatusScheduled": "Geplant",
+  "dvrStatusFailed": "Fehlgeschlagen",
+  "dvrExitSelection": "Auswahl beenden",
+  "dvrSelectedCount": "{count, plural, =0{Keine Elemente ausgewählt} one{1 Element ausgewählt} other{{count} Elemente ausgewählt}}",
+  "@dvrSelectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

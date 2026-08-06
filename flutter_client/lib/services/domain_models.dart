@@ -356,19 +356,6 @@ enum DvrRecordingStatus {
   unknown,
 }
 
-extension DvrRecordingStatusDisplay on DvrRecordingStatus {
-  String get label => switch (this) {
-    DvrRecordingStatus.scheduled => 'Scheduled',
-    DvrRecordingStatus.recording => 'Recording',
-    DvrRecordingStatus.postProcessing => 'Post Processing',
-    DvrRecordingStatus.completed => 'Completed',
-    DvrRecordingStatus.failed => 'Failed',
-    DvrRecordingStatus.cancelled => 'Cancelled',
-    DvrRecordingStatus.deleted => 'Deleted',
-    DvrRecordingStatus.unknown => 'Unknown',
-  };
-}
-
 DvrRecordingStatus dvrRecordingStatusFromWire(String value) {
   return switch (value.trim().toLowerCase()) {
     'scheduled' => DvrRecordingStatus.scheduled,

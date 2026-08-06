@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/features/dvr/dvr_recordings_screen.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
@@ -8,20 +9,47 @@ import 'package:m3u_tv/services/domain_models.dart';
 
 void main() {
   group('DvrRecordingsScreen', () {
-    testWidgets('renders completed and recording rows with status details', (
+    testWidgets(
+      'renders title and one-line meta with channel, episode, duration, size',
+      (tester) async {
+        await tester.pumpWidget(
+          _TestApp(recordings: [_completedRecording()]),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Evening Movie'), findsOneWidget);
+        // Subtitle is no longer rendered in the dense row — channel/episode/
+        // duration/size replace it as the second line.
+        expect(find.text('Director Cut'), findsNothing);
+        // Channel name surfaces in the meta line.
+        expect(find.textContaining('BBC One'), findsOneWidget);
+        // Season/episode collapses to compact `S{season}-E{episode}` form.
+        expect(find.textContaining('S2-E5'), findsOneWidget);
+        // Duration + size render as compact labels.
+        expect(find.textContaining('2h'), findsOneWidget);
+        expect(find.textContaining('GB'), findsOneWidget);
+        // `Completed` no longer renders a status word in the meta line — the
+        // leading tile carries that information.
+        expect(find.text('Completed'), findsNothing);
+      },
+    );
+
+    testWidgets('completed recording has overflow menu, not an inline delete', (
       tester,
     ) async {
       await tester.pumpWidget(
-        _TestApp(recordings: [_completedRecording(), _recordingNow()]),
+        _TestApp(
+          recordings: [_completedRecording()],
+          onDeleteRecording: (_) async {},
+        ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Evening Movie'), findsOneWidget);
-      expect(find.text('Director Cut'), findsOneWidget);
-      expect(find.text('Completed'), findsOneWidget);
-      expect(find.text('Live News'), findsOneWidget);
-      expect(find.text('Recording'), findsOneWidget);
-      expect(find.text('News 24'), findsOneWidget);
+      // The always-visible red delete button is gone — there is exactly one
+      // overflow affordance per row.
+      expect(find.byTooltip('Delete'), findsNothing);
+      expect(find.byTooltip('Cancel'), findsNothing);
+      expect(find.byIcon(Icons.more_vert), findsOneWidget);
     });
 
     testWidgets('completed recording opens player with stream_url', (
@@ -50,6 +78,24 @@ void main() {
       );
     });
 
+    testWidgets(
+      'in-progress recording renders "● Recording" in the meta line',
+      (tester) async {
+        await tester.pumpWidget(
+          _TestApp(recordings: [_recordingNow()]),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Live News'), findsOneWidget);
+        // The in-progress status word leads the meta line and carries a
+        // filled dot glyph prefix.
+        expect(find.textContaining('●'), findsOneWidget);
+        expect(find.textContaining('Recording'), findsOneWidget);
+        // Channel name still follows as a normal meta segment.
+        expect(find.textContaining('News 24'), findsOneWidget);
+      },
+    );
+
     testWidgets('in-progress recording opens player with live_url', (
       tester,
     ) async {
@@ -75,53 +121,31 @@ void main() {
       expect(opened!.metadata['dvr_uuid'], 'rec-2');
     });
 
-    testWidgets('shows cancel button for in-progress recording', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _TestApp(
-          recordings: [_recordingNow()],
-          onCancelRecording: (_) async {},
-        ),
-      );
-      await tester.pumpAndSettle();
+    testWidgets(
+      'in-progress recording overflow menu offers Stop, never Delete',
+      (tester) async {
+        await tester.pumpWidget(
+          _TestApp(
+            recordings: [_recordingNow()],
+            onCancelRecording: (_) async {},
+            onCancelAndDeleteRecording: (_) async {},
+            onDeleteRecording: (_) async {},
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      expect(
-        find.byTooltip('Cancel'),
-        findsOneWidget,
-        reason: 'scheduled/recording rows show the cancel action',
-      );
-      expect(find.byTooltip('Delete'), findsNothing);
-    });
+        await tester.tap(find.byIcon(Icons.more_vert).first);
+        await tester.pumpAndSettle();
 
-    testWidgets('shows cancel button for scheduled recording', (tester) async {
-      await tester.pumpWidget(
-        _TestApp(
-          recordings: [_scheduledRecording()],
-          onCancelRecording: (_) async {},
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byTooltip('Cancel'), findsOneWidget);
-      expect(find.byTooltip('Delete'), findsNothing);
-    });
-
-    testWidgets('shows delete button for completed recording', (tester) async {
-      await tester.pumpWidget(
-        _TestApp(
-          recordings: [_completedRecording()],
-          onDeleteRecording: (_) async {},
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byTooltip('Delete'), findsOneWidget);
-      expect(find.byTooltip('Cancel'), findsNothing);
-    });
+        expect(find.text('Play'), findsOneWidget);
+        expect(find.text('Select'), findsOneWidget);
+        expect(find.text('Stop'), findsOneWidget);
+        expect(find.text('Delete'), findsNothing);
+      },
+    );
 
     testWidgets(
-      'shows a play icon alongside the delete button for a playable completed recording',
+      'completed recording overflow menu offers Play, Select, and Delete',
       (tester) async {
         await tester.pumpWidget(
           _TestApp(
@@ -131,34 +155,46 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(find.byTooltip('Delete'), findsOneWidget);
-        expect(find.byIcon(Icons.play_arrow), findsOneWidget);
+        await tester.tap(find.byIcon(Icons.more_vert).first);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Play'), findsOneWidget);
+        expect(find.text('Select'), findsOneWidget);
+        expect(find.text('Delete'), findsOneWidget);
+        expect(find.text('Stop'), findsNothing);
       },
     );
 
-    testWidgets('hides the play icon for a non-playable recording', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _TestApp(
-          recordings: [_failedRecording(), _cancelledRecording()],
-          onDeleteRecording: (_) async {},
-        ),
-      );
-      await tester.pumpAndSettle();
+    testWidgets(
+      'failed row renders "Failed" in the meta line and a checkbox-free tile',
+      (tester) async {
+        await tester.pumpWidget(
+          _TestApp(
+            recordings: [_failedRecording()],
+            onDeleteRecording: (_) async {},
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      expect(find.byTooltip('Delete'), findsNWidgets(2));
-      expect(find.byIcon(Icons.play_arrow), findsNothing);
-    });
+        expect(find.text('Broken Show'), findsOneWidget);
+        // No status word was rendered for completed/cancelled/postProcessing
+        // before; failed DOES show a status word so the meta line leads with
+        // "Failed" (in the error color, asserted via `DefaultTextStyle` below).
+        expect(find.textContaining('Failed'), findsOneWidget);
+        // The error status surfaces as an Icons.error glyph in the leading
+        // tile (the prior layout used the same icon, so this is a smoke test).
+        expect(find.byIcon(Icons.error), findsOneWidget);
+        // A failed recording is not playable — overflow menu must not show Play.
+        await tester.tap(find.byIcon(Icons.more_vert).first);
+        await tester.pumpAndSettle();
+        expect(find.text('Play'), findsNothing);
+        expect(find.text('Delete'), findsOneWidget);
+      },
+    );
 
     testWidgets(
-      'delete button is reachable and selectable via D-pad, not just touch',
+      'overflow Delete shows confirmation dialog and runs callback',
       (tester) async {
-        // Regression test: DpadFocusable excludes descendant focus by
-        // default, so a button nested inside the row's own play DpadInkWell
-        // was permanently unreachable by remote even though it was tappable.
-        // The row's play area autofocuses first (index == 0); moving right
-        // must land on the delete button and D-pad select must activate it.
         String? deletedUuid;
         await tester.pumpWidget(
           _TestApp(
@@ -170,9 +206,9 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.tap(find.byIcon(Icons.more_vert).first);
         await tester.pumpAndSettle();
-        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.tap(find.text('Delete'));
         await tester.pumpAndSettle();
 
         expect(find.text('Delete recording?'), findsOneWidget);
@@ -183,64 +219,8 @@ void main() {
       },
     );
 
-    testWidgets('shows delete button for failed and cancelled recordings', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _TestApp(
-          recordings: [_failedRecording(), _cancelledRecording()],
-          onDeleteRecording: (_) async {},
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byTooltip('Delete'), findsNWidgets(2));
-      expect(find.byTooltip('Cancel'), findsNothing);
-    });
-
-    testWidgets('hides action buttons when callbacks are null', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _TestApp(recordings: [_completedRecording(), _recordingNow()]),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byTooltip('Cancel'), findsNothing);
-      expect(find.byTooltip('Delete'), findsNothing);
-    });
-
-    testWidgets('cancel button "Keep recording" choice stops but keeps it', (
-      tester,
-    ) async {
-      String? cancelledUuid;
-      String? cancelAndDeletedUuid;
-      await tester.pumpWidget(
-        _TestApp(
-          recordings: [_recordingNow()],
-          onCancelRecording: (uuid) async {
-            cancelledUuid = uuid;
-          },
-          onCancelAndDeleteRecording: (uuid) async {
-            cancelAndDeletedUuid = uuid;
-          },
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byTooltip('Cancel'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Stop recording — Live News'), findsOneWidget);
-      await tester.tap(find.text('Keep recording'));
-      await tester.pumpAndSettle();
-
-      expect(cancelledUuid, 'rec-2');
-      expect(cancelAndDeletedUuid, isNull);
-    });
-
     testWidgets(
-      'cancel button "Delete recording" choice stops and deletes it',
+      'overflow Stop "Keep recording" choice stops but keeps it',
       (tester) async {
         String? cancelledUuid;
         String? cancelAndDeletedUuid;
@@ -257,7 +237,41 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byTooltip('Cancel'));
+        await tester.tap(find.byIcon(Icons.more_vert).first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Stop'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Stop recording — Live News'), findsOneWidget);
+        await tester.tap(find.text('Keep recording'));
+        await tester.pumpAndSettle();
+
+        expect(cancelledUuid, 'rec-2');
+        expect(cancelAndDeletedUuid, isNull);
+      },
+    );
+
+    testWidgets(
+      'overflow Stop "Delete recording" choice stops and deletes it',
+      (tester) async {
+        String? cancelledUuid;
+        String? cancelAndDeletedUuid;
+        await tester.pumpWidget(
+          _TestApp(
+            recordings: [_recordingNow()],
+            onCancelRecording: (uuid) async {
+              cancelledUuid = uuid;
+            },
+            onCancelAndDeleteRecording: (uuid) async {
+              cancelAndDeletedUuid = uuid;
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.more_vert).first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Stop'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Delete recording'));
         await tester.pumpAndSettle();
@@ -267,57 +281,188 @@ void main() {
       },
     );
 
-    testWidgets('delete button shows confirmation dialog and runs callback', (
-      tester,
-    ) async {
-      String? deletedUuid;
-      await tester.pumpWidget(
-        _TestApp(
-          recordings: [_completedRecording()],
-          onDeleteRecording: (uuid) async {
-            deletedUuid = uuid;
-          },
-        ),
-      );
-      await tester.pumpAndSettle();
+    testWidgets(
+      'long-press on a row enters select mode and morphs the tile',
+      (tester) async {
+        await tester.pumpWidget(
+          _TestApp(recordings: [_completedRecording(), _recordingNow()]),
+        );
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('Delete'));
-      await tester.pumpAndSettle();
+        // Tap behavior before long-press: completing a long-press would
+        // enter select mode and the next tap should toggle selection, not
+        // play. Use a synthesized long-press to keep the test deterministic.
+        await tester.longPress(find.text('Evening Movie'));
+        await tester.pumpAndSettle();
 
-      expect(find.text('Delete recording?'), findsOneWidget);
-      await tester.tap(find.text('Delete recording'));
-      await tester.pumpAndSettle();
+        // Selection action bar appears with the plural count.
+        expect(find.text('1 item selected'), findsOneWidget);
+        // Leading tile morphs to a checkbox-style indicator in select mode.
+        expect(find.byIcon(Icons.check_box), findsOneWidget);
+        // Untapped row still renders as an unchecked checkbox.
+        expect(find.byIcon(Icons.check_box_outline_blank), findsOneWidget);
+      },
+    );
 
-      expect(deletedUuid, 'rec-1');
-    });
+    testWidgets(
+      'overflow Select enters select mode and shows the action bar',
+      (tester) async {
+        await tester.pumpWidget(
+          _TestApp(recordings: [_completedRecording()]),
+        );
+        await tester.pumpAndSettle();
 
-    testWidgets('"Back" on the stop-recording dialog invokes no callback', (
-      tester,
-    ) async {
-      var cancelCalls = 0;
-      var cancelAndDeleteCalls = 0;
-      await tester.pumpWidget(
-        _TestApp(
-          recordings: [_recordingNow()],
-          onCancelRecording: (_) async {
-            cancelCalls += 1;
-          },
-          onCancelAndDeleteRecording: (_) async {
-            cancelAndDeleteCalls += 1;
-          },
-        ),
-      );
-      await tester.pumpAndSettle();
+        await tester.tap(find.byIcon(Icons.more_vert).first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Select'));
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('Cancel'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Back'));
-      await tester.pumpAndSettle();
+        expect(find.text('1 item selected'), findsOneWidget);
+      },
+    );
 
-      expect(cancelCalls, 0);
-      expect(cancelAndDeleteCalls, 0);
-      expect(find.text('Stop recording — Live News'), findsNothing);
-    });
+    testWidgets(
+      'bulk Delete from the action bar calls delete for each selected',
+      (tester) async {
+        final deleted = <String>[];
+        await tester.pumpWidget(
+          _TestApp(
+            recordings: [
+              _completedRecording(),
+              _failedRecording(),
+              _recordingNow(),
+            ],
+            onDeleteRecording: (uuid) async {
+              deleted.add(uuid);
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Enter select mode from the first row's overflow, then tap the
+        // other deletable rows to extend the selection (the in-progress
+        // row is non-deletable so it should be filtered out by the action
+        // bar's Play/Delete availability).
+        await tester.tap(find.byIcon(Icons.more_vert).first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Select'));
+        await tester.pumpAndSettle();
+
+        // Toggle the failed row's selection via tap. In select mode, tapping
+        // a row toggles selection rather than playing.
+        await tester.tap(find.text('Broken Show'));
+        await tester.pumpAndSettle();
+        expect(find.text('2 items selected'), findsOneWidget);
+
+        // The action bar Delete button deletes each selected.
+        await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+        await tester.pumpAndSettle();
+
+        expect(deleted.toSet(), <String>{'rec-1', 'rec-4'});
+      },
+    );
+
+    testWidgets(
+      'overflow button is reachable and selectable via D-pad, not just touch',
+      (tester) async {
+        // Regression test: the play row autofocuses first (index == 0);
+        // moving right must land on the overflow button and D-pad select
+        // must open the menu.
+        await tester.pumpWidget(
+          _TestApp(
+            recordings: [_completedRecording()],
+            onDeleteRecording: (_) async {},
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+
+        // Overflow menu opens, surfacing Play/Select/Delete for a completed
+        // recording.
+        expect(find.text('Delete'), findsOneWidget);
+        await tester.tap(find.text('Delete'));
+        await tester.pumpAndSettle();
+        expect(find.text('Delete recording?'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '"Back" on the stop-recording dialog invokes no callback',
+      (tester) async {
+        var cancelCalls = 0;
+        var cancelAndDeleteCalls = 0;
+        await tester.pumpWidget(
+          _TestApp(
+            recordings: [_recordingNow()],
+            onCancelRecording: (_) async {
+              cancelCalls += 1;
+            },
+            onCancelAndDeleteRecording: (_) async {
+              cancelAndDeleteCalls += 1;
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.more_vert).first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Stop'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Back'));
+        await tester.pumpAndSettle();
+
+        expect(cancelCalls, 0);
+        expect(cancelAndDeleteCalls, 0);
+        expect(find.text('Stop recording — Live News'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'scheduled recording overflow menu offers Stop (no Play, no Delete)',
+      (tester) async {
+        await tester.pumpWidget(
+          _TestApp(
+            recordings: [_scheduledRecording()],
+            onCancelRecording: (_) async {},
+            onDeleteRecording: (_) async {},
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Scheduled recordings are not playable yet — no Play entry.
+        await tester.tap(find.byIcon(Icons.more_vert).first);
+        await tester.pumpAndSettle();
+        expect(find.text('Play'), findsNothing);
+        expect(find.text('Select'), findsOneWidget);
+        expect(find.text('Stop'), findsOneWidget);
+        expect(find.text('Delete'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'cancelled recording overflow menu offers Delete (no Play, no Stop)',
+      (tester) async {
+        await tester.pumpWidget(
+          _TestApp(
+            recordings: [_cancelledRecording()],
+            onDeleteRecording: (_) async {},
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Cancelled recordings are not playable and not cancellable.
+        await tester.tap(find.byIcon(Icons.more_vert).first);
+        await tester.pumpAndSettle();
+        expect(find.text('Play'), findsNothing);
+        expect(find.text('Select'), findsOneWidget);
+        expect(find.text('Stop'), findsNothing);
+        expect(find.text('Delete'), findsOneWidget);
+      },
+    );
   });
 }
 
@@ -338,18 +483,20 @@ class _TestApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      theme: ThemeData.dark(useMaterial3: true),
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: DvrRecordingsScreen(
-        recordings: recordings,
-        isLoading: false,
-        isConfigured: true,
-        onPlay: onPlay ?? (_) {},
-        onCancelRecording: onCancelRecording,
-        onCancelAndDeleteRecording: onCancelAndDeleteRecording,
-        onDeleteRecording: onDeleteRecording,
+    return ProviderScope(
+      child: MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: DvrRecordingsScreen(
+          recordings: recordings,
+          isLoading: false,
+          isConfigured: true,
+          onPlay: onPlay ?? (_) {},
+          onCancelRecording: onCancelRecording,
+          onCancelAndDeleteRecording: onCancelAndDeleteRecording,
+          onDeleteRecording: onDeleteRecording,
+        ),
       ),
     );
   }

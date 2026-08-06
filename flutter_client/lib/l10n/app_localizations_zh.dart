@@ -715,4 +715,39 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get playerStopRecordingTooltip => '停止录制';
+
+  @override
+  String get dvrMoreActions => '更多操作';
+
+  @override
+  String get dvrPlay => '播放';
+
+  @override
+  String get dvrSelect => '选择';
+
+  @override
+  String get dvrStop => '停止';
+
+  @override
+  String get dvrStatusRecording => '正在录制';
+
+  @override
+  String get dvrStatusScheduled => '已计划';
+
+  @override
+  String get dvrStatusFailed => '失败';
+
+  @override
+  String get dvrExitSelection => '退出选择';
+
+  @override
+  String dvrSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '已选择 $count 项',
+      zero: '未选择任何项目',
+    );
+    return '$_temp0';
+  }
 }
