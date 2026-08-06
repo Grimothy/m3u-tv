@@ -854,6 +854,24 @@ abstract class AppLocalizations {
   /// **'Pair with code'**
   String get settingsPairWithCode;
 
+  /// No description provided for @settingsTabPair.
+  ///
+  /// In en, this message translates to:
+  /// **'Pair'**
+  String get settingsTabPair;
+
+  /// No description provided for @settingsTabSignIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign In'**
+  String get settingsTabSignIn;
+
+  /// No description provided for @settingsPairTabSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your server address, then pair this TV using a code.'**
+  String get settingsPairTabSubtitle;
+
   /// No description provided for @pairingEnterServerFirst.
   ///
   /// In en, this message translates to:
@@ -881,7 +899,7 @@ abstract class AppLocalizations {
   /// No description provided for @pairingPendingGoTo.
   ///
   /// In en, this message translates to:
-  /// **'On your phone or computer, go to your m3u-editor admin panel and open \"Pair Device\":'**
+  /// **'On your phone or computer, go to:'**
   String get pairingPendingGoTo;
 
   /// No description provided for @pairingPendingEnterCode.

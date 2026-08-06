@@ -3,9 +3,11 @@ import 'package:m3u_tv/services/domain_models.dart';
 
 void main() {
   group('UserCredentials.normalized scheme handling', () {
-    UserCredentials creds(String server) =>
-        const UserCredentials(server: '', username: 'u', password: 'p')
-            .normalized();
+    UserCredentials creds(String server) => const UserCredentials(
+      server: '',
+      username: 'u',
+      password: 'p',
+    ).normalized();
 
     test('bare host:port gets http:// prefixed', () {
       final result = const UserCredentials(

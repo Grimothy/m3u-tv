@@ -401,6 +401,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsPairWithCode => '使用代码配对';
 
   @override
+  String get settingsTabPair => '配对';
+
+  @override
+  String get settingsTabSignIn => '登录';
+
+  @override
+  String get settingsPairTabSubtitle => '输入您的服务器地址，然后使用代码配对此电视。';
+
+  @override
   String get pairingEnterServerFirst => '请先输入您的服务器地址';
 
   @override
@@ -413,7 +422,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pairingOpenBrowser => '在浏览器中打开';
 
   @override
-  String get pairingPendingGoTo => '在您的手机或电脑上，打开 m3u-editor 管理面板并进入“配对设备”：';
+  String get pairingPendingGoTo => '在您的手机或电脑上，访问：';
 
   @override
   String get pairingPendingEnterCode => '然后输入此代码：';

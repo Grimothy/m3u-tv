@@ -411,6 +411,16 @@ class AppLocalizationsFr extends AppLocalizations {
   String get settingsPairWithCode => 'Coupler avec un code';
 
   @override
+  String get settingsTabPair => 'Coupler';
+
+  @override
+  String get settingsTabSignIn => 'Connexion';
+
+  @override
+  String get settingsPairTabSubtitle =>
+      'Saisissez l\'adresse de votre serveur, puis couplez ce téléviseur à l\'aide d\'un code.';
+
+  @override
   String get pairingEnterServerFirst =>
       'Entrez d\'abord l\'URL de votre serveur';
 
@@ -427,7 +437,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get pairingPendingGoTo =>
-      'Sur votre téléphone ou ordinateur, ouvrez le panneau d\'administration m3u-editor et allez dans \"Coupler un appareil\":';
+      'Sur votre téléphone ou ordinateur, allez sur :';
 
   @override
   String get pairingPendingEnterCode => 'Puis entrez ce code :';

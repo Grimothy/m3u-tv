@@ -121,7 +121,9 @@ class DevicePairingService extends ChangeNotifier {
   void _schedulePoll(int attempt, String server) {
     _pollTimer?.cancel();
     _pollTimer = null;
-    if (_disposed || attempt != _attempt || _status != DevicePairingStatus.pending) {
+    if (_disposed ||
+        attempt != _attempt ||
+        _status != DevicePairingStatus.pending) {
       return;
     }
     final expiresAt = _codeExpiresAt;

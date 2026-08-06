@@ -20,22 +20,25 @@ void main() {
       expect(transport.requests.single.path, '/api/device/code');
     });
 
-    test('approved poll response yields credentials and stops polling', () async {
-      final transport = _FakeTransport([
-        _codeResponse(interval: 3600),
-        _approvedResponse(username: 'tv-user', password: 'tv-pass'),
-      ]);
-      final service = DevicePairingService(transport: transport.call);
-      addTearDown(service.dispose);
+    test(
+      'approved poll response yields credentials and stops polling',
+      () async {
+        final transport = _FakeTransport([
+          _codeResponse(interval: 3600),
+          _approvedResponse(username: 'tv-user', password: 'tv-pass'),
+        ]);
+        final service = DevicePairingService(transport: transport.call);
+        addTearDown(service.dispose);
 
-      await service.start('http://example.com');
-      await service.pollForTesting('http://example.com');
+        await service.start('http://example.com');
+        await service.pollForTesting('http://example.com');
 
-      expect(service.status, DevicePairingStatus.approved);
-      expect(service.result?.server, 'http://example.com');
-      expect(service.result?.username, 'tv-user');
-      expect(service.result?.password, 'tv-pass');
-    });
+        expect(service.status, DevicePairingStatus.approved);
+        expect(service.result?.server, 'http://example.com');
+        expect(service.result?.username, 'tv-user');
+        expect(service.result?.password, 'tv-pass');
+      },
+    );
 
     test('pending poll response keeps polling state', () async {
       final transport = _FakeTransport([
@@ -120,7 +123,10 @@ void main() {
   });
 }
 
-DevicePairingResponse _codeResponse({required int interval, int expiresIn = 600}) {
+DevicePairingResponse _codeResponse({
+  required int interval,
+  int expiresIn = 600,
+}) {
   return DevicePairingResponse(200, <String, Object?>{
     'device_code': 'DEVICE-CODE',
     'user_code': 'ABCD-1234',
@@ -145,7 +151,10 @@ DevicePairingResponse _statusResponse(
   String status, {
   Map<String, Object?> extra = const {},
 }) {
-  return DevicePairingResponse(200, <String, Object?>{'status': status, ...extra});
+  return DevicePairingResponse(200, <String, Object?>{
+    'status': status,
+    ...extra,
+  });
 }
 
 class _FakeTransport {

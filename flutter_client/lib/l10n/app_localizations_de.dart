@@ -411,6 +411,16 @@ class AppLocalizationsDe extends AppLocalizations {
   String get settingsPairWithCode => 'Mit Code koppeln';
 
   @override
+  String get settingsTabPair => 'Koppeln';
+
+  @override
+  String get settingsTabSignIn => 'Anmelden';
+
+  @override
+  String get settingsPairTabSubtitle =>
+      'Gib deine Serveradresse ein und koppele diesen Fernseher dann mit einem Code.';
+
+  @override
   String get pairingEnterServerFirst => 'Gib zuerst deine Server-URL ein';
 
   @override
@@ -425,8 +435,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get pairingOpenBrowser => 'Im Browser öffnen';
 
   @override
-  String get pairingPendingGoTo =>
-      'Öffne auf deinem Handy oder Computer das m3u-editor-Adminpanel und dort \"Gerät koppeln\":';
+  String get pairingPendingGoTo => 'Gehe auf deinem Telefon oder Computer zu:';
 
   @override
   String get pairingPendingEnterCode => 'Gib dann diesen Code ein:';

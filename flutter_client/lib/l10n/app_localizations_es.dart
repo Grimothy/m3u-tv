@@ -411,6 +411,16 @@ class AppLocalizationsEs extends AppLocalizations {
   String get settingsPairWithCode => 'Vincular con código';
 
   @override
+  String get settingsTabPair => 'Vincular';
+
+  @override
+  String get settingsTabSignIn => 'Iniciar sesión';
+
+  @override
+  String get settingsPairTabSubtitle =>
+      'Introduce la dirección de tu servidor y luego vincula este televisor con un código.';
+
+  @override
   String get pairingEnterServerFirst => 'Ingresa primero la URL de tu servidor';
 
   @override
@@ -425,8 +435,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get pairingOpenBrowser => 'Abrir en el navegador';
 
   @override
-  String get pairingPendingGoTo =>
-      'En tu teléfono o computadora, abre el panel de administración de m3u-editor y ve a \"Vincular dispositivo\":';
+  String get pairingPendingGoTo => 'En tu teléfono u ordenador, ve a:';
 
   @override
   String get pairingPendingEnterCode => 'Luego ingresa este código:';

@@ -213,7 +213,8 @@ class _ConnectionFormBody extends StatefulWidget {
   State<_ConnectionFormBody> createState() => _ConnectionFormBodyState();
 }
 
-class _ConnectionFormBodyState extends State<_ConnectionFormBody> {
+class _ConnectionFormBodyState extends State<_ConnectionFormBody>
+    with SingleTickerProviderStateMixin {
   late final _serverController = TextEditingController(
     text: widget.initialValues?.server,
   );
@@ -223,12 +224,14 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody> {
   late final _passwordController = TextEditingController(
     text: widget.initialValues?.password,
   );
+  late final TabController _tabController;
   String? _validationError;
   bool _pairing = false;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     widget.devicePairingService?.addListener(_onPairingChanged);
   }
 
@@ -238,6 +241,7 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody> {
     _serverController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
@@ -299,11 +303,13 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody> {
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
     final service = widget.devicePairingService;
-    if (_pairing && service != null && service.status != DevicePairingStatus.idle) {
+    if (_pairing &&
+        service != null &&
+        service.status != DevicePairingStatus.idle) {
       return DpadRegion(
         memoryKey: 'device-pairing',
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(32),
           child: _DevicePairingBody(
             service: service,
             onCancel: _cancelPairing,
@@ -315,78 +321,168 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody> {
     final theme = Theme.of(context);
     final displayError = _validationError ?? widget.error;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(l.settingsConnectionSettings, style: theme.textTheme.headlineMedium),
-          const SizedBox(height: 8),
-          Text(
-            l.settingsConnectionSettingsSubtitle,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+    if (service == null) {
+      // No pairing service available — a single manual sign-in form, same
+      // as before device pairing existed.
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              l.settingsConnectionSettings,
+              style: theme.textTheme.headlineMedium,
             ),
-          ),
-          const SizedBox(height: 24),
-          if (displayError != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Text(
-                displayError,
-                style: TextStyle(color: theme.colorScheme.error),
-              ),
-            ),
-          TextFormField(
-            controller: _serverController,
-            decoration: InputDecoration(
-              labelText: l.settingsServerUrl,
-              hintText: 'example.com:8080',
-            ),
-            autocorrect: false,
-            keyboardType: TextInputType.url,
-            textInputAction: TextInputAction.next,
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _usernameController,
-            decoration: InputDecoration(labelText: l.settingsUsername),
-            autocorrect: false,
-            textInputAction: TextInputAction.next,
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _passwordController,
-            decoration: InputDecoration(labelText: l.settingsPassword),
-            obscureText: true,
-            autocorrect: false,
-            textInputAction: TextInputAction.done,
-            onFieldSubmitted: (_) => _handleConnect(),
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: AppButton(
-              autofocus: true,
-              variant: AppButtonVariant.primaryInverted,
-              label: l.settingsConnect,
-              onPressed: _handleConnect,
-            ),
-          ),
-          if (service != null) ...[
             const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: AppButton(
-                icon: Icons.qr_code,
-                label: l.settingsPairWithCode,
-                onPressed: _handlePairWithCode,
+            Text(
+              l.settingsConnectionSettingsSubtitle,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
+            const SizedBox(height: 24),
+            _buildError(theme, displayError),
+            ..._buildSignInFields(l, autofocusServer: true),
           ],
-        ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        DpadTabBar(
+          controller: _tabController,
+          tabs: [l.settingsTabPair, l.settingsTabSignIn],
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      l.settingsConnectionSettings,
+                      style: theme.textTheme.headlineMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      l.settingsPairTabSubtitle,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    _buildError(theme, displayError),
+                    TextFormField(
+                      controller: _serverController,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        labelText: l.settingsServerUrl,
+                        hintText: 'example.com:8080',
+                      ),
+                      autocorrect: false,
+                      keyboardType: TextInputType.url,
+                      textInputAction: TextInputAction.done,
+                      onFieldSubmitted: (_) => _handlePairWithCode(),
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: AppButton(
+                        variant: AppButtonVariant.primaryInverted,
+                        icon: Icons.qr_code,
+                        label: l.settingsPairWithCode,
+                        onPressed: _handlePairWithCode,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      l.settingsConnectionSettings,
+                      style: theme.textTheme.headlineMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      l.settingsConnectionSettingsSubtitle,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    _buildError(theme, displayError),
+                    ..._buildSignInFields(l, autofocusServer: false),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildError(ThemeData theme, String? displayError) {
+    if (displayError == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Text(
+        displayError,
+        style: TextStyle(color: theme.colorScheme.error),
       ),
     );
+  }
+
+  List<Widget> _buildSignInFields(
+    AppLocalizations l, {
+    required bool autofocusServer,
+  }) {
+    return [
+      TextFormField(
+        controller: _serverController,
+        autofocus: autofocusServer,
+        decoration: InputDecoration(
+          labelText: l.settingsServerUrl,
+          hintText: 'example.com:8080',
+        ),
+        autocorrect: false,
+        keyboardType: TextInputType.url,
+        textInputAction: TextInputAction.next,
+      ),
+      const SizedBox(height: 16),
+      TextFormField(
+        controller: _usernameController,
+        decoration: InputDecoration(labelText: l.settingsUsername),
+        autocorrect: false,
+        textInputAction: TextInputAction.next,
+      ),
+      const SizedBox(height: 16),
+      TextFormField(
+        controller: _passwordController,
+        decoration: InputDecoration(labelText: l.settingsPassword),
+        obscureText: true,
+        autocorrect: false,
+        textInputAction: TextInputAction.done,
+        onFieldSubmitted: (_) => _handleConnect(),
+      ),
+      const SizedBox(height: 24),
+      SizedBox(
+        width: double.infinity,
+        child: AppButton(
+          variant: AppButtonVariant.primaryInverted,
+          label: l.settingsConnect,
+          onPressed: _handleConnect,
+        ),
+      ),
+    ];
   }
 }
 
@@ -400,13 +496,17 @@ class _DevicePairingBody extends StatelessWidget {
   final DevicePairingService service;
   final VoidCallback onCancel;
 
+  static Widget get _logo =>
+      SvgPicture.asset('assets/icons/editor-logo.svg', height: 40);
+
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
     final theme = Theme.of(context);
 
+    final Widget body;
     if (service.status == DevicePairingStatus.error) {
-      return Column(
+      body = Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -415,20 +515,34 @@ class _DevicePairingBody extends StatelessWidget {
           AppButton(autofocus: true, label: l.cancel, onPressed: onCancel),
         ],
       );
+    } else {
+      final pending = service.pending;
+      final uri = pending?.verificationUri ?? '';
+      final userCode = pending?.userCode ?? '––––––';
+
+      body = LayoutBuilder(
+        builder: (context, constraints) => constraints.maxWidth >= 600
+            ? _DevicePairingWide(
+                uri: uri,
+                userCode: userCode,
+                onCancel: onCancel,
+              )
+            : _DevicePairingNarrow(
+                uri: uri,
+                userCode: userCode,
+                onCancel: onCancel,
+              ),
+      );
     }
 
-    final pending = service.pending;
-    final uri = pending?.verificationUri ?? '';
-    final userCode = pending?.userCode ?? '––––––';
-
-    return LayoutBuilder(
-      builder: (context, constraints) => constraints.maxWidth >= 600
-          ? _DevicePairingWide(uri: uri, userCode: userCode, onCancel: onCancel)
-          : _DevicePairingNarrow(
-              uri: uri,
-              userCode: userCode,
-              onCancel: onCancel,
-            ),
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [_logo, const SizedBox(height: 16), body],
+        ),
+      ),
     );
   }
 }
@@ -501,7 +615,11 @@ class _DevicePairingNarrow extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _DevicePairingInstructions(uri: uri, userCode: userCode),
+        _DevicePairingInstructions(
+          uri: uri,
+          userCode: userCode,
+          uriTappable: true,
+        ),
         const SizedBox(height: 20),
         if (uri.isNotEmpty)
           SizedBox(
@@ -529,25 +647,48 @@ class _DevicePairingNarrow extends StatelessWidget {
 }
 
 class _DevicePairingInstructions extends StatelessWidget {
-  const _DevicePairingInstructions({required this.uri, required this.userCode});
+  const _DevicePairingInstructions({
+    required this.uri,
+    required this.userCode,
+    this.uriTappable = false,
+  });
 
   final String uri;
   final String userCode;
+  final bool uriTappable;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l = AppLocalizations.of(context);
+    final uriStyle = theme.textTheme.titleMedium?.copyWith(
+      color: theme.colorScheme.primary,
+      fontWeight: FontWeight.bold,
+      decoration: uriTappable ? TextDecoration.underline : null,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(l.pairingPendingGoTo, style: theme.textTheme.bodyMedium),
-        const SizedBox(height: 16),
+        if (uri.isNotEmpty) ...[
+          Text(l.pairingPendingGoTo, style: theme.textTheme.bodyMedium),
+          const SizedBox(height: 4),
+          if (uriTappable)
+            GestureDetector(
+              onTap: () => launchUrl(
+                Uri.parse(uri),
+                mode: LaunchMode.externalApplication,
+              ),
+              child: Text(uri, style: uriStyle),
+            )
+          else
+            Text(uri, style: uriStyle),
+          const SizedBox(height: 16),
+        ],
         Text(l.pairingPendingEnterCode, style: theme.textTheme.bodyMedium),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           decoration: BoxDecoration(
             color: theme.colorScheme.primaryContainer,
             borderRadius: BorderRadius.circular(8),
@@ -561,7 +702,7 @@ class _DevicePairingInstructions extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 24),
         Row(
           children: [
             const SizedBox(
