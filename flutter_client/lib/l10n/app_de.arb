@@ -367,5 +367,34 @@
   "dvrDeleteFailed": "Aufnahme konnte nicht gelöscht werden",
   "liveTvStopRecording": "Aufnahme stoppen",
   "playerRecordNowTooltip": "Aktuelle Sendung aufnehmen",
-  "playerStopRecordingTooltip": "Aufnahme stoppen"
+  "playerStopRecordingTooltip": "Aufnahme stoppen",
+  "dvrStorageTitle": "DVR-Speicher",
+  "dvrStorageUnlimited": "Unbegrenzt",
+  "dvrStorageUsedUnlimited": "{used} belegt",
+  "@dvrStorageUsedUnlimited": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      }
+    }
+  },
+  "dvrStorageUsedWithQuota": "{used} von {quota} belegt",
+  "@dvrStorageUsedWithQuota": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "quota": {
+        "type": "String"
+      }
+    }
+  },
+  "dvrStorageRecordingCount": "{count} Aufnahmen",
+  "@dvrStorageRecordingCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

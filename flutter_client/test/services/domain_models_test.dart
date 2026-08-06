@@ -75,4 +75,64 @@ void main() {
       expect(recording.channelIconUrl, '3.14');
     });
   });
+
+  group('DvrStorageInfo.fromXtream', () {
+    test('parses a quota-scoped response', () {
+      final info = DvrStorageInfo.fromXtream(<String, Object?>{
+        'used_bytes': 5368709120,
+        'quota_bytes': 10737418240,
+        'percent_used': 50.0,
+        'recording_count': 12,
+        'scope': 'guest',
+      });
+
+      expect(info.usedBytes, 5368709120);
+      expect(info.quotaBytes, 10737418240);
+      expect(info.percentUsed, 50.0);
+      expect(info.recordingCount, 12);
+      expect(info.scope, 'guest');
+    });
+
+    test('quota_bytes and percent_used are null for unlimited storage', () {
+      final info = DvrStorageInfo.fromXtream(<String, Object?>{
+        'used_bytes': 1073741824,
+        'quota_bytes': null,
+        'percent_used': null,
+        'recording_count': 3,
+        'scope': 'account',
+      });
+
+      expect(info.quotaBytes, isNull);
+      expect(info.percentUsed, isNull);
+    });
+
+    test('missing numeric fields default to zero rather than throwing', () {
+      final info = DvrStorageInfo.fromXtream(const <String, Object?>{});
+
+      expect(info.usedBytes, 0);
+      expect(info.recordingCount, 0);
+      expect(info.quotaBytes, isNull);
+      expect(info.percentUsed, isNull);
+    });
+
+    test('missing scope defaults to "account"', () {
+      final info = DvrStorageInfo.fromXtream(<String, Object?>{
+        'used_bytes': 0,
+        'recording_count': 0,
+      });
+
+      expect(info.scope, 'account');
+    });
+
+    test('percent_used tolerates an integer JSON value', () {
+      final info = DvrStorageInfo.fromXtream(<String, Object?>{
+        'used_bytes': 0,
+        'quota_bytes': 100,
+        'percent_used': 90,
+        'recording_count': 0,
+      });
+
+      expect(info.percentUsed, 90.0);
+    });
+  });
 }

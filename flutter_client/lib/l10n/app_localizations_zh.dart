@@ -715,4 +715,25 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get playerStopRecordingTooltip => '停止录制';
+
+  @override
+  String get dvrStorageTitle => 'DVR 存储';
+
+  @override
+  String get dvrStorageUnlimited => '无限';
+
+  @override
+  String dvrStorageUsedUnlimited(String used) {
+    return '已使用 $used';
+  }
+
+  @override
+  String dvrStorageUsedWithQuota(String used, String quota) {
+    return '已使用 $used，共 $quota';
+  }
+
+  @override
+  String dvrStorageRecordingCount(int count) {
+    return '$count 个录制';
+  }
 }

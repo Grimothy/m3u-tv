@@ -1435,6 +1435,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Stop recording'**
   String get playerStopRecordingTooltip;
+
+  /// No description provided for @dvrStorageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'DVR Storage'**
+  String get dvrStorageTitle;
+
+  /// No description provided for @dvrStorageUnlimited.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlimited'**
+  String get dvrStorageUnlimited;
+
+  /// No description provided for @dvrStorageUsedUnlimited.
+  ///
+  /// In en, this message translates to:
+  /// **'{used} used'**
+  String dvrStorageUsedUnlimited(String used);
+
+  /// No description provided for @dvrStorageUsedWithQuota.
+  ///
+  /// In en, this message translates to:
+  /// **'{used} of {quota} used'**
+  String dvrStorageUsedWithQuota(String used, String quota);
+
+  /// No description provided for @dvrStorageRecordingCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} recordings'**
+  String dvrStorageRecordingCount(int count);
 }
 
 class _AppLocalizationsDelegate
