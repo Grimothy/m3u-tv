@@ -15,22 +15,10 @@ import 'package:m3u_tv/playback/playback_orchestrator.dart';
 import 'package:m3u_tv/services/aiostreams_api_service.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/domain_models.dart';
-
-const BoxDecoration _kGradientBg = BoxDecoration(
-  gradient: LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [
-      Color(0xFF1a1528),
-      Color(0xFF09090b),
-      Color(0xFF09090b),
-    ],
-    stops: [0.0, 0.45, 1.0],
-  ),
-);
+import 'package:m3u_tv/shared/app_background.dart';
 
 Widget _withGradient(Widget screen) => DecoratedBox(
-  decoration: _kGradientBg,
+  decoration: kAppGradientBg,
   child: SafeArea(bottom: false, child: screen),
 );
 

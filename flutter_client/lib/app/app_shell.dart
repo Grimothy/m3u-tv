@@ -30,6 +30,7 @@ import 'package:m3u_tv/services/desktop_notification_presenter.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/services/tv_notification_service.dart';
+import 'package:m3u_tv/shared/app_background.dart';
 import 'package:m3u_tv/shared/dvr_action_dialogs.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
@@ -1182,6 +1183,9 @@ class AppShellState extends ConsumerState<AppShell>
             backgroundColor: Theme.of(context).colorScheme.surface,
             body: Stack(
               children: [
+                const Positioned.fill(
+                  child: DecoratedBox(decoration: kAppGradientBg),
+                ),
                 Positioned.fill(
                   child: Padding(
                     padding: const EdgeInsets.only(left: 64),
@@ -1361,14 +1365,16 @@ class NavigationSidebar extends StatelessWidget {
         width: width,
         clipBehavior: Clip.hardEdge,
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHigh,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 8,
-              offset: const Offset(2, 0),
-            ),
-          ],
+          color: expanded ? theme.colorScheme.surface : Colors.transparent,
+          boxShadow: expanded
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(2, 0),
+                  ),
+                ]
+              : null,
         ),
         child: FocusScope(
           node: scopeNode,
@@ -1413,12 +1419,7 @@ class NavigationSidebar extends StatelessWidget {
                   ),
                 ),
               ),
-              Divider(
-                height: 1,
-                thickness: 1,
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               ...List.generate(routes.length, (index) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(
@@ -1745,7 +1746,6 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
     final seriesList = ref.watch(seriesListProvider);
     final epgService = ref.watch(epgServiceProvider);
     final dvrRecordings = ref.watch(dvrRecordingsProvider);
-    final sourceLabel = ref.watch(sourceLabelProvider);
     final sourceError = ref.watch(sourceErrorProvider);
     final hasDvrFeature = ref.watch(hasDvrFeatureProvider);
 
@@ -1877,17 +1877,10 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
       body: ListView(
         padding: const EdgeInsets.all(MediaBrowsingMetrics.pagePadding),
         children: [
-          Text(
-            AppLocalizations.of(context).navHome,
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
-          const SizedBox(height: MediaBrowsingMetrics.chipGap),
-          Text(l.homeConnectedSource(sourceLabel)),
           if (sourceError != null && sourceError.isNotEmpty) ...[
-            const SizedBox(height: MediaBrowsingMetrics.chipGap),
             _OfflineBanner(message: sourceError),
+            const SizedBox(height: MediaBrowsingMetrics.pagePadding),
           ],
-          const SizedBox(height: MediaBrowsingMetrics.pagePadding),
           if (continueWatchingItems.isNotEmpty) continueWatchingSection,
           liveSection,
           moviesSection,

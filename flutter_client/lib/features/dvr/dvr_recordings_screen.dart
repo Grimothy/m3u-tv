@@ -53,20 +53,10 @@ class DvrRecordingsScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              l10n.dvrRecordingsTitle,
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              l10n.dvrRecordingsSubtitle,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
             if (storageInfo != null) ...[
-              const SizedBox(height: 12),
               _DvrStorageSummary(info: storageInfo!),
+              const SizedBox(height: MediaBrowsingMetrics.contentPadding),
             ],
-            const SizedBox(height: MediaBrowsingMetrics.contentPadding),
             Expanded(
               child: isLoading
                   ? const Center(child: CircularProgressIndicator())

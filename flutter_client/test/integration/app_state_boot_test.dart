@@ -273,7 +273,6 @@ void main() {
           _visibleText(tester),
           contains('Server is currently unavailable.'),
         );
-        expect(_visibleText(tester), contains('Connected source: Xtream'));
         expect(
           _visibleText(tester),
           isNot(contains('Please connect to your service in Settings')),
@@ -330,7 +329,6 @@ void main() {
 
         expect(controller.sourceType, AppSourceType.xtream);
         expect(controller.isBootstrapping, isFalse);
-        expect(_visibleText(tester), contains('Connected source: Xtream'));
         expect(controller.liveCategories.single.name, 'News');
         expect(controller.channels.single.name, 'BBC One');
         expect(controller.vodItems.single.name, 'Big Buck Bunny');

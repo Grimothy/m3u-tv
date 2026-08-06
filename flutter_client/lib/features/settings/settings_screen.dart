@@ -421,18 +421,9 @@ class _ConnectedViewState extends State<_ConnectedView>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-          child: Text(
-            AppLocalizations.of(context).settingsTitle,
-            style: theme.textTheme.headlineMedium,
-          ),
-        ),
         DpadTabBar(
           controller: _tabController,
           tabs: [
@@ -687,24 +678,38 @@ class _ConnectedViewState extends State<_ConnectedView>
           const SizedBox(height: 20),
         ],
 
-        // ── Commercial skipping ──────────────────────────────────────────────
+        // ── DVR ──────────────────────────────────────────────────────────────
         if (widget.comskipSettings != null) ...[
           _SettingsSection(
-            title: l.settingsComskip,
-            subtitle: l.settingsComskipSubtitle,
+            title: l.settingsDvr,
+            subtitle: l.settingsDvrSubtitle,
             child: ListenableBuilder(
               listenable: widget.comskipSettings!,
-              builder: (context, _) => Wrap(
-                spacing: 8,
+              builder: (context, _) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _IntervalChip(
-                    label: l.settingsComskipAutoSkip,
-                    isSelected: widget.comskipSettings!.autoSkipEnabled,
-                    onTap: () => unawaited(
-                      widget.comskipSettings!.setAutoSkipEnabled(
-                        enabled: !widget.comskipSettings!.autoSkipEnabled,
-                      ),
+                  Text(l.settingsComskip, style: theme.textTheme.titleSmall),
+                  const SizedBox(height: 4),
+                  Text(
+                    l.settingsComskipSubtitle,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      _IntervalChip(
+                        label: l.settingsComskipAutoSkip,
+                        isSelected: widget.comskipSettings!.autoSkipEnabled,
+                        onTap: () => unawaited(
+                          widget.comskipSettings!.setAutoSkipEnabled(
+                            enabled: !widget.comskipSettings!.autoSkipEnabled,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

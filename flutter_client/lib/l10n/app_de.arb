@@ -128,6 +128,8 @@
   "settingsProxyProfileDefault": "Standard",
   "settingsProxyProfileDirect": "Direkt (ohne Transkodierung)",
   "settingsProxyNoProfiles": "Keine Transkodierungsprofile verfügbar — Streams nutzen den direkten Proxy.",
+  "settingsDvr": "DVR",
+  "settingsDvrSubtitle": "Einstellungen für die Wiedergabe aufgenommener Inhalte.",
   "settingsComskip": "Werbeerkennung",
   "settingsComskipSubtitle": "Legt fest, wie der Player auf erkannte Werbeunterbrechungen in DVR-Aufnahmen reagiert.",
   "settingsComskipAutoSkip": "Werbung automatisch überspringen",

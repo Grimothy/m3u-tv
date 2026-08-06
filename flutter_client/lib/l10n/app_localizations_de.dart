@@ -333,6 +333,13 @@ class AppLocalizationsDe extends AppLocalizations {
       'Keine Transkodierungsprofile verfügbar — Streams nutzen den direkten Proxy.';
 
   @override
+  String get settingsDvr => 'DVR';
+
+  @override
+  String get settingsDvrSubtitle =>
+      'Einstellungen für die Wiedergabe aufgenommener Inhalte.';
+
+  @override
   String get settingsComskip => 'Werbeerkennung';
 
   @override

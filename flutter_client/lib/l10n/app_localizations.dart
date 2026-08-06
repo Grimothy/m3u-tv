@@ -710,6 +710,18 @@ abstract class AppLocalizations {
   /// **'No transcoding profiles available — streams use the direct proxy.'**
   String get settingsProxyNoProfiles;
 
+  /// No description provided for @settingsDvr.
+  ///
+  /// In en, this message translates to:
+  /// **'DVR'**
+  String get settingsDvr;
+
+  /// No description provided for @settingsDvrSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings for recorded content playback.'**
+  String get settingsDvrSubtitle;
+
   /// No description provided for @settingsComskip.
   ///
   /// In en, this message translates to:
