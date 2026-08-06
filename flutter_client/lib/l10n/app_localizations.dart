@@ -806,6 +806,96 @@ abstract class AppLocalizations {
   /// **'Scan to open on your phone'**
   String get settingsAppScanQr;
 
+  /// No description provided for @settingsFillAllFields.
+  ///
+  /// In en, this message translates to:
+  /// **'Please fill in all fields'**
+  String get settingsFillAllFields;
+
+  /// No description provided for @settingsConnectionSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection Settings'**
+  String get settingsConnectionSettings;
+
+  /// No description provided for @settingsConnectionSettingsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your Xtream codes details'**
+  String get settingsConnectionSettingsSubtitle;
+
+  /// No description provided for @settingsServerUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Server URL'**
+  String get settingsServerUrl;
+
+  /// No description provided for @settingsUsername.
+  ///
+  /// In en, this message translates to:
+  /// **'Username'**
+  String get settingsUsername;
+
+  /// No description provided for @settingsPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get settingsPassword;
+
+  /// No description provided for @settingsConnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect'**
+  String get settingsConnect;
+
+  /// No description provided for @settingsPairWithCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Pair with code'**
+  String get settingsPairWithCode;
+
+  /// No description provided for @pairingEnterServerFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your server URL first'**
+  String get pairingEnterServerFirst;
+
+  /// No description provided for @pairingErrorGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'Pairing failed or the code expired. Please try again.'**
+  String get pairingErrorGeneric;
+
+  /// No description provided for @pairingScanQr.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan to open the pairing page on your phone'**
+  String get pairingScanQr;
+
+  /// No description provided for @pairingOpenBrowser.
+  ///
+  /// In en, this message translates to:
+  /// **'Open in browser'**
+  String get pairingOpenBrowser;
+
+  /// No description provided for @pairingPendingGoTo.
+  ///
+  /// In en, this message translates to:
+  /// **'On your phone or computer, go to your m3u-editor admin panel and open \"Pair Device\":'**
+  String get pairingPendingGoTo;
+
+  /// No description provided for @pairingPendingEnterCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Then enter this code:'**
+  String get pairingPendingEnterCode;
+
+  /// No description provided for @pairingPendingWaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for approval…'**
+  String get pairingPendingWaiting;
+
   /// No description provided for @homeContinueWatching.
   ///
   /// In en, this message translates to:

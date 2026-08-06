@@ -2,6 +2,17 @@
 
 enum ContentType { live, vod, episode, aiostreams }
 
+final RegExp _schemePattern = RegExp('^[a-zA-Z][a-zA-Z0-9+.-]*://');
+
+/// Strips trailing slashes and, if [server] has no explicit URI scheme
+/// (e.g. a bare `192.168.1.10:8080` typed on a TV remote), prefixes it with
+/// `http://` so it can be parsed as an absolute URI downstream.
+String normalizeServerUrl(String server) {
+  final trimmed = server.trim().replaceAll(RegExp(r'/+$'), '');
+  if (trimmed.isEmpty || _schemePattern.hasMatch(trimmed)) return trimmed;
+  return 'http://$trimmed';
+}
+
 class UserCredentials {
   const UserCredentials({
     required this.server,
@@ -14,7 +25,7 @@ class UserCredentials {
   final String password;
 
   UserCredentials normalized() => UserCredentials(
-    server: server.replaceAll(RegExp(r'/+$'), ''),
+    server: normalizeServerUrl(server),
     username: username,
     password: password,
   );

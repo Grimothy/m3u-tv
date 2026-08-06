@@ -386,6 +386,55 @@ class AppLocalizationsEs extends AppLocalizations {
   String get settingsAppScanQr => 'Escanear para abrir en tu teléfono';
 
   @override
+  String get settingsFillAllFields => 'Por favor completa todos los campos';
+
+  @override
+  String get settingsConnectionSettings => 'Configuración de conexión';
+
+  @override
+  String get settingsConnectionSettingsSubtitle =>
+      'Ingresa los datos de tu Xtream Codes';
+
+  @override
+  String get settingsServerUrl => 'URL del servidor';
+
+  @override
+  String get settingsUsername => 'Usuario';
+
+  @override
+  String get settingsPassword => 'Contraseña';
+
+  @override
+  String get settingsConnect => 'Conectar';
+
+  @override
+  String get settingsPairWithCode => 'Vincular con código';
+
+  @override
+  String get pairingEnterServerFirst => 'Ingresa primero la URL de tu servidor';
+
+  @override
+  String get pairingErrorGeneric =>
+      'La vinculación falló o el código expiró. Inténtalo de nuevo.';
+
+  @override
+  String get pairingScanQr =>
+      'Escanea para abrir la página de vinculación en tu teléfono';
+
+  @override
+  String get pairingOpenBrowser => 'Abrir en el navegador';
+
+  @override
+  String get pairingPendingGoTo =>
+      'En tu teléfono o computadora, abre el panel de administración de m3u-editor y ve a \"Vincular dispositivo\":';
+
+  @override
+  String get pairingPendingEnterCode => 'Luego ingresa este código:';
+
+  @override
+  String get pairingPendingWaiting => 'Esperando aprobación…';
+
+  @override
   String get homeContinueWatching => 'Continuar viendo';
 
   @override

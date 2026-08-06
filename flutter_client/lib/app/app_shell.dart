@@ -905,6 +905,7 @@ class AppShellState extends ConsumerState<AppShell>
           epgRefreshInterval: _appState.epgRefreshInterval,
           epgRefreshOptions: AppStateController.epgRefreshOptions,
           traktService: _appState.traktService,
+          devicePairingService: _appState.devicePairingService,
           onConnect: _appState.connectXtream,
           onDisconnect: () => unawaited(_appState.disconnect()),
           onSwitchViewer: (viewer) => unawaited(_appState.switchViewer(viewer)),

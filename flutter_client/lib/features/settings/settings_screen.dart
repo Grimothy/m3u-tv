@@ -7,6 +7,7 @@ import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/services/app_version_service.dart';
 import 'package:m3u_tv/services/auth_notifier.dart';
 import 'package:m3u_tv/services/comskip_settings.dart';
+import 'package:m3u_tv/services/device_pairing_service.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/proxy_playback_settings.dart';
 import 'package:m3u_tv/services/trakt_service.dart';
@@ -23,6 +24,7 @@ class SettingsScreen extends StatefulWidget {
     super.key,
     required this.authNotifier,
     required this.traktService,
+    this.devicePairingService,
     this.activeViewer,
     this.viewers = const [],
     this.sourceLabel,
@@ -46,6 +48,7 @@ class SettingsScreen extends StatefulWidget {
 
   final AuthNotifier authNotifier;
   final TraktService traktService;
+  final DevicePairingService? devicePairingService;
   final ProxyPlaybackSettings? proxyPlaybackSettings;
   final ComskipSettings? comskipSettings;
   final Viewer? activeViewer;
@@ -126,6 +129,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _connectionError ??
               widget.sourceError ??
               widget.authNotifier.error,
+          devicePairingService: widget.devicePairingService,
         ),
       );
     }
@@ -197,11 +201,13 @@ class _ConnectionFormBody extends StatefulWidget {
     required this.onConnect,
     this.initialValues,
     this.error,
+    this.devicePairingService,
   });
 
   final Future<void> Function(UserCredentials credentials) onConnect;
   final UserCredentials? initialValues;
   final String? error;
+  final DevicePairingService? devicePairingService;
 
   @override
   State<_ConnectionFormBody> createState() => _ConnectionFormBodyState();
@@ -218,13 +224,32 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody> {
     text: widget.initialValues?.password,
   );
   String? _validationError;
+  bool _pairing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.devicePairingService?.addListener(_onPairingChanged);
+  }
 
   @override
   void dispose() {
+    widget.devicePairingService?.removeListener(_onPairingChanged);
     _serverController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  void _onPairingChanged() {
+    final service = widget.devicePairingService;
+    if (service == null) return;
+    if (service.status == DevicePairingStatus.approved) {
+      final result = service.result;
+      if (result != null) unawaited(widget.onConnect(result));
+      return;
+    }
+    setState(() {});
   }
 
   void _handleConnect() {
@@ -233,7 +258,11 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody> {
     final password = _passwordController.text;
 
     if (server.isEmpty || username.isEmpty || password.isEmpty) {
-      setState(() => _validationError = 'Please fill in all fields');
+      setState(
+        () => _validationError = AppLocalizations.of(
+          context,
+        ).settingsFillAllFields,
+      );
       return;
     }
     setState(() => _validationError = null);
@@ -244,8 +273,45 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody> {
     );
   }
 
+  void _handlePairWithCode() {
+    final server = _serverController.text.trim();
+    if (server.isEmpty) {
+      setState(
+        () => _validationError = AppLocalizations.of(
+          context,
+        ).pairingEnterServerFirst,
+      );
+      return;
+    }
+    setState(() {
+      _validationError = null;
+      _pairing = true;
+    });
+    unawaited(widget.devicePairingService!.start(server));
+  }
+
+  void _cancelPairing() {
+    widget.devicePairingService?.cancel();
+    setState(() => _pairing = false);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final service = widget.devicePairingService;
+    if (_pairing && service != null && service.status != DevicePairingStatus.idle) {
+      return DpadRegion(
+        memoryKey: 'device-pairing',
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: _DevicePairingBody(
+            service: service,
+            onCancel: _cancelPairing,
+          ),
+        ),
+      );
+    }
+
     final theme = Theme.of(context);
     final displayError = _validationError ?? widget.error;
 
@@ -254,10 +320,10 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Connection Settings', style: theme.textTheme.headlineMedium),
+          Text(l.settingsConnectionSettings, style: theme.textTheme.headlineMedium),
           const SizedBox(height: 8),
           Text(
-            'Enter your Xtream codes details',
+            l.settingsConnectionSettingsSubtitle,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -273,9 +339,9 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody> {
             ),
           TextFormField(
             controller: _serverController,
-            decoration: const InputDecoration(
-              labelText: 'Server URL',
-              hintText: 'http://example.com:8080',
+            decoration: InputDecoration(
+              labelText: l.settingsServerUrl,
+              hintText: 'example.com:8080',
             ),
             autocorrect: false,
             keyboardType: TextInputType.url,
@@ -284,14 +350,14 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody> {
           const SizedBox(height: 16),
           TextFormField(
             controller: _usernameController,
-            decoration: const InputDecoration(labelText: 'Username'),
+            decoration: InputDecoration(labelText: l.settingsUsername),
             autocorrect: false,
             textInputAction: TextInputAction.next,
           ),
           const SizedBox(height: 16),
           TextFormField(
             controller: _passwordController,
-            decoration: const InputDecoration(labelText: 'Password'),
+            decoration: InputDecoration(labelText: l.settingsPassword),
             obscureText: true,
             autocorrect: false,
             textInputAction: TextInputAction.done,
@@ -303,12 +369,218 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody> {
             child: AppButton(
               autofocus: true,
               variant: AppButtonVariant.primaryInverted,
-              label: 'Connect',
+              label: l.settingsConnect,
               onPressed: _handleConnect,
             ),
           ),
+          if (service != null) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: AppButton(
+                icon: Icons.qr_code,
+                label: l.settingsPairWithCode,
+                onPressed: _handlePairWithCode,
+              ),
+            ),
+          ],
         ],
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Device pairing (Trakt-style device code flow against the user's own server)
+// ---------------------------------------------------------------------------
+
+class _DevicePairingBody extends StatelessWidget {
+  const _DevicePairingBody({required this.service, required this.onCancel});
+
+  final DevicePairingService service;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+
+    if (service.status == DevicePairingStatus.error) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(l.pairingErrorGeneric, style: theme.textTheme.bodyMedium),
+          const SizedBox(height: 16),
+          AppButton(autofocus: true, label: l.cancel, onPressed: onCancel),
+        ],
+      );
+    }
+
+    final pending = service.pending;
+    final uri = pending?.verificationUri ?? '';
+    final userCode = pending?.userCode ?? '––––––';
+
+    return LayoutBuilder(
+      builder: (context, constraints) => constraints.maxWidth >= 600
+          ? _DevicePairingWide(uri: uri, userCode: userCode, onCancel: onCancel)
+          : _DevicePairingNarrow(
+              uri: uri,
+              userCode: userCode,
+              onCancel: onCancel,
+            ),
+    );
+  }
+}
+
+class _DevicePairingWide extends StatelessWidget {
+  const _DevicePairingWide({
+    required this.uri,
+    required this.userCode,
+    required this.onCancel,
+  });
+
+  final String uri;
+  final String userCode;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: _DevicePairingInstructions(uri: uri, userCode: userCode),
+        ),
+        const SizedBox(width: 24),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: QrImageView(
+                data: uri.isEmpty ? ' ' : uri,
+                size: 140,
+                backgroundColor: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              AppLocalizations.of(context).pairingScanQr,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            AppButton(
+              autofocus: true,
+              label: AppLocalizations.of(context).cancel,
+              onPressed: onCancel,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _DevicePairingNarrow extends StatelessWidget {
+  const _DevicePairingNarrow({
+    required this.uri,
+    required this.userCode,
+    required this.onCancel,
+  });
+
+  final String uri;
+  final String userCode;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _DevicePairingInstructions(uri: uri, userCode: userCode),
+        const SizedBox(height: 20),
+        if (uri.isNotEmpty)
+          SizedBox(
+            width: double.infinity,
+            child: AppButton(
+              icon: Icons.open_in_new,
+              label: AppLocalizations.of(context).pairingOpenBrowser,
+              onPressed: () => launchUrl(
+                Uri.parse(uri),
+                mode: LaunchMode.externalApplication,
+              ),
+            ),
+          ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: AppButton(
+            label: AppLocalizations.of(context).cancel,
+            onPressed: onCancel,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DevicePairingInstructions extends StatelessWidget {
+  const _DevicePairingInstructions({required this.uri, required this.userCode});
+
+  final String uri;
+  final String userCode;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l = AppLocalizations.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(l.pairingPendingGoTo, style: theme.textTheme.bodyMedium),
+        const SizedBox(height: 16),
+        Text(l.pairingPendingEnterCode, style: theme.textTheme.bodyMedium),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primaryContainer,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            userCode,
+            style: theme.textTheme.displaySmall?.copyWith(
+              color: theme.colorScheme.onPrimaryContainer,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 8,
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                l.pairingPendingWaiting,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

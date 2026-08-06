@@ -377,6 +377,51 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsAppScanQr => '扫描以在手机上打开';
 
   @override
+  String get settingsFillAllFields => '请填写所有字段';
+
+  @override
+  String get settingsConnectionSettings => '连接设置';
+
+  @override
+  String get settingsConnectionSettingsSubtitle => '输入您的 Xtream Codes 信息';
+
+  @override
+  String get settingsServerUrl => '服务器地址';
+
+  @override
+  String get settingsUsername => '用户名';
+
+  @override
+  String get settingsPassword => '密码';
+
+  @override
+  String get settingsConnect => '连接';
+
+  @override
+  String get settingsPairWithCode => '使用代码配对';
+
+  @override
+  String get pairingEnterServerFirst => '请先输入您的服务器地址';
+
+  @override
+  String get pairingErrorGeneric => '配对失败或代码已过期，请重试。';
+
+  @override
+  String get pairingScanQr => '扫描以在手机上打开配对页面';
+
+  @override
+  String get pairingOpenBrowser => '在浏览器中打开';
+
+  @override
+  String get pairingPendingGoTo => '在您的手机或电脑上，打开 m3u-editor 管理面板并进入“配对设备”：';
+
+  @override
+  String get pairingPendingEnterCode => '然后输入此代码：';
+
+  @override
+  String get pairingPendingWaiting => '等待批准…';
+
+  @override
   String get homeContinueWatching => '继续观看';
 
   @override

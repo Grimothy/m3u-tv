@@ -386,6 +386,56 @@ class AppLocalizationsFr extends AppLocalizations {
   String get settingsAppScanQr => 'Scanner pour ouvrir sur votre téléphone';
 
   @override
+  String get settingsFillAllFields => 'Veuillez remplir tous les champs';
+
+  @override
+  String get settingsConnectionSettings => 'Paramètres de connexion';
+
+  @override
+  String get settingsConnectionSettingsSubtitle =>
+      'Entrez vos identifiants Xtream Codes';
+
+  @override
+  String get settingsServerUrl => 'URL du serveur';
+
+  @override
+  String get settingsUsername => 'Nom d\'utilisateur';
+
+  @override
+  String get settingsPassword => 'Mot de passe';
+
+  @override
+  String get settingsConnect => 'Connecter';
+
+  @override
+  String get settingsPairWithCode => 'Coupler avec un code';
+
+  @override
+  String get pairingEnterServerFirst =>
+      'Entrez d\'abord l\'URL de votre serveur';
+
+  @override
+  String get pairingErrorGeneric =>
+      'Le couplage a échoué ou le code a expiré. Veuillez réessayer.';
+
+  @override
+  String get pairingScanQr =>
+      'Scannez pour ouvrir la page de couplage sur votre téléphone';
+
+  @override
+  String get pairingOpenBrowser => 'Ouvrir dans le navigateur';
+
+  @override
+  String get pairingPendingGoTo =>
+      'Sur votre téléphone ou ordinateur, ouvrez le panneau d\'administration m3u-editor et allez dans \"Coupler un appareil\":';
+
+  @override
+  String get pairingPendingEnterCode => 'Puis entrez ce code :';
+
+  @override
+  String get pairingPendingWaiting => 'En attente d\'approbation…';
+
+  @override
   String get homeContinueWatching => 'Reprendre';
 
   @override

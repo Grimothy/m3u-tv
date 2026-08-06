@@ -2,6 +2,61 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 
 void main() {
+  group('UserCredentials.normalized scheme handling', () {
+    UserCredentials creds(String server) =>
+        const UserCredentials(server: '', username: 'u', password: 'p')
+            .normalized();
+
+    test('bare host:port gets http:// prefixed', () {
+      final result = const UserCredentials(
+        server: '192.168.1.10:8080',
+        username: 'u',
+        password: 'p',
+      ).normalized();
+      expect(result.server, 'http://192.168.1.10:8080');
+    });
+
+    test('an explicit https:// scheme is left untouched', () {
+      final result = const UserCredentials(
+        server: 'https://example.com:8443',
+        username: 'u',
+        password: 'p',
+      ).normalized();
+      expect(result.server, 'https://example.com:8443');
+    });
+
+    test('an explicit http:// scheme is left untouched', () {
+      final result = const UserCredentials(
+        server: 'http://example.com',
+        username: 'u',
+        password: 'p',
+      ).normalized();
+      expect(result.server, 'http://example.com');
+    });
+
+    test('trailing slashes are stripped before prefixing', () {
+      final result = const UserCredentials(
+        server: '192.168.1.10:8080/',
+        username: 'u',
+        password: 'p',
+      ).normalized();
+      expect(result.server, 'http://192.168.1.10:8080');
+    });
+
+    test('a bare hostname with no port is also prefixed', () {
+      final result = const UserCredentials(
+        server: 'example.com',
+        username: 'u',
+        password: 'p',
+      ).normalized();
+      expect(result.server, 'http://example.com');
+    });
+
+    test('empty server stays empty', () {
+      expect(creds('').server, '');
+    });
+  });
+
   // The `_asNullableString` helper is private, so these tests exercise it
   // indirectly through `DvrRecording.fromXtream`, which is its primary user.
   // The behavior we care about: URL-like fields must end up null rather than

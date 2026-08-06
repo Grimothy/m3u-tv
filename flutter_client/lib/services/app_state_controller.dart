@@ -11,6 +11,7 @@ import 'package:m3u_tv/services/async_lifecycle.dart';
 import 'package:m3u_tv/services/auth_notifier.dart';
 import 'package:m3u_tv/services/cache_service.dart';
 import 'package:m3u_tv/services/comskip_settings.dart';
+import 'package:m3u_tv/services/device_pairing_service.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/epg_service.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
@@ -50,6 +51,7 @@ class AppStateController extends ChangeNotifier {
     ProxyPlaybackSettings? proxyPlaybackSettings,
     ComskipSettings? comskipSettings,
     PushNotificationService? pushNotificationService,
+    DevicePairingService? devicePairingService,
   }) {
     final store = persistentStore ?? PersistentJsonStore();
     final resolvedSecureStorage =
@@ -81,6 +83,7 @@ class AppStateController extends ChangeNotifier {
       epgService: epgService ?? EpgService(),
       m3uParser: m3uParser ?? M3UParser(),
       traktService: TraktService(storage: resolvedSecureStorage),
+      devicePairingService: devicePairingService ?? DevicePairingService(),
       tvNotificationService: tvNotificationService ?? TvNotificationService(),
       notificationStore:
           tvNotificationStore ?? TvNotificationStore(store: store),
@@ -108,6 +111,7 @@ class AppStateController extends ChangeNotifier {
     required this.epgService,
     required this.m3uParser,
     required this.traktService,
+    required this.devicePairingService,
     required this._tvNotificationService,
     required this.notificationStore,
     required this._reverbService,
@@ -225,6 +229,7 @@ class AppStateController extends ChangeNotifier {
   final EpgService epgService;
   final M3UParser m3uParser;
   final TraktService traktService;
+  final DevicePairingService devicePairingService;
 
   AppSourceType _sourceType = AppSourceType.none;
   bool _isBootstrapping = false;
