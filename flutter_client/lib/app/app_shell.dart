@@ -1782,7 +1782,10 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
     if (!isConfigured) {
       return Scaffold(
         body: Center(
-          child: Text(AppLocalizations.of(context).appNotConfigured),
+          child: Text(
+            AppLocalizations.of(context).appNotConfigured,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
         ),
       );
     }
