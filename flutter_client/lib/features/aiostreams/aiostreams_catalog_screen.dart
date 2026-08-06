@@ -202,7 +202,9 @@ class _AIOStreamsCatalogScreenState extends State<AIOStreamsCatalogScreen> {
               )
             else
               SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: MediaBrowsingMetrics.contentPadding,
+                ),
                 sliver: SliverGrid(
                   delegate: SliverChildBuilderDelegate(
                     childCount: _items.length,
@@ -220,8 +222,8 @@ class _AIOStreamsCatalogScreenState extends State<AIOStreamsCatalogScreen> {
                   ),
                   gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: 160,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
+                    mainAxisSpacing: MediaBrowsingMetrics.itemGap,
+                    crossAxisSpacing: MediaBrowsingMetrics.itemGap,
                     childAspectRatio: 2 / 3,
                   ),
                 ),
