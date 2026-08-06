@@ -1418,12 +1418,7 @@ class NavigationSidebar extends StatelessWidget {
                   ),
                 ),
               ),
-              Divider(
-                height: 1,
-                thickness: 1,
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               ...List.generate(routes.length, (index) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(
