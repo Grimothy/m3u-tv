@@ -52,9 +52,10 @@ Future<void> main() async {
 }
 
 /// Hides the native titlebar and lets app content extend under the traffic
-/// lights (macOS "hidden inline titlebar" look). AppShell adds a
-/// DragToMoveArea + top inset for macOS desktop so the window stays
-/// draggable and the sidebar logo doesn't sit under the traffic lights.
+/// lights (macOS "hidden inline titlebar" look). AppShell paints the app's
+/// background color (0xFF09090b) into a DragToMoveArea + top inset for
+/// macOS desktop so the window stays draggable, the titlebar reads as a
+/// solid bar, and the sidebar logo doesn't sit under the traffic lights.
 Future<void> _configureMacOSWindow() async {
   await windowManager.ensureInitialized();
   const windowOptions = WindowOptions(

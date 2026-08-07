@@ -531,7 +531,6 @@ class MediaPreviewItem {
     this.progressFraction,
     this.overlayBadges = const <String>[],
     this.overlayLabel,
-    this.heroTag,
   });
 
   final String title;
@@ -555,10 +554,6 @@ class MediaPreviewItem {
 
   /// Optional label shown left-aligned opposite the overlay badges.
   final String? overlayLabel;
-
-  /// Optional Hero tag used to animate the poster image when navigating to a
-  /// detail screen. Only applied when [MediaPreviewCard] is in poster style.
-  final Object? heroTag;
 }
 
 class MediaPreviewSection extends StatefulWidget {
@@ -921,8 +916,7 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
   ) {
     final item = widget.item;
     final posterStyle = widget.posterStyle;
-    final heroTag = posterStyle ? item.heroTag : null;
-    Widget mediaImage = ResilientMediaImage(
+    final mediaImage = ResilientMediaImage(
       imageUrl: item.imageUrl,
       fallbackIcon: item.fallbackIcon,
       fit: item.imageFit,
@@ -931,9 +925,6 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
       backgroundColor: item.imageBackgroundColor,
       borderRadius: 0,
     );
-    if (heroTag != null) {
-      mediaImage = Hero(tag: heroTag, child: mediaImage);
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

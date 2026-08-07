@@ -38,11 +38,18 @@ import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/notification_toast.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// Height of the transparent hidden-titlebar drag strip on macOS desktop —
-/// keeps the window draggable and clears the floating traffic-light buttons,
-/// which content would otherwise render underneath (see main.dart's
-/// TitleBarStyle.hidden setup).
+/// Height of the hidden-titlebar drag strip on macOS desktop — keeps the
+/// window draggable and clears the floating traffic-light buttons, which
+/// content would otherwise render underneath (see main.dart's
+/// TitleBarStyle.hidden setup). Painted solid with the app's background
+/// color rather than transparent.
 const double _kMacTitlebarInset = 28;
+
+/// Duration for the sidebar-hide/content-expand transition when a
+/// full-screen detail route (VOD/series/AIOStreams item) pushes or pops —
+/// matched to _slidePage's default CustomTransitionPage duration in
+/// go_router_config.dart so both animations read as one motion.
+const Duration _kFullScreenDetailTransition = Duration(milliseconds: 300);
 
 bool get _isMacDesktopWindow => Platform.isMacOS;
 
@@ -111,6 +118,13 @@ class AppShell extends ConsumerStatefulWidget {
 class AppShellState extends ConsumerState<AppShell>
     with WidgetsBindingObserver {
   bool _sidebarActive = false;
+
+  // Counter rather than a bool: nested detail scaffolds (e.g. a Requests
+  // detail pushed from within a modal flow) can overlap briefly during a
+  // route transition, so "active" is any depth > 0 rather than the last
+  // writer winning.
+  int _fullScreenDetailDepth = 0;
+  bool get _fullScreenDetailActive => _fullScreenDetailDepth > 0;
   late final AppStateController _appState;
   late final bool _ownsAppState;
   late final SystemUiPolicy _systemUiPolicy;
@@ -353,6 +367,7 @@ class AppShellState extends ConsumerState<AppShell>
   }
 
   void _activateSidebar() {
+    if (_fullScreenDetailActive) return;
     setState(() {
       _sidebarActive = true;
     });
@@ -684,11 +699,34 @@ class AppShellState extends ConsumerState<AppShell>
     }
   }
 
-  Future<void> _pushDetail(String path, {Object? extra}) async {
+  /// Pushes a detail route. When [fullScreen] is true, the sidebar-hide
+  /// transition is tied directly to this call's own push/pop — flipped
+  /// synchronously right before `context.push` and unwound in `finally`
+  /// once that same push's route is gone — rather than to the pushed
+  /// widget's own init/dispose lifecycle. A widget can only announce itself
+  /// after it already exists, which is inherently a frame (or more) behind
+  /// the moment navigation was requested; doing it here instead means the
+  /// AppShell layout animation and the route's own transition start on the
+  /// same frame in both directions, which is what makes it read as one
+  /// smooth motion instead of a layout snap partway through the slide.
+  Future<void> _pushDetail(
+    String path, {
+    Object? extra,
+    bool fullScreen = false,
+  }) async {
     await Future<void>.microtask(() {});
     final savedFocus = FocusManager.instance.primaryFocus;
-    // ignore: use_build_context_synchronously
-    await context.push(path, extra: extra);
+    if (fullScreen) {
+      setState(() => _fullScreenDetailDepth++);
+    }
+    try {
+      // ignore: use_build_context_synchronously
+      await context.push(path, extra: extra);
+    } finally {
+      if (fullScreen && mounted) {
+        setState(() => _fullScreenDetailDepth--);
+      }
+    }
     if (mounted) {
       if (savedFocus != null && savedFocus.canRequestFocus) {
         savedFocus.requestFocus();
@@ -699,7 +737,13 @@ class AppShellState extends ConsumerState<AppShell>
   }
 
   void _openVod(VodItem item) {
-    unawaited(_pushDetail(RouteNames.vodDetailsFor(item.id), extra: item));
+    unawaited(
+      _pushDetail(
+        RouteNames.vodDetailsFor(item.id),
+        extra: item,
+        fullScreen: true,
+      ),
+    );
   }
 
   void _openRequestResult(ContentRequestSearchResult result) {
@@ -717,7 +761,11 @@ class AppShellState extends ConsumerState<AppShell>
 
   void _openSeries(Series series) {
     unawaited(
-      _pushDetail(RouteNames.seriesDetailsFor(series.id), extra: series),
+      _pushDetail(
+        RouteNames.seriesDetailsFor(series.id),
+        extra: series,
+        fullScreen: true,
+      ),
     );
   }
 
@@ -804,6 +852,7 @@ class AppShellState extends ConsumerState<AppShell>
               item.id,
             ),
             extra: item,
+            fullScreen: true,
           ),
         ),
         onSidebarActivate: _activateSidebar,
@@ -850,6 +899,7 @@ class AppShellState extends ConsumerState<AppShell>
                 item.id,
               ),
               extra: item,
+              fullScreen: true,
             ),
           ),
           onPlay: _openPlayerFromActions,
@@ -977,6 +1027,7 @@ class AppShellState extends ConsumerState<AppShell>
             if (event is KeyDownEvent &&
                 event.logicalKey == LogicalKeyboardKey.arrowLeft &&
                 useSidebar &&
+                !_fullScreenDetailActive &&
                 !_contentFocusNode.hasFocus) {
               _activateSidebar();
               return KeyEventResult.handled;
@@ -1193,6 +1244,59 @@ class AppShellState extends ConsumerState<AppShell>
           final macTitlebarInset = _isMacDesktopWindow
               ? _kMacTitlebarInset
               : 0.0;
+          final fullScreenDetail = _fullScreenDetailActive;
+
+          // The sidebar physically slides off-screen to the left and the
+          // content pane's left edge animates out to meet it, both on the
+          // same AnimatedPositioned duration/curve — timed to start the
+          // instant `_pushDetail(..., fullScreen: true)` flips this state
+          // (before the route push/pop even begins), so this motion and the
+          // detail route's own slide transition (_slidePage in
+          // go_router_config.dart) run concurrently as one movement instead
+          // of a hard layout snap competing with an already-running page
+          // transition.
+          final sidebar = AnimatedPositioned(
+            duration: _kFullScreenDetailTransition,
+            curve: Curves.easeInOut,
+            top: macTitlebarInset,
+            // Clears the sidebar's widest (expanded, 200px) state regardless
+            // of whether it was expanded or collapsed when hidden.
+            left: fullScreenDetail ? -220 : 0,
+            bottom: 0,
+            child: IgnorePointer(
+              ignoring: fullScreenDetail,
+              child: NavigationSidebar(
+                currentIndex: _currentIndex,
+                routes: routes,
+                sidebarActive: _sidebarActive,
+                focusNodes: _sidebarFocusNodes,
+                scopeNode: _sidebarScopeNode,
+                unreadNotificationCount: unreadCount,
+                onNavigate: _navigateTo,
+                onActivateSidebar: _activateSidebar,
+                onDeactivateSidebar: _deactivateSidebar,
+              ),
+            ),
+          );
+
+          final content = AnimatedPositioned(
+            duration: _kFullScreenDetailTransition,
+            curve: Curves.easeInOut,
+            top: macTitlebarInset,
+            left: fullScreenDetail ? 0 : 64,
+            right: 0,
+            bottom: 0,
+            child: DpadRegion(
+              memoryKey: 'content',
+              horizontalEdge: DpadEdgeBehavior.stop,
+              onEdge: (direction) {
+                if (!fullScreenDetail && direction == TraversalDirection.left) {
+                  _activateSidebar();
+                }
+              },
+              child: contentShell,
+            ),
+          );
 
           return Scaffold(
             backgroundColor: Theme.of(context).colorScheme.surface,
@@ -1201,47 +1305,19 @@ class AppShellState extends ConsumerState<AppShell>
                 const Positioned.fill(
                   child: DecoratedBox(decoration: kAppGradientBg),
                 ),
-                Positioned.fill(
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      left: 64,
-                      top: macTitlebarInset,
-                    ),
-                    child: DpadRegion(
-                      memoryKey: 'content',
-                      horizontalEdge: DpadEdgeBehavior.stop,
-                      onEdge: (direction) {
-                        if (direction == TraversalDirection.left) {
-                          _activateSidebar();
-                        }
-                      },
-                      child: contentShell,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: macTitlebarInset,
-                  left: 0,
-                  bottom: 0,
-                  child: NavigationSidebar(
-                    currentIndex: _currentIndex,
-                    routes: routes,
-                    sidebarActive: _sidebarActive,
-                    focusNodes: _sidebarFocusNodes,
-                    scopeNode: _sidebarScopeNode,
-                    unreadNotificationCount: unreadCount,
-                    onNavigate: _navigateTo,
-                    onActivateSidebar: _activateSidebar,
-                    onDeactivateSidebar: _deactivateSidebar,
-                  ),
-                ),
+                content,
+                sidebar,
                 if (_isMacDesktopWindow)
                   const Positioned(
                     top: 0,
                     left: 0,
                     right: 0,
                     height: _kMacTitlebarInset,
-                    child: DragToMoveArea(child: SizedBox.expand()),
+                    child: DragToMoveArea(
+                      // App background color (matches _slidePage/app_background.dart)
+                      // rather than pure black.
+                      child: ColoredBox(color: Color(0xFF09090b)),
+                    ),
                   ),
               ],
             ),
@@ -1271,32 +1347,36 @@ class AppShellState extends ConsumerState<AppShell>
 
     return Scaffold(
       body: contentShell,
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: displayedIndex,
-        onTap: (index) => index == moreTabIndex
-            ? _showMoreSheet(overflowRoutes, primaryCount, unreadCount)
-            : _navigateTo(index),
-        selectedItemColor: Theme.of(context).colorScheme.primary,
-        unselectedItemColor: Theme.of(context).colorScheme.onSurfaceVariant,
-        items: [
-          ...routes.take(primaryCount).map((route) {
-            return BottomNavigationBarItem(
-              icon: Icon(_routeIcon(route)),
-              label: _routeLabel(context, route),
-            );
-          }),
-          if (overflowRoutes.isNotEmpty)
-            BottomNavigationBarItem(
-              icon: Badge(
-                isLabelVisible: overflowUnread > 0,
-                label: Text('$overflowUnread'),
-                child: const Icon(Icons.more_vert),
-              ),
-              label: AppLocalizations.of(context).navMore,
+      bottomNavigationBar: _fullScreenDetailActive
+          ? null
+          : BottomNavigationBar(
+              type: BottomNavigationBarType.fixed,
+              currentIndex: displayedIndex,
+              onTap: (index) => index == moreTabIndex
+                  ? _showMoreSheet(overflowRoutes, primaryCount, unreadCount)
+                  : _navigateTo(index),
+              selectedItemColor: Theme.of(context).colorScheme.primary,
+              unselectedItemColor: Theme.of(
+                context,
+              ).colorScheme.onSurfaceVariant,
+              items: [
+                ...routes.take(primaryCount).map((route) {
+                  return BottomNavigationBarItem(
+                    icon: Icon(_routeIcon(route)),
+                    label: _routeLabel(context, route),
+                  );
+                }),
+                if (overflowRoutes.isNotEmpty)
+                  BottomNavigationBarItem(
+                    icon: Badge(
+                      isLabelVisible: overflowUnread > 0,
+                      label: Text('$overflowUnread'),
+                      child: const Icon(Icons.more_vert),
+                    ),
+                    label: AppLocalizations.of(context).navMore,
+                  ),
+              ],
             ),
-        ],
-      ),
     );
   }
 
@@ -1850,7 +1930,6 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
               fallbackIcon: Icons.movie,
               fallbackTitle: item.name,
               isFavorite: _favoriteVodIds.contains(item.id),
-              heroTag: 'vod_poster_${item.id}',
               onTap: () => widget.onVodSelect(item),
               onLongTap: () async {
                 await _vodFavoritesService.toggle(item.id);
@@ -1876,7 +1955,6 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
               fallbackIcon: Icons.tv,
               fallbackTitle: series.name,
               isFavorite: _favoriteSeriesIds.contains(series.id),
-              heroTag: 'series_poster_${series.id}',
               onTap: () => widget.onSeriesSelect(series),
               onLongTap: () async {
                 await _seriesFavoritesService.toggle(series.id);
