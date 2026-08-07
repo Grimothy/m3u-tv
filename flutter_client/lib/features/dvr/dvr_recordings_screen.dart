@@ -389,9 +389,7 @@ class _RecordingListState extends ConsumerState<_RecordingList> {
           _SelectionActionBar(
             count: _selectedUuids.length,
             onExit: _exitSelectMode,
-            onDelete: widget.onDeleteRecording != null
-                ? _deleteSelected
-                : null,
+            onDelete: widget.onDeleteRecording != null ? _deleteSelected : null,
           ),
       ],
     );
@@ -423,7 +421,8 @@ class _RecordingCard extends StatelessWidget {
   final VoidCallback? onDelete;
   final VoidCallback? onSelect;
 
-  // TODO(cj): scale row height to 88 on TV
+  // NOTE(cj): row height is tuned for touch/desktop; scaling to 88 for TV
+  // is tracked as follow-up work, not done here.
   static const double _rowHeight = 72;
 
   @override
@@ -432,8 +431,8 @@ class _RecordingCard extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final statusColor = _statusColor(colorScheme);
     final canSelect = onSelect != null;
-    final hasMenu = onPlay != null || canSelect || onStop != null ||
-        onDelete != null;
+    final hasMenu =
+        onPlay != null || canSelect || onStop != null || onDelete != null;
 
     return SizedBox(
       height: _rowHeight,
@@ -492,7 +491,7 @@ class _RecordingCard extends StatelessWidget {
             ),
             if (hasMenu)
               Padding(
-                padding: const EdgeInsets.only(right: 4),
+                padding: const EdgeInsets.only(left: 8, right: 4),
                 child: Center(
                   child: _OverflowMenu(
                     tooltip: AppLocalizations.of(context).dvrMoreActions,
@@ -595,7 +594,8 @@ class _MetaLine extends StatelessWidget {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final colorScheme = theme.colorScheme;
-    final base = theme.textTheme.bodySmall ??
+    final base =
+        theme.textTheme.bodySmall ??
         const TextStyle(fontSize: 12, color: Colors.white);
     final muted = base.copyWith(color: colorScheme.onSurfaceVariant);
 
@@ -715,6 +715,10 @@ class _OverflowMenuState extends State<_OverflowMenu> {
   static const _menuEffects = <DpadEffect>[
     GradientBorderEffect(borderRadius: BorderRadius.all(Radius.circular(50))),
   ];
+  static const _menuWidth = 180.0;
+  static const _menuStyle = MenuStyle(
+    minimumSize: WidgetStatePropertyAll(Size(_menuWidth, 0)),
+  );
 
   final MenuController _controller = MenuController();
   final FocusNode _focusNode = FocusNode();
@@ -732,37 +736,13 @@ class _OverflowMenuState extends State<_OverflowMenu> {
     final l10n = AppLocalizations.of(context);
     final items = <Widget>[
       if (widget.onPlay != null)
-        MenuItemButton(
-          onPressed: () {
-            _controller.close();
-            widget.onPlay?.call();
-          },
-          child: Text(l10n.dvrPlay),
-        ),
+        _menuItem(text: l10n.dvrPlay, onPressed: widget.onPlay!),
       if (widget.onSelect != null)
-        MenuItemButton(
-          onPressed: () {
-            _controller.close();
-            widget.onSelect?.call();
-          },
-          child: Text(l10n.dvrSelect),
-        ),
+        _menuItem(text: l10n.dvrSelect, onPressed: widget.onSelect!),
       if (widget.onStop != null)
-        MenuItemButton(
-          onPressed: () {
-            _controller.close();
-            widget.onStop?.call();
-          },
-          child: Text(l10n.dvrStop),
-        ),
+        _menuItem(text: l10n.dvrStop, onPressed: widget.onStop!),
       if (widget.onDelete != null)
-        MenuItemButton(
-          onPressed: () {
-            _controller.close();
-            widget.onDelete?.call();
-          },
-          child: Text(l10n.dvrDelete),
-        ),
+        _menuItem(text: l10n.dvrDelete, onPressed: widget.onDelete!),
     ];
 
     return DpadFocusable(
@@ -771,12 +751,27 @@ class _OverflowMenuState extends State<_OverflowMenu> {
       effects: _menuEffects,
       child: MenuAnchor(
         controller: _controller,
+        style: _menuStyle,
+        alignmentOffset: const Offset(-16, 4),
         menuChildren: items,
         child: IconButton(
           tooltip: widget.tooltip,
           onPressed: _open,
           icon: const Icon(Icons.more_vert),
         ),
+      ),
+    );
+  }
+
+  Widget _menuItem({required String text, required VoidCallback onPressed}) {
+    return SizedBox(
+      width: _menuWidth,
+      child: MenuItemButton(
+        onPressed: () {
+          _controller.close();
+          onPressed();
+        },
+        child: Text(text),
       ),
     );
   }
