@@ -138,6 +138,7 @@ GoRouter createGoRouter({
                             xtreamService: actions.xtreamService,
                             onPlay: actions.onOpenPlayer,
                             progressList: actions.progressList,
+                            onSidebarActivate: actions.onSidebarActivate,
                           ),
                         ),
                       );
@@ -190,6 +191,7 @@ GoRouter createGoRouter({
                             xtreamService: actions.xtreamService,
                             onPlay: actions.onOpenPlayer,
                             progressList: actions.progressList,
+                            onSidebarActivate: actions.onSidebarActivate,
                           ),
                         ),
                       );

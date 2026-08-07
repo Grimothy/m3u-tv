@@ -151,6 +151,24 @@
   },
   "settingsAppViewRelease": "查看版本",
   "settingsAppScanQr": "扫描以在手机上打开",
+  "settingsFillAllFields": "请填写所有字段",
+  "settingsConnectionSettings": "连接设置",
+  "settingsConnectionSettingsSubtitle": "输入您的 Xtream Codes 信息",
+  "settingsServerUrl": "服务器地址",
+  "settingsUsername": "用户名",
+  "settingsPassword": "密码",
+  "settingsConnect": "连接",
+  "settingsPairWithCode": "使用代码配对",
+  "settingsTabPair": "配对",
+  "settingsTabSignIn": "登录",
+  "settingsPairTabSubtitle": "输入您的服务器地址，然后使用代码配对此电视。",
+  "pairingEnterServerFirst": "请先输入您的服务器地址",
+  "pairingErrorGeneric": "配对失败或代码已过期，请重试。",
+  "pairingScanQr": "扫描以在手机上打开配对页面",
+  "pairingOpenBrowser": "在浏览器中打开",
+  "pairingPendingGoTo": "在您的手机或电脑上，访问：",
+  "pairingPendingEnterCode": "然后输入此代码：",
+  "pairingPendingWaiting": "等待批准…",
   "settingsContentCache": "内容缓存",
   "settingsCacheSubtitle": "缓存内容即时加载，数据在后台自动刷新。",
   "settingsEpgRefreshInterval": "EPG 刷新间隔",
@@ -378,6 +396,35 @@
   "dvrExitSelection": "退出选择",
   "dvrSelectedCount": "{count, plural, =0{未选择任何项目} other{已选择 {count} 项}}",
   "@dvrSelectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dvrStorageTitle": "DVR 存储",
+  "dvrStorageUnlimited": "无限",
+  "dvrStorageUsedUnlimited": "已使用 {used}",
+  "@dvrStorageUsedUnlimited": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      }
+    }
+  },
+  "dvrStorageUsedWithQuota": "已使用 {used}，共 {quota}",
+  "@dvrStorageUsedWithQuota": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "quota": {
+        "type": "String"
+      }
+    }
+  },
+  "dvrStorageRecordingCount": "{count} 个录制",
+  "@dvrStorageRecordingCount": {
     "placeholders": {
       "count": {
         "type": "int"

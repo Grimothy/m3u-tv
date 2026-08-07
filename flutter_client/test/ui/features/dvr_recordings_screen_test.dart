@@ -463,6 +463,93 @@ void main() {
         expect(find.text('Delete'), findsOneWidget);
       },
     );
+
+    testWidgets('hides the storage summary when storageInfo is absent', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_TestApp(recordings: [_completedRecording()]));
+      await tester.pumpAndSettle();
+
+      expect(find.text('DVR Storage'), findsNothing);
+    });
+
+    testWidgets('shows used/quota and percentage when a quota is configured', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _TestApp(
+          recordings: [_completedRecording()],
+          storageInfo: const DvrStorageInfo(
+            usedBytes: 5368709120, // 5.0 GB
+            quotaBytes: 10737418240, // 10.0 GB
+            percentUsed: 50,
+            recordingCount: 12,
+            scope: 'account',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('DVR Storage'), findsOneWidget);
+      expect(find.text('5.0 GB of 10.0 GB used'), findsOneWidget);
+      expect(find.text('50%'), findsOneWidget);
+      expect(find.text('12 recordings'), findsOneWidget);
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      expect(find.text('Unlimited'), findsNothing);
+    });
+
+    testWidgets(
+      'shows an "Unlimited" badge and no percentage without a quota',
+      (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _TestApp(
+            recordings: [_completedRecording()],
+            storageInfo: const DvrStorageInfo(
+              usedBytes: 1073741824, // 1.0 GB
+              recordingCount: 3,
+              scope: 'account',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('1.0 GB used'), findsOneWidget);
+        expect(find.text('Unlimited'), findsOneWidget);
+        expect(find.text('3 recordings'), findsOneWidget);
+        expect(find.byType(LinearProgressIndicator), findsNothing);
+      },
+    );
+
+    testWidgets('storage bar turns error-colored at >= 90% used', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _TestApp(
+          recordings: [_completedRecording()],
+          storageInfo: const DvrStorageInfo(
+            usedBytes: 9500000000,
+            quotaBytes: 10000000000,
+            percentUsed: 95,
+            recordingCount: 20,
+            scope: 'account',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final indicator = tester.widget<LinearProgressIndicator>(
+        find.byType(LinearProgressIndicator),
+      );
+      final expectedColor = ThemeData.dark(
+        useMaterial3: true,
+      ).colorScheme.error;
+      expect(
+        (indicator.valueColor! as AlwaysStoppedAnimation<Color>).value,
+        expectedColor,
+      );
+    });
   });
 }
 
@@ -473,6 +560,7 @@ class _TestApp extends StatelessWidget {
     this.onCancelRecording,
     this.onCancelAndDeleteRecording,
     this.onDeleteRecording,
+    this.storageInfo,
   });
 
   final List<DvrRecording> recordings;
@@ -480,6 +568,7 @@ class _TestApp extends StatelessWidget {
   final Future<void> Function(String uuid)? onCancelRecording;
   final Future<void> Function(String uuid)? onCancelAndDeleteRecording;
   final Future<void> Function(String uuid)? onDeleteRecording;
+  final DvrStorageInfo? storageInfo;
 
   @override
   Widget build(BuildContext context) {
@@ -496,6 +585,7 @@ class _TestApp extends StatelessWidget {
           onCancelRecording: onCancelRecording,
           onCancelAndDeleteRecording: onCancelAndDeleteRecording,
           onDeleteRecording: onDeleteRecording,
+          storageInfo: storageInfo,
         ),
       ),
     );

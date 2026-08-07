@@ -2,6 +2,17 @@
 
 enum ContentType { live, vod, episode, aiostreams }
 
+final RegExp _schemePattern = RegExp('^[a-zA-Z][a-zA-Z0-9+.-]*://');
+
+/// Strips trailing slashes and, if [server] has no explicit URI scheme
+/// (e.g. a bare `192.168.1.10:8080` typed on a TV remote), prefixes it with
+/// `http://` so it can be parsed as an absolute URI downstream.
+String normalizeServerUrl(String server) {
+  final trimmed = server.trim().replaceAll(RegExp(r'/+$'), '');
+  if (trimmed.isEmpty || _schemePattern.hasMatch(trimmed)) return trimmed;
+  return 'http://$trimmed';
+}
+
 class UserCredentials {
   const UserCredentials({
     required this.server,
@@ -14,7 +25,7 @@ class UserCredentials {
   final String password;
 
   UserCredentials normalized() => UserCredentials(
-    server: server.replaceAll(RegExp(r'/+$'), ''),
+    server: normalizeServerUrl(server),
     username: username,
     password: password,
   );
@@ -476,6 +487,35 @@ class DvrRecording {
       errorMessage: _asNullableString(
         pick(['error', 'error_message', 'message']),
       ),
+    );
+  }
+}
+
+/// DVR storage usage for the current playlist/guest, from m3u-editor's
+/// `get_dvr_storage` action. `quotaBytes` and `percentUsed` are null when
+/// the account/guest has no configured quota (unlimited storage).
+class DvrStorageInfo {
+  const DvrStorageInfo({
+    required this.usedBytes,
+    required this.recordingCount,
+    required this.scope,
+    this.quotaBytes,
+    this.percentUsed,
+  });
+
+  final int usedBytes;
+  final int? quotaBytes;
+  final double? percentUsed;
+  final int recordingCount;
+  final String scope;
+
+  factory DvrStorageInfo.fromXtream(Map<String, Object?> json) {
+    return DvrStorageInfo(
+      usedBytes: _asIntOrNull(json['used_bytes']) ?? 0,
+      quotaBytes: _asIntOrNull(json['quota_bytes']),
+      percentUsed: _asDoubleOrNull(json['percent_used']),
+      recordingCount: _asIntOrNull(json['recording_count']) ?? 0,
+      scope: _asNullableString(json['scope']) ?? 'account',
     );
   }
 }

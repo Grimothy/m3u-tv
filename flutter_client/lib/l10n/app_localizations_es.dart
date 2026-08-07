@@ -386,6 +386,64 @@ class AppLocalizationsEs extends AppLocalizations {
   String get settingsAppScanQr => 'Escanear para abrir en tu teléfono';
 
   @override
+  String get settingsFillAllFields => 'Por favor completa todos los campos';
+
+  @override
+  String get settingsConnectionSettings => 'Configuración de conexión';
+
+  @override
+  String get settingsConnectionSettingsSubtitle =>
+      'Ingresa los datos de tu Xtream Codes';
+
+  @override
+  String get settingsServerUrl => 'URL del servidor';
+
+  @override
+  String get settingsUsername => 'Usuario';
+
+  @override
+  String get settingsPassword => 'Contraseña';
+
+  @override
+  String get settingsConnect => 'Conectar';
+
+  @override
+  String get settingsPairWithCode => 'Vincular con código';
+
+  @override
+  String get settingsTabPair => 'Vincular';
+
+  @override
+  String get settingsTabSignIn => 'Iniciar sesión';
+
+  @override
+  String get settingsPairTabSubtitle =>
+      'Introduce la dirección de tu servidor y luego vincula este televisor con un código.';
+
+  @override
+  String get pairingEnterServerFirst => 'Ingresa primero la URL de tu servidor';
+
+  @override
+  String get pairingErrorGeneric =>
+      'La vinculación falló o el código expiró. Inténtalo de nuevo.';
+
+  @override
+  String get pairingScanQr =>
+      'Escanea para abrir la página de vinculación en tu teléfono';
+
+  @override
+  String get pairingOpenBrowser => 'Abrir en el navegador';
+
+  @override
+  String get pairingPendingGoTo => 'En tu teléfono u ordenador, ve a:';
+
+  @override
+  String get pairingPendingEnterCode => 'Luego ingresa este código:';
+
+  @override
+  String get pairingPendingWaiting => 'Esperando aprobación…';
+
+  @override
   String get homeContinueWatching => 'Continuar viendo';
 
   @override
@@ -767,5 +825,26 @@ class AppLocalizationsEs extends AppLocalizations {
       zero: 'Ningún elemento seleccionado',
     );
     return '$_temp0';
+  }
+
+  @override
+  String get dvrStorageTitle => 'Almacenamiento DVR';
+
+  @override
+  String get dvrStorageUnlimited => 'Ilimitado';
+
+  @override
+  String dvrStorageUsedUnlimited(String used) {
+    return '$used utilizado';
+  }
+
+  @override
+  String dvrStorageUsedWithQuota(String used, String quota) {
+    return '$used de $quota utilizado';
+  }
+
+  @override
+  String dvrStorageRecordingCount(int count) {
+    return '$count grabaciones';
   }
 }

@@ -377,6 +377,60 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsAppScanQr => '扫描以在手机上打开';
 
   @override
+  String get settingsFillAllFields => '请填写所有字段';
+
+  @override
+  String get settingsConnectionSettings => '连接设置';
+
+  @override
+  String get settingsConnectionSettingsSubtitle => '输入您的 Xtream Codes 信息';
+
+  @override
+  String get settingsServerUrl => '服务器地址';
+
+  @override
+  String get settingsUsername => '用户名';
+
+  @override
+  String get settingsPassword => '密码';
+
+  @override
+  String get settingsConnect => '连接';
+
+  @override
+  String get settingsPairWithCode => '使用代码配对';
+
+  @override
+  String get settingsTabPair => '配对';
+
+  @override
+  String get settingsTabSignIn => '登录';
+
+  @override
+  String get settingsPairTabSubtitle => '输入您的服务器地址，然后使用代码配对此电视。';
+
+  @override
+  String get pairingEnterServerFirst => '请先输入您的服务器地址';
+
+  @override
+  String get pairingErrorGeneric => '配对失败或代码已过期，请重试。';
+
+  @override
+  String get pairingScanQr => '扫描以在手机上打开配对页面';
+
+  @override
+  String get pairingOpenBrowser => '在浏览器中打开';
+
+  @override
+  String get pairingPendingGoTo => '在您的手机或电脑上，访问：';
+
+  @override
+  String get pairingPendingEnterCode => '然后输入此代码：';
+
+  @override
+  String get pairingPendingWaiting => '等待批准…';
+
+  @override
   String get homeContinueWatching => '继续观看';
 
   @override
@@ -749,5 +803,26 @@ class AppLocalizationsZh extends AppLocalizations {
       zero: '未选择任何项目',
     );
     return '$_temp0';
+  }
+
+  @override
+  String get dvrStorageTitle => 'DVR 存储';
+
+  @override
+  String get dvrStorageUnlimited => '无限';
+
+  @override
+  String dvrStorageUsedUnlimited(String used) {
+    return '已使用 $used';
+  }
+
+  @override
+  String dvrStorageUsedWithQuota(String used, String quota) {
+    return '已使用 $used，共 $quota';
+  }
+
+  @override
+  String dvrStorageRecordingCount(int count) {
+    return '$count 个录制';
   }
 }

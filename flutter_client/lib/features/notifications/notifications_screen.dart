@@ -106,6 +106,20 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l = AppLocalizations.of(context);
+    final isBootstrapping = ref.watch(isBootstrappingProvider);
+    final isConfigured = ref.watch(isConfiguredProvider);
+
+    if (isBootstrapping) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (!isConfigured) {
+      return Scaffold(
+        body: Center(
+          child: Text(l.appNotConfigured, style: theme.textTheme.titleMedium),
+        ),
+      );
+    }
 
     return Scaffold(
       body: Column(

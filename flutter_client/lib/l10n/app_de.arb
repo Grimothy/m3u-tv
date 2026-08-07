@@ -151,6 +151,24 @@
   },
   "settingsAppViewRelease": "Release ansehen",
   "settingsAppScanQr": "Scannen, um auf deinem Handy zu öffnen",
+  "settingsFillAllFields": "Bitte fülle alle Felder aus",
+  "settingsConnectionSettings": "Verbindungseinstellungen",
+  "settingsConnectionSettingsSubtitle": "Gib deine Xtream-Codes-Daten ein",
+  "settingsServerUrl": "Server-URL",
+  "settingsUsername": "Benutzername",
+  "settingsPassword": "Passwort",
+  "settingsConnect": "Verbinden",
+  "settingsPairWithCode": "Mit Code koppeln",
+  "settingsTabPair": "Koppeln",
+  "settingsTabSignIn": "Anmelden",
+  "settingsPairTabSubtitle": "Gib deine Serveradresse ein und koppele diesen Fernseher dann mit einem Code.",
+  "pairingEnterServerFirst": "Gib zuerst deine Server-URL ein",
+  "pairingErrorGeneric": "Kopplung fehlgeschlagen oder der Code ist abgelaufen. Bitte versuche es erneut.",
+  "pairingScanQr": "Scanne, um die Kopplungsseite auf deinem Handy zu öffnen",
+  "pairingOpenBrowser": "Im Browser öffnen",
+  "pairingPendingGoTo": "Gehe auf deinem Telefon oder Computer zu:",
+  "pairingPendingEnterCode": "Gib dann diesen Code ein:",
+  "pairingPendingWaiting": "Warte auf Bestätigung…",
   "settingsContentCache": "Inhaltscache",
   "settingsCacheSubtitle": "Gecachte Inhalte laden sofort. Daten werden automatisch im Hintergrund aktualisiert.",
   "settingsEpgRefreshInterval": "EPG-Aktualisierungsintervall",
@@ -378,6 +396,35 @@
   "dvrExitSelection": "Auswahl beenden",
   "dvrSelectedCount": "{count, plural, =0{Keine Elemente ausgewählt} one{1 Element ausgewählt} other{{count} Elemente ausgewählt}}",
   "@dvrSelectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dvrStorageTitle": "DVR-Speicher",
+  "dvrStorageUnlimited": "Unbegrenzt",
+  "dvrStorageUsedUnlimited": "{used} belegt",
+  "@dvrStorageUsedUnlimited": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      }
+    }
+  },
+  "dvrStorageUsedWithQuota": "{used} von {quota} belegt",
+  "@dvrStorageUsedWithQuota": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "quota": {
+        "type": "String"
+      }
+    }
+  },
+  "dvrStorageRecordingCount": "{count} Aufnahmen",
+  "@dvrStorageRecordingCount": {
     "placeholders": {
       "count": {
         "type": "int"

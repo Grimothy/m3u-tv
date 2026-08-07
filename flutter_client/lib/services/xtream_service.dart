@@ -476,6 +476,15 @@ class XtreamService {
     return DvrRecording.fromXtream(_asMap(response));
   }
 
+  /// Fetches DVR storage usage against quota via m3u-editor's
+  /// `get_dvr_storage` action. Older servers without this action will
+  /// return an error response, which callers should treat as "unsupported"
+  /// and hide the feature rather than surfacing an error.
+  Future<DvrStorageInfo> getDvrStorage() async {
+    final response = await _request('get_dvr_storage');
+    return DvrStorageInfo.fromXtream(_asMap(response));
+  }
+
   /// Schedules a one-shot DVR recording on m3u-editor's `schedule_dvr` action.
   ///
   /// The m3u-editor endpoint responds with an envelope:
