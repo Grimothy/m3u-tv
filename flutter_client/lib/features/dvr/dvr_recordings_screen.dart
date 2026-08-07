@@ -752,7 +752,6 @@ class _OverflowMenuState extends State<_OverflowMenu> {
       child: MenuAnchor(
         controller: _controller,
         style: _menuStyle,
-        alignmentOffset: const Offset(-16, 4),
         menuChildren: items,
         child: IconButton(
           tooltip: widget.tooltip,
