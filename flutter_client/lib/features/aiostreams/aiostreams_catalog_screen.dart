@@ -3,12 +3,10 @@ import 'dart:async';
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 
-import 'package:go_router/go_router.dart';
 import 'package:m3u_tv/features/aiostreams/aiostreams_detail_screen.dart';
 import 'package:m3u_tv/features/player/resume_modal.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
-import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/services/aiostreams_api_service.dart';
 import 'package:m3u_tv/services/aiostreams_favorites_service.dart';
 import 'package:m3u_tv/services/domain_models.dart';
@@ -335,6 +333,7 @@ class AIOStreamsHomeScreen extends StatefulWidget {
     required this.apiService,
     required this.onItemSelect,
     required this.onPlay,
+    required this.onSearchSelect,
     this.favoritesService,
     this.progressList = const [],
     this.onSidebarActivate,
@@ -344,6 +343,7 @@ class AIOStreamsHomeScreen extends StatefulWidget {
   final AIOStreamsApiService apiService;
   final void Function(AIOStreamsItem, int integrationId) onItemSelect;
   final void Function(PlayerArgs) onPlay;
+  final VoidCallback onSearchSelect;
   final AIOStreamsFavoritesService? favoritesService;
   final List<Progress> progressList;
   final VoidCallback? onSidebarActivate;
@@ -389,10 +389,6 @@ class _AIOStreamsHomeScreenState extends State<AIOStreamsHomeScreen> {
   Future<void> _loadFavorites() async {
     final favs = await widget.favoritesService?.all() ?? const [];
     if (mounted) setState(() => _favorites = favs);
-  }
-
-  void _openSearch(BuildContext context) {
-    context.go(RouteNames.aiostreamsSearchPath);
   }
 
   Future<void> _playContinueWatching(
@@ -522,7 +518,7 @@ class _AIOStreamsHomeScreenState extends State<AIOStreamsHomeScreen> {
             if (_hasSearchableCatalog) ...[
               _AIOStreamsSearchEntry(
                 hintText: l.aiostreamsSearchHint,
-                onTap: () => _openSearch(context),
+                onTap: widget.onSearchSelect,
               ),
               const SizedBox(height: MediaBrowsingMetrics.pagePadding),
             ],

@@ -866,6 +866,12 @@ class AppShellState extends ConsumerState<AppShell>
     );
   }
 
+  void _openAioSearch() {
+    unawaited(
+      _pushDetail(RouteNames.aiostreamsSearchPath, fullScreen: true),
+    );
+  }
+
   void _openShow(EpgShow show) {
     unawaited(
       _pushDetail(
@@ -1026,6 +1032,7 @@ class AppShellState extends ConsumerState<AppShell>
             ),
           ),
           onPlay: _openPlayerFromActions,
+          onSearchSelect: _openAioSearch,
           favoritesService: _appState.aioFavoritesService,
           progressList: _appState.progressList,
           onSidebarActivate: _activateSidebar,
