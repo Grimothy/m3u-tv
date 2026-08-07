@@ -386,6 +386,22 @@
   "liveTvStopRecording": "Detener grabación",
   "playerRecordNowTooltip": "Grabar programa actual",
   "playerStopRecordingTooltip": "Detener grabación",
+  "dvrMoreActions": "Más acciones",
+  "dvrPlay": "Reproducir",
+  "dvrSelect": "Seleccionar",
+  "dvrStop": "Detener",
+  "dvrStatusRecording": "Grabando",
+  "dvrStatusScheduled": "Programada",
+  "dvrStatusFailed": "Fallida",
+  "dvrExitSelection": "Salir de la selección",
+  "dvrSelectedCount": "{count, plural, =0{Ningún elemento seleccionado} one{1 elemento seleccionado} other{{count} elementos seleccionados}}",
+  "@dvrSelectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "dvrStorageTitle": "Almacenamiento DVR",
   "dvrStorageUnlimited": "Ilimitado",
   "dvrStorageUsedUnlimited": "{used} utilizado",

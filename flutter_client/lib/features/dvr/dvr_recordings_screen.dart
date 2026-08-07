@@ -1,11 +1,12 @@
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/services/domain_models.dart';
-import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/dvr_action_dialogs.dart';
+import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
 class DvrRecordingsScreen extends StatelessWidget {
@@ -222,7 +223,7 @@ String _formatBytes(int bytes) {
   return '${mib.toStringAsFixed(0)} MB';
 }
 
-class _RecordingList extends StatelessWidget {
+class _RecordingList extends ConsumerStatefulWidget {
   const _RecordingList({
     required this.recordings,
     required this.onPlay,
@@ -240,45 +241,34 @@ class _RecordingList extends StatelessWidget {
   final VoidCallback? onSidebarActivate;
 
   @override
-  Widget build(BuildContext context) {
-    return DpadRegion(
-      memoryKey: 'dvr/recordings',
-      horizontalEdge: DpadEdgeBehavior.stop,
-      onEdge: (direction) {
-        if (direction == TraversalDirection.left) onSidebarActivate?.call();
-      },
-      child: ScrollbarListView(
-        itemCount: recordings.length,
-        itemBuilder: (context, index) {
-          final recording = recordings[index];
-          return Padding(
-            padding: const EdgeInsets.only(
-              bottom: MediaBrowsingMetrics.itemGap,
-            ),
-            child: _RecordingCard(
-              recording: recording,
-              autofocus: index == 0,
-              onTap: () => _openRecording(recording),
-              onCancel: onCancelRecording == null
-                  ? null
-                  : () => onCancelRecording!(recording.uuid),
-              onCancelAndDelete: onCancelAndDeleteRecording == null
-                  ? null
-                  : () => onCancelAndDeleteRecording!(recording.uuid),
-              onDelete: onDeleteRecording == null
-                  ? null
-                  : () => onDeleteRecording!(recording.uuid),
-            ),
-          );
-        },
-      ),
-    );
+  ConsumerState<_RecordingList> createState() => _RecordingListState();
+}
+
+class _RecordingListState extends ConsumerState<_RecordingList> {
+  final Set<String> _selectedUuids = <String>{};
+
+  bool get _selectMode => _selectedUuids.isNotEmpty;
+
+  void _toggleSelection(String uuid) {
+    setState(() {
+      if (!_selectedUuids.add(uuid)) _selectedUuids.remove(uuid);
+    });
+  }
+
+  void _enterSelectMode(String uuid) {
+    setState(() {
+      _selectedUuids.add(uuid);
+    });
+  }
+
+  void _exitSelectMode() {
+    setState(_selectedUuids.clear);
   }
 
   void _openRecording(DvrRecording recording) {
     final playbackUrl = recording.playbackUrl;
     if (playbackUrl == null || playbackUrl.isEmpty) return;
-    onPlay(
+    widget.onPlay(
       PlayerArgs(
         streamUrl: playbackUrl,
         title: recording.title,
@@ -298,281 +288,228 @@ class _RecordingList extends StatelessWidget {
       ),
     );
   }
+
+  Future<void> _confirmStop(DvrRecording recording) async {
+    final cancel = widget.onCancelRecording;
+    if (cancel == null) return;
+    await confirmStopOrDeleteRecording(
+      context,
+      recording: recording,
+      onCancel: cancel,
+      onCancelAndDelete: widget.onCancelAndDeleteRecording,
+    );
+  }
+
+  Future<void> _confirmDeleteSingle(DvrRecording recording) async {
+    final delete = widget.onDeleteRecording;
+    if (delete == null) return;
+    final confirmed = await showDeleteRecordingDialog(context);
+    if (confirmed != true) return;
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context);
+    await runDvrActionWithFeedback(
+      context,
+      () => delete(recording.uuid),
+      successMessage: l10n.dvrDeleteSuccess,
+      failureMessage: l10n.dvrDeleteFailed,
+    );
+  }
+
+  Future<void> _deleteSelected() async {
+    final delete = widget.onDeleteRecording;
+    if (delete == null) return;
+    final selected = widget.recordings
+        .where((r) => _selectedUuids.contains(r.uuid))
+        .toList();
+    for (final recording in selected) {
+      await delete(recording.uuid);
+    }
+    _exitSelectMode();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: DpadRegion(
+            memoryKey: 'dvr/recordings',
+            horizontalEdge: DpadEdgeBehavior.stop,
+            onEdge: (direction) {
+              if (direction == TraversalDirection.left) {
+                widget.onSidebarActivate?.call();
+              }
+            },
+            child: ScrollbarListView(
+              itemCount: widget.recordings.length,
+              itemBuilder: (context, index) {
+                final recording = widget.recordings[index];
+                final selected = _selectedUuids.contains(recording.uuid);
+                final canStop =
+                    widget.onCancelRecording != null &&
+                    (recording.status == DvrRecordingStatus.scheduled ||
+                        recording.status == DvrRecordingStatus.recording);
+                final canDelete =
+                    widget.onDeleteRecording != null &&
+                    (recording.status == DvrRecordingStatus.completed ||
+                        recording.status == DvrRecordingStatus.failed ||
+                        recording.status == DvrRecordingStatus.cancelled);
+                return Padding(
+                  padding: const EdgeInsets.only(
+                    bottom: MediaBrowsingMetrics.itemGap,
+                  ),
+                  child: _RecordingCard(
+                    recording: recording,
+                    autofocus: index == 0,
+                    selectMode: _selectMode,
+                    selected: selected,
+                    onTap: _selectMode
+                        ? () => _toggleSelection(recording.uuid)
+                        : recording.isPlayable
+                        ? () => _openRecording(recording)
+                        : null,
+                    onLongTap: () => _enterSelectMode(recording.uuid),
+                    onPlay: recording.isPlayable
+                        ? () => _openRecording(recording)
+                        : null,
+                    onStop: canStop ? () => _confirmStop(recording) : null,
+                    onDelete: canDelete
+                        ? () => _confirmDeleteSingle(recording)
+                        : null,
+                    onSelect: !_selectMode
+                        ? () => _enterSelectMode(recording.uuid)
+                        : null,
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        if (_selectMode)
+          _SelectionActionBar(
+            count: _selectedUuids.length,
+            onExit: _exitSelectMode,
+            onDelete: widget.onDeleteRecording != null ? _deleteSelected : null,
+          ),
+      ],
+    );
+  }
 }
 
 class _RecordingCard extends StatelessWidget {
   const _RecordingCard({
     required this.recording,
+    required this.autofocus,
+    required this.selectMode,
+    required this.selected,
     required this.onTap,
-    this.onCancel,
-    this.onCancelAndDelete,
+    required this.onLongTap,
+    this.onPlay,
+    this.onStop,
     this.onDelete,
-    this.autofocus = false,
+    this.onSelect,
   });
 
   final DvrRecording recording;
-  final VoidCallback onTap;
-  final Future<void> Function()? onCancel;
-  final Future<void> Function()? onCancelAndDelete;
-  final Future<void> Function()? onDelete;
   final bool autofocus;
+  final bool selectMode;
+  final bool selected;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongTap;
+  final VoidCallback? onPlay;
+  final VoidCallback? onStop;
+  final VoidCallback? onDelete;
+  final VoidCallback? onSelect;
+
+  // NOTE(cj): row height is tuned for touch/desktop; scaling to 88 for TV
+  // is tracked as follow-up work, not done here.
+  static const double _rowHeight = 72;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final playable = recording.isPlayable;
-    // The play tap-target and the trailing action buttons must be sibling
-    // DpadFocusables beside each other, not one nested inside the other:
-    // DpadFocusable excludes descendant focus by default (one widget, one
-    // focus target), so a button nested inside the row's own DpadInkWell
-    // would be permanently unreachable by remote.
-    return Row(
-      children: [
-        Expanded(
-          child: DpadInkWell(
-            autofocus: autofocus,
-            onTap: playable ? onTap : null,
-            borderRadius: BorderRadius.circular(12),
-            color: theme.colorScheme.surfaceContainerHigh,
-            child: Padding(
-              padding: const EdgeInsets.all(
-                MediaBrowsingMetrics.contentPadding,
-              ),
-              child: Row(
-                children: [
-                  _StatusIcon(recording: recording),
-                  const SizedBox(width: MediaBrowsingMetrics.contentPadding),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          recording.title,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (recording.subtitle != null) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            recording.subtitle!,
-                            style: theme.textTheme.bodyMedium,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
+    final colorScheme = theme.colorScheme;
+    final statusColor = _statusColor(colorScheme);
+    final canSelect = onSelect != null;
+    final hasMenu =
+        onPlay != null || canSelect || onStop != null || onDelete != null;
+
+    return SizedBox(
+      height: _rowHeight,
+      child: Material(
+        color: colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(MediaBrowsingMetrics.cardRadius),
+        clipBehavior: Clip.antiAlias,
+        child: Row(
+          children: [
+            Expanded(
+              child: DpadInkWell(
+                autofocus: autofocus,
+                onTap: onTap,
+                onLongTap: onLongTap,
+                borderRadius: BorderRadius.circular(
+                  MediaBrowsingMetrics.cardRadius,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: MediaBrowsingMetrics.contentPadding,
+                  ),
+                  child: Row(
+                    children: [
+                      _LeadingTile(
+                        recording: recording,
+                        selected: selected,
+                        selectMode: selectMode,
+                        tileColor: statusColor,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _Badge(label: recording.status.label),
-                            if (recording.channelName != null)
-                              _Badge(label: recording.channelName!),
-                            if (recording.seasonNumber != null ||
-                                recording.episodeNumber != null)
-                              _Badge(label: _episodeLabel(recording)),
-                            if (recording.durationSeconds != null)
-                              _Badge(
-                                label: _durationLabel(
-                                  recording.durationSeconds!,
-                                ),
+                            Text(
+                              recording.title,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
                               ),
-                            if (recording.fileSizeBytes != null &&
-                                recording.fileSizeBytes! > 0)
-                              _Badge(
-                                label: _formatBytes(recording.fileSizeBytes!),
-                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            _MetaLine(
+                              recording: recording,
+                              statusColor: statusColor,
+                            ),
                           ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  if (playable) ...[
-                    const SizedBox(
-                      width: MediaBrowsingMetrics.contentPadding,
-                    ),
-                    const _PlayIndicator(),
-                  ],
-                ],
+                ),
               ),
             ),
-          ),
+            if (hasMenu)
+              Padding(
+                padding: const EdgeInsets.only(left: 8, right: 4),
+                child: Center(
+                  child: _OverflowMenu(
+                    tooltip: AppLocalizations.of(context).dvrMoreActions,
+                    onPlay: onPlay,
+                    onStop: onStop,
+                    onDelete: onDelete,
+                    onSelect: onSelect,
+                  ),
+                ),
+              ),
+          ],
         ),
-        const SizedBox(width: MediaBrowsingMetrics.contentPadding),
-        _CardTrailing(
-          recording: recording,
-          onCancel: onCancel,
-          onCancelAndDelete: onCancelAndDelete,
-          onDelete: onDelete,
-        ),
-      ],
+      ),
     );
   }
 
-  String _episodeLabel(DvrRecording recording) {
-    final season = recording.seasonNumber;
-    final episode = recording.episodeNumber;
-    if (season != null && episode != null) return 'S$season E$episode';
-    if (season != null) return 'Season $season';
-    return 'Episode $episode';
-  }
-
-  String _durationLabel(int seconds) {
-    final hours = seconds ~/ 3600;
-    final minutes = (seconds % 3600) ~/ 60;
-    if (hours > 0 && minutes > 0) return '${hours}h ${minutes}m';
-    if (hours > 0) return '${hours}h';
-    return '${minutes}m';
-  }
-}
-
-class _CardTrailing extends StatelessWidget {
-  const _CardTrailing({
-    required this.recording,
-    this.onCancel,
-    this.onCancelAndDelete,
-    this.onDelete,
-  });
-
-  final DvrRecording recording;
-  final Future<void> Function()? onCancel;
-  final Future<void> Function()? onCancelAndDelete;
-  final Future<void> Function()? onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final cancelHandler = onCancel;
-    final cancelAndDeleteHandler = onCancelAndDelete;
-    final deleteHandler = onDelete;
-    final canCancel =
-        cancelHandler != null &&
-        (recording.status == DvrRecordingStatus.scheduled ||
-            recording.status == DvrRecordingStatus.recording);
-    final canDelete =
-        deleteHandler != null &&
-        (recording.status == DvrRecordingStatus.completed ||
-            recording.status == DvrRecordingStatus.failed ||
-            recording.status == DvrRecordingStatus.cancelled);
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (canDelete)
-          AppIconButton(
-            tooltip: l10n.dvrDelete,
-            icon: Icons.delete,
-            variant: AppButtonVariant.destructive,
-            onPressed: () => _confirmDelete(context, recording, deleteHandler),
-          ),
-        if (canCancel) ...[
-          if (canDelete) const SizedBox(width: 8),
-          AppIconButton(
-            tooltip: l10n.dvrCancel,
-            icon: Icons.close,
-            variant: AppButtonVariant.destructive,
-            onPressed: () => _confirmCancel(
-              context,
-              recording,
-              cancelHandler,
-              cancelAndDeleteHandler,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  /// Offers a choice instead of a plain confirm: the server's cancel action
-  /// only stops the recording and keeps it (status → Cancelled), while
-  /// deleting is a distinct, explicit follow-up action (see
-  /// AppShell._cancelAndDeleteRecording). AppShell always wires both
-  /// callbacks together; [deleteAction] is nullable only so this widget
-  /// degrades gracefully in isolation (e.g. tests) — when absent, cancels
-  /// immediately with no dialog, since there is nothing to choose between.
-  Future<void> _confirmCancel(
-    BuildContext context,
-    DvrRecording recording,
-    Future<void> Function() keepAction,
-    Future<void> Function()? deleteAction,
-  ) async {
-    final l10n = AppLocalizations.of(context);
-    if (deleteAction == null) {
-      await runDvrActionWithFeedback(
-        context,
-        keepAction,
-        successMessage: l10n.dvrCancelSuccess,
-        failureMessage: l10n.dvrCancelFailed,
-      );
-      return;
-    }
-
-    final choice = await showStopRecordingDialog(
-      context,
-      title: recording.title,
-    );
-    if (choice == null || choice == StopRecordingChoice.back) return;
-    if (!context.mounted) return;
-
-    if (choice == StopRecordingChoice.keep) {
-      await runDvrActionWithFeedback(
-        context,
-        keepAction,
-        successMessage: l10n.dvrCancelSuccess,
-        failureMessage: l10n.dvrCancelFailed,
-      );
-    } else {
-      await runDvrActionWithFeedback(
-        context,
-        deleteAction,
-        successMessage: l10n.dvrDeleteSuccess,
-        failureMessage: l10n.dvrDeleteFailed,
-      );
-    }
-  }
-
-  Future<void> _confirmDelete(
-    BuildContext context,
-    DvrRecording recording,
-    Future<void> Function() action,
-  ) async {
-    final l10n = AppLocalizations.of(context);
-    final confirmed = await showDeleteRecordingDialog(context);
-    if (confirmed != true) return;
-    if (!context.mounted) return;
-    await runDvrActionWithFeedback(
-      context,
-      action,
-      successMessage: l10n.dvrDeleteSuccess,
-      failureMessage: l10n.dvrDeleteFailed,
-    );
-  }
-}
-
-class _StatusIcon extends StatelessWidget {
-  const _StatusIcon({required this.recording});
-
-  final DvrRecording recording;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final icon = switch (recording.status) {
-      DvrRecordingStatus.recording => Icons.fiber_manual_record,
-      DvrRecordingStatus.postProcessing => Icons.sync,
-      DvrRecordingStatus.completed => Icons.check_circle,
-      DvrRecordingStatus.scheduled => Icons.schedule,
-      DvrRecordingStatus.failed => Icons.error,
-      DvrRecordingStatus.cancelled => Icons.cancel,
-      // Never actually rendered — deleted recordings are removed from the
-      // list before they reach this widget. See _onDvrStatusPush.
-      DvrRecordingStatus.deleted => Icons.delete,
-      DvrRecordingStatus.unknown => Icons.radio_button_unchecked,
-    };
-    final color = switch (recording.status) {
+  Color _statusColor(ColorScheme colorScheme) {
+    return switch (recording.status) {
       DvrRecordingStatus.recording => Colors.redAccent,
       DvrRecordingStatus.postProcessing => colorScheme.secondary,
       DvrRecordingStatus.completed => colorScheme.primary,
@@ -582,55 +519,313 @@ class _StatusIcon extends StatelessWidget {
       DvrRecordingStatus.deleted => colorScheme.onSurfaceVariant,
       DvrRecordingStatus.unknown => colorScheme.onSurfaceVariant,
     };
-    return Container(
-      width: 56,
-      height: 56,
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Icon(icon, color: color),
-    );
   }
 }
 
-/// A soft, non-interactive badge indicating whether selecting the card plays
-/// it. Lives inside the card's own tappable content area (not beside the
-/// cancel/delete buttons) since it describes what the card itself does.
-class _PlayIndicator extends StatelessWidget {
-  const _PlayIndicator();
+class _LeadingTile extends StatelessWidget {
+  const _LeadingTile({
+    required this.recording,
+    required this.selected,
+    required this.selectMode,
+    required this.tileColor,
+  });
 
-  @override
-  Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.primary;
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
-        shape: BoxShape.circle,
-      ),
-      child: Icon(Icons.play_arrow, color: color),
-    );
-  }
-}
+  final DvrRecording recording;
+  final bool selected;
+  final bool selectMode;
+  final Color tileColor;
 
-class _Badge extends StatelessWidget {
-  const _Badge({required this.label});
-
-  final String label;
+  static const double _size = 44;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return DecoratedBox(
+    final colorScheme = theme.colorScheme;
+
+    if (selectMode) {
+      final accent = selected ? colorScheme.primary : colorScheme.outline;
+      return Container(
+        width: _size,
+        height: _size,
+        decoration: BoxDecoration(
+          color: selected
+              ? colorScheme.primary.withValues(alpha: 0.14)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: accent, width: 2),
+        ),
+        child: Icon(
+          selected ? Icons.check_box : Icons.check_box_outline_blank,
+          color: accent,
+        ),
+      );
+    }
+
+    final icon = switch (recording.status) {
+      DvrRecordingStatus.recording => Icons.fiber_manual_record,
+      DvrRecordingStatus.postProcessing => Icons.sync,
+      DvrRecordingStatus.completed => Icons.check_circle,
+      DvrRecordingStatus.scheduled => Icons.schedule,
+      DvrRecordingStatus.failed => Icons.error,
+      DvrRecordingStatus.cancelled => Icons.cancel,
+      DvrRecordingStatus.deleted => Icons.delete,
+      DvrRecordingStatus.unknown => Icons.radio_button_unchecked,
+    };
+    return Container(
+      width: _size,
+      height: _size,
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(50),
+        color: tileColor.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(10),
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        child: Text(label, style: theme.textTheme.labelMedium),
+      child: Icon(icon, color: tileColor),
+    );
+  }
+}
+
+class _MetaLine extends StatelessWidget {
+  const _MetaLine({required this.recording, required this.statusColor});
+
+  final DvrRecording recording;
+  final Color statusColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+    final colorScheme = theme.colorScheme;
+    final base =
+        theme.textTheme.bodySmall ??
+        const TextStyle(fontSize: 12, color: Colors.white);
+    final muted = base.copyWith(color: colorScheme.onSurfaceVariant);
+
+    final String? statusWord;
+    final bool statusWordIsError;
+    switch (recording.status) {
+      case DvrRecordingStatus.recording:
+        statusWord = '● ${l10n.dvrStatusRecording}';
+        statusWordIsError = false;
+      case DvrRecordingStatus.scheduled:
+        statusWord = l10n.dvrStatusScheduled;
+        statusWordIsError = false;
+      case DvrRecordingStatus.failed:
+        statusWord = l10n.dvrStatusFailed;
+        statusWordIsError = true;
+      case DvrRecordingStatus.completed:
+      case DvrRecordingStatus.cancelled:
+      case DvrRecordingStatus.postProcessing:
+      case DvrRecordingStatus.deleted:
+      case DvrRecordingStatus.unknown:
+        statusWord = null;
+        statusWordIsError = false;
+    }
+
+    final channel = recording.channelName;
+    final season = recording.seasonNumber;
+    final episode = recording.episodeNumber;
+    String? episodeLabel;
+    if (season != null && episode != null) {
+      episodeLabel = 'S$season-E$episode';
+    } else if (season != null) {
+      episodeLabel = 'S$season';
+    } else if (episode != null) {
+      episodeLabel = 'E$episode';
+    }
+    final duration = recording.durationSeconds;
+    final size = recording.fileSizeBytes;
+
+    final spans = <InlineSpan>[];
+    if (statusWord != null) {
+      spans.add(
+        TextSpan(
+          text: statusWord,
+          style: base.copyWith(
+            color: statusWordIsError ? colorScheme.error : statusColor,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+    }
+    void appendSeparator() {
+      if (spans.isNotEmpty) {
+        spans.add(TextSpan(text: ' · ', style: muted));
+      }
+    }
+
+    if (channel != null && channel.isNotEmpty) {
+      appendSeparator();
+      spans.add(TextSpan(text: channel, style: muted));
+    }
+    if (episodeLabel != null) {
+      appendSeparator();
+      spans.add(TextSpan(text: episodeLabel, style: muted));
+    }
+    if (duration != null && duration > 0) {
+      appendSeparator();
+      spans.add(TextSpan(text: _durationLabel(duration), style: muted));
+    }
+    if (size != null && size > 0) {
+      appendSeparator();
+      spans.add(TextSpan(text: _sizeLabel(size), style: muted));
+    }
+
+    return Text.rich(
+      TextSpan(style: muted, children: spans),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
+  String _durationLabel(int seconds) {
+    final hours = seconds ~/ 3600;
+    final minutes = (seconds % 3600) ~/ 60;
+    if (hours > 0 && minutes > 0) return '${hours}h ${minutes}m';
+    if (hours > 0) return '${hours}h';
+    return '${minutes}m';
+  }
+
+  String _sizeLabel(int bytes) {
+    final gib = bytes / (1024 * 1024 * 1024);
+    if (gib >= 1) return '${gib.toStringAsFixed(1)} GB';
+    final mib = bytes / (1024 * 1024);
+    return '${mib.toStringAsFixed(0)} MB';
+  }
+}
+
+class _OverflowMenu extends StatefulWidget {
+  const _OverflowMenu({
+    required this.tooltip,
+    this.onPlay,
+    this.onStop,
+    this.onDelete,
+    this.onSelect,
+  });
+
+  final String tooltip;
+  final VoidCallback? onPlay;
+  final VoidCallback? onStop;
+  final VoidCallback? onDelete;
+  final VoidCallback? onSelect;
+
+  @override
+  State<_OverflowMenu> createState() => _OverflowMenuState();
+}
+
+class _OverflowMenuState extends State<_OverflowMenu> {
+  static const _menuEffects = <DpadEffect>[
+    GradientBorderEffect(borderRadius: BorderRadius.all(Radius.circular(50))),
+  ];
+  static const _menuWidth = 180.0;
+  static const _menuStyle = MenuStyle(
+    minimumSize: WidgetStatePropertyAll(Size(_menuWidth, 0)),
+  );
+
+  final MenuController _controller = MenuController();
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _open() => _controller.open();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final items = <Widget>[
+      if (widget.onPlay != null)
+        _menuItem(text: l10n.dvrPlay, onPressed: widget.onPlay!),
+      if (widget.onSelect != null)
+        _menuItem(text: l10n.dvrSelect, onPressed: widget.onSelect!),
+      if (widget.onStop != null)
+        _menuItem(text: l10n.dvrStop, onPressed: widget.onStop!),
+      if (widget.onDelete != null)
+        _menuItem(text: l10n.dvrDelete, onPressed: widget.onDelete!),
+    ];
+
+    return DpadFocusable(
+      focusNode: _focusNode,
+      onSelect: _open,
+      effects: _menuEffects,
+      child: MenuAnchor(
+        controller: _controller,
+        style: _menuStyle,
+        menuChildren: items,
+        child: IconButton(
+          tooltip: widget.tooltip,
+          onPressed: _open,
+          icon: const Icon(Icons.more_vert),
+        ),
+      ),
+    );
+  }
+
+  Widget _menuItem({required String text, required VoidCallback onPressed}) {
+    return SizedBox(
+      width: _menuWidth,
+      child: MenuItemButton(
+        onPressed: () {
+          _controller.close();
+          onPressed();
+        },
+        child: Text(text),
+      ),
+    );
+  }
+}
+
+class _SelectionActionBar extends StatelessWidget {
+  const _SelectionActionBar({
+    required this.count,
+    required this.onExit,
+    this.onDelete,
+  });
+
+  final int count;
+  final VoidCallback onExit;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Material(
+      color: colorScheme.surfaceContainerHigh,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: MediaBrowsingMetrics.contentPadding,
+            vertical: 8,
+          ),
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: l10n.dvrExitSelection,
+                onPressed: onExit,
+                icon: const Icon(Icons.close),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  l10n.dvrSelectedCount(count),
+                  style: theme.textTheme.titleMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (onDelete != null)
+                FilledButton.icon(
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete),
+                  label: Text(l10n.dvrDelete),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

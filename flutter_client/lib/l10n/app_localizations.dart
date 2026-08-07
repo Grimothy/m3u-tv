@@ -1544,6 +1544,60 @@ abstract class AppLocalizations {
   /// **'Stop recording'**
   String get playerStopRecordingTooltip;
 
+  /// No description provided for @dvrMoreActions.
+  ///
+  /// In en, this message translates to:
+  /// **'More actions'**
+  String get dvrMoreActions;
+
+  /// No description provided for @dvrPlay.
+  ///
+  /// In en, this message translates to:
+  /// **'Play'**
+  String get dvrPlay;
+
+  /// No description provided for @dvrSelect.
+  ///
+  /// In en, this message translates to:
+  /// **'Select'**
+  String get dvrSelect;
+
+  /// No description provided for @dvrStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop'**
+  String get dvrStop;
+
+  /// No description provided for @dvrStatusRecording.
+  ///
+  /// In en, this message translates to:
+  /// **'Recording'**
+  String get dvrStatusRecording;
+
+  /// No description provided for @dvrStatusScheduled.
+  ///
+  /// In en, this message translates to:
+  /// **'Scheduled'**
+  String get dvrStatusScheduled;
+
+  /// No description provided for @dvrStatusFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get dvrStatusFailed;
+
+  /// No description provided for @dvrExitSelection.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit selection'**
+  String get dvrExitSelection;
+
+  /// No description provided for @dvrSelectedCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No items selected} one{1 item selected} other{{count} items selected}}'**
+  String dvrSelectedCount(int count);
+
   /// No description provided for @dvrStorageTitle.
   ///
   /// In en, this message translates to:

@@ -386,6 +386,22 @@
   "liveTvStopRecording": "停止录制",
   "playerRecordNowTooltip": "录制当前节目",
   "playerStopRecordingTooltip": "停止录制",
+  "dvrMoreActions": "更多操作",
+  "dvrPlay": "播放",
+  "dvrSelect": "选择",
+  "dvrStop": "停止",
+  "dvrStatusRecording": "正在录制",
+  "dvrStatusScheduled": "已计划",
+  "dvrStatusFailed": "失败",
+  "dvrExitSelection": "退出选择",
+  "dvrSelectedCount": "{count, plural, =0{未选择任何项目} other{已选择 {count} 项}}",
+  "@dvrSelectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "dvrStorageTitle": "DVR 存储",
   "dvrStorageUnlimited": "无限",
   "dvrStorageUsedUnlimited": "已使用 {used}",

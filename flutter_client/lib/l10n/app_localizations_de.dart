@@ -792,6 +792,42 @@ class AppLocalizationsDe extends AppLocalizations {
   String get playerStopRecordingTooltip => 'Aufnahme stoppen';
 
   @override
+  String get dvrMoreActions => 'Weitere Aktionen';
+
+  @override
+  String get dvrPlay => 'Abspielen';
+
+  @override
+  String get dvrSelect => 'Auswählen';
+
+  @override
+  String get dvrStop => 'Stoppen';
+
+  @override
+  String get dvrStatusRecording => 'Aufnahme läuft';
+
+  @override
+  String get dvrStatusScheduled => 'Geplant';
+
+  @override
+  String get dvrStatusFailed => 'Fehlgeschlagen';
+
+  @override
+  String get dvrExitSelection => 'Auswahl beenden';
+
+  @override
+  String dvrSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Elemente ausgewählt',
+      one: '1 Element ausgewählt',
+      zero: 'Keine Elemente ausgewählt',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get dvrStorageTitle => 'DVR-Speicher';
 
   @override
