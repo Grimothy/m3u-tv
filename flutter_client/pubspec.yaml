@@ -40,6 +40,9 @@ dependencies:
     path: packages/sqflite_tvos
   timezone: ^0.11.1
   url_launcher: ^6.3.0
+  wakelock_plus: ^1.7.0
+  wakelock_plus_tvos:
+    path: packages/wakelock_plus_tvos
   web_socket_channel: ^3.0.0
   window_manager: ^0.5.1
 

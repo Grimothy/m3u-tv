@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:m3u_tv/features/player/epg_overlay.dart';
 import 'package:m3u_tv/features/player/now_playing_overlay.dart';
 import 'package:m3u_tv/features/player/playback_controls.dart';
+import 'package:m3u_tv/features/player/wakelock_controller.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/playback/playback_capabilities.dart';
@@ -39,6 +40,7 @@ class PlayerScreen extends StatefulWidget {
     this.comskipSettings,
     this.progressReporter,
     this.traktService,
+    this.wakelockController = const PlatformWakelockController(),
     this.viewerId = '',
     this.onClose,
     this.onPlaybackFailure,
@@ -56,6 +58,7 @@ class PlayerScreen extends StatefulWidget {
   final ComskipSettings? comskipSettings;
   final void Function(Progress progress)? progressReporter;
   final TraktService? traktService;
+  final WakelockController wakelockController;
   final String viewerId;
   final VoidCallback? onClose;
   final VoidCallback? onPlaybackFailure;
@@ -177,6 +180,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    // Screen must stay on for the entire time the player route is active,
+    // not just while actively playing — e.g. staying paused on an overlay
+    // shouldn't let the screen sleep. Enabled here, disabled in dispose().
+    unawaited(widget.wakelockController.enable());
     // Steal focus from the content area (autofocus won't do this if another
     // widget already holds focus when the player opens via the AppShell Stack).
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -482,6 +489,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _errorButtonFocusNode.dispose();
     unawaited(_stateSubscription?.cancel());
     unawaited(_errorSubscription?.cancel());
+    unawaited(widget.wakelockController.disable());
     unawaited(widget.orchestrator.stop());
     super.dispose();
   }
