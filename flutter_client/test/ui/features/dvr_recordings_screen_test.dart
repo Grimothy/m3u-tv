@@ -428,12 +428,13 @@ void main() {
           await tester.pumpAndSettle();
 
           // Actions render as inline icon buttons, not MenuItemButtons in a
-          // floating MenuAnchor overlay.
+          // floating MenuAnchor overlay. The trigger stays the same "more"
+          // icon (just rotated) rather than swapping to a close icon.
           expect(find.byIcon(Icons.play_arrow), findsOneWidget);
           expect(find.byIcon(Icons.check), findsOneWidget);
           expect(find.byIcon(Icons.delete), findsOneWidget);
           expect(find.byType(MenuItemButton), findsNothing);
-          expect(find.byIcon(Icons.close), findsOneWidget);
+          expect(find.byIcon(Icons.more_vert), findsOneWidget);
         },
       );
 
@@ -461,7 +462,7 @@ void main() {
           await tester.pumpAndSettle();
 
           expect(find.byIcon(Icons.play_arrow), findsOneWidget);
-          expect(find.byIcon(Icons.close), findsOneWidget);
+          expect(find.byIcon(Icons.more_vert), findsOneWidget);
         },
       );
 
