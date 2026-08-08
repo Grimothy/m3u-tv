@@ -1009,7 +1009,7 @@ class _RecordingCard extends StatelessWidget {
                         ),
                       if (onStop != null)
                         RowAction(
-                          icon: Icons.stop_circle,
+                          icon: Icons.stop,
                           label: AppLocalizations.of(context).dvrStop,
                           onPressed: onStop!,
                           type: RowActionType.danger,
@@ -1249,10 +1249,14 @@ class _SelectionActionBar extends StatelessWidget {
           ),
           child: Row(
             children: [
-              IconButton(
-                tooltip: l10n.dvrExitSelection,
-                onPressed: onExit,
-                icon: const Icon(Icons.close),
+              DpadFocusable(
+                onSelect: onExit,
+                effects: kStadiumFocusEffects,
+                child: IconButton(
+                  tooltip: l10n.dvrExitSelection,
+                  onPressed: onExit,
+                  icon: const Icon(Icons.close),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1264,10 +1268,11 @@ class _SelectionActionBar extends StatelessWidget {
                 ),
               ),
               if (onDelete != null)
-                FilledButton.icon(
+                AppButton(
+                  label: l10n.dvrDelete,
+                  icon: Icons.delete,
+                  variant: AppButtonVariant.destructive,
                   onPressed: onDelete,
-                  icon: const Icon(Icons.delete),
-                  label: Text(l10n.dvrDelete),
                 ),
             ],
           ),
