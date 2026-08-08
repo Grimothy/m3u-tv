@@ -1658,6 +1658,12 @@ abstract class AppLocalizations {
   /// **'Delete rule'**
   String get dvrDeleteSeriesRule;
 
+  /// No description provided for @dvrEditSeriesRule.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit rule'**
+  String get dvrEditSeriesRule;
+
   /// No description provided for @dvrUpdateSeriesRuleFailed.
   ///
   /// In en, this message translates to:

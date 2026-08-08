@@ -872,6 +872,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get dvrDeleteSeriesRule => 'Eliminar regla';
 
   @override
+  String get dvrEditSeriesRule => 'Editar regla';
+
+  @override
   String get dvrUpdateSeriesRuleFailed =>
       'No se pudo actualizar la regla de serie';
 
