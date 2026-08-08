@@ -31,6 +31,7 @@ import 'package:m3u_tv/services/desktop_notification_presenter.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/services/tv_notification_service.dart';
+import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/app_background.dart';
 import 'package:m3u_tv/shared/dvr_action_dialogs.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
@@ -675,6 +676,102 @@ class AppShellState extends ConsumerState<AppShell>
     }
   }
 
+  /// Calls the foundation-agent-owned `XtreamService.createDvrSeriesRule`
+  /// and refreshes the cached series rules list so the DVR screen's new
+  /// "Series Rules" section reflects the addition immediately.
+  ///
+  /// Returns a [CreateDvrSeriesRuleOutcome] so the UI can tell
+  /// "rule created" / "duplicate of existing rule" / "failed" apart and
+  /// show the right SnackBar without losing the A3-409 distinction that
+  /// `XtreamService.createDvrSeriesRule` throws as
+  /// `DvrSeriesRuleExistsException`. The `on Object { return false; }`
+  /// blanket from earlier releases would have collapsed the duplicate case
+  /// into a generic failure — B2 surfaces it instead.
+  Future<CreateDvrSeriesRuleOutcome> _createDvrSeriesRule({
+    int? channelId,
+    required String title,
+    DvrMatchMode? matchMode,
+    DvrSeriesMode? seriesMode,
+    int? keepLast,
+    int? priority,
+    int? startEarlySeconds,
+    int? endLateSeconds,
+  }) async {
+    try {
+      final id = await _appState.xtreamService.createDvrSeriesRule(
+        channelId: channelId,
+        title: title,
+        matchMode: matchMode,
+        seriesMode: seriesMode,
+        keepLast: keepLast,
+        priority: priority,
+        startEarlySeconds: startEarlySeconds,
+        endLateSeconds: endLateSeconds,
+      );
+      final rules = await _appState.xtreamService.listDvrSeriesRules();
+      _appState.setDvrSeriesRules(rules);
+      // The rule's `created` hook may have already matched and scheduled a
+      // recording server-side (see AppStateController.refreshDvrRecordings
+      // doc comment) — refresh so it shows up in the Recordings tab without
+      // waiting for the next full app reload.
+      unawaited(_appState.refreshDvrRecordings());
+      return id == 0
+          ? CreateDvrSeriesRuleOutcome.failed
+          : CreateDvrSeriesRuleOutcome.created;
+    } on DvrSeriesRuleExistsException {
+      try {
+        final rules = await _appState.xtreamService.listDvrSeriesRules();
+        _appState.setDvrSeriesRules(rules);
+      } on Object catch (error, stackTrace) {
+        debugPrint('DVR: refresh after duplicate create failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
+      return CreateDvrSeriesRuleOutcome.duplicate;
+    } on Object catch (error, stackTrace) {
+      debugPrint('DVR: create series rule failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      return CreateDvrSeriesRuleOutcome.failed;
+    }
+  }
+
+  /// Deletes a DVR series rule and refreshes the cached list. Foundation
+  /// agent owns `XtreamService.deleteDvrSeriesRule` and
+  /// `AppStateController.setDvrSeriesRules`.
+  Future<void> _deleteDvrSeriesRule(DvrSeriesRule rule) async {
+    await _appState.xtreamService.deleteDvrSeriesRule(rule.id);
+    final rules = await _appState.xtreamService.listDvrSeriesRules();
+    _appState.setDvrSeriesRules(rules);
+  }
+
+  /// Updates an existing DVR series rule in place (never delete-and-recreate —
+  /// deleting cascades to the rule's recordings and would destroy history) and
+  /// refreshes the cached list. `updateDvrSeriesRule` applies only the fields
+  /// the sheet returned; absent fields keep their current server values.
+  Future<void> _updateDvrSeriesRule(
+    DvrSeriesRule rule,
+    DvrSeriesRuleOptions options,
+  ) async {
+    await _appState.xtreamService.updateDvrSeriesRule(
+      ruleId: rule.id,
+      channelId: options.channelId,
+      matchMode: options.matchMode,
+      seriesMode: options.seriesMode,
+      keepLast: options.keepLast,
+      priority: options.priority,
+      startEarlySeconds: options.startEarlySeconds,
+      endLateSeconds: options.endLateSeconds,
+    );
+    final rules = await _appState.xtreamService.listDvrSeriesRules();
+    _appState.setDvrSeriesRules(rules);
+    unawaited(_appState.refreshDvrRecordings());
+  }
+
+  /// Proxies the Shows screen's search through the foundation-agent-owned
+  /// `XtreamService.searchEpgShows`.
+  Future<List<EpgShow>> _searchEpgShows(String query) {
+    return _appState.xtreamService.searchEpgShows(query);
+  }
+
   /// Stops a scheduled or in-progress recording and deletes the row from the
   /// editor — the "Delete recording" choice on the Recordings screen's stop
   /// dialog (see DvrRecordingsScreen._confirmCancel). m3u-editor's
@@ -767,6 +864,34 @@ class AppShellState extends ConsumerState<AppShell>
         fullScreen: true,
       ),
     );
+  }
+
+  void _openAioSearch() {
+    unawaited(
+      _pushDetail(RouteNames.aiostreamsSearchPath, fullScreen: true),
+    );
+  }
+
+  void _openShow(EpgShow show) {
+    unawaited(
+      _pushDetail(
+        RouteNames.showDetailsFor(show.normalizedTitle),
+        extra: show,
+        fullScreen: true,
+      ),
+    );
+  }
+
+  /// Lets a descendant enter/exit the same immersive full-screen state as
+  /// `_pushDetail(fullScreen: true)` — sidebar hidden, bottom nav hidden —
+  /// without going through a go_router push itself. Needed for screens
+  /// like the DVR series-rule Options page, which is opened via a plain
+  /// `Navigator.push` (not a route) from a tab that isn't already
+  /// immersive (the Series Rules tab, unlike Show Detail).
+  void _enterFullScreenDetail() => setState(() => _fullScreenDetailDepth++);
+
+  void _exitFullScreenDetail() {
+    if (mounted) setState(() => _fullScreenDetailDepth--);
   }
 
   void _openProgress(Progress progress) {
@@ -875,6 +1000,10 @@ class AppShellState extends ConsumerState<AppShell>
         onEnsureEpg: _appState.ensureEpgForChannels,
         onCancelRecording: (uuid) => _appState.cancelDvrRecording(uuid),
         onCancelAndDeleteRecording: _cancelAndDeleteRecording,
+        onRecordSeries: (channel, program) => _createDvrSeriesRule(
+          channelId: channel.id,
+          title: program.title,
+        ),
       ),
       RouteNames.vod => VodScreen(
         onVodSelect: _openVod,
@@ -903,6 +1032,7 @@ class AppShellState extends ConsumerState<AppShell>
             ),
           ),
           onPlay: _openPlayerFromActions,
+          onSearchSelect: _openAioSearch,
           favoritesService: _appState.aioFavoritesService,
           progressList: _appState.progressList,
           onSidebarActivate: _activateSidebar,
@@ -920,11 +1050,19 @@ class AppShellState extends ConsumerState<AppShell>
             recordings: _appState.dvrRecordings,
             isLoading: _appState.isLoadingContent,
             isConfigured: _appState.isConfigured,
+            useInlineRowActions: shouldUseSidebar(widget.deviceType),
             storageInfo: ref.watch(dvrStorageInfoProvider),
             onPlay: _openPlayerDirect,
             onCancelRecording: (uuid) => _appState.cancelDvrRecording(uuid),
             onCancelAndDeleteRecording: _cancelAndDeleteRecording,
             onDeleteRecording: (uuid) => _appState.deleteDvrRecording(uuid),
+            seriesRules: ref.watch(dvrSeriesRulesProvider),
+            onDeleteSeriesRule: _deleteDvrSeriesRule,
+            onUpdateSeriesRule: _updateDvrSeriesRule,
+            onSearchShows: _searchEpgShows,
+            onOpenShowDetail: _openShow,
+            onEnterFullScreenDetail: _enterFullScreenDetail,
+            onExitFullScreenDetail: _exitFullScreenDetail,
             onSidebarActivate: _activateSidebar,
           );
         },
@@ -1002,6 +1140,8 @@ class AppShellState extends ConsumerState<AppShell>
       onSeriesSelect: _openSeries,
       onProgressSelect: _openProgress,
       onSidebarActivate: _activateSidebar,
+      onRecordSeries: _createDvrSeriesRule,
+      onDeleteSeriesRule: _deleteDvrSeriesRule,
       buildTabScreen: _buildTabScreen,
       child: FocusScope(
         node: _contentFocusNode,
