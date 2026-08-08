@@ -7,7 +7,6 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.util.DisplayMetrics
-import android.view.WindowManager
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -97,14 +96,9 @@ class MainActivity : FlutterActivity() {
             insetsController.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insetsController.hide(systemBars)
-            // Playback has no touch/key input for long stretches (live TV, VOD);
-            // without this the screen dims/sleeps mid-playback, which also lets
-            // Android reclaim the hardware decoder from the backgrounded surface.
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {
             insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
             insetsController.show(systemBars)
-            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
 

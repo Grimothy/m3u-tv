@@ -11,7 +11,6 @@ import 'package:m3u_tv/features/player/epg_overlay.dart';
 import 'package:m3u_tv/features/player/now_playing_overlay.dart';
 import 'package:m3u_tv/features/player/playback_controls.dart';
 import 'package:m3u_tv/features/player/wakelock_controller.dart';
-import 'package:m3u_tv/features/player/wakelock_gate.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/playback/playback_capabilities.dart';
@@ -132,8 +131,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   StreamSubscription<PlaybackState>? _stateSubscription;
   StreamSubscription<PlaybackError>? _errorSubscription;
 
-  late final WakelockGate _wakelockGate;
-
   bool _disposed = false;
   bool _traktScrobbleActive = false;
   bool _failureReported = false;
@@ -183,7 +180,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
-    _wakelockGate = WakelockGate(widget.wakelockController);
+    // Screen must stay on for the entire time the player route is active,
+    // not just while actively playing — e.g. staying paused on an overlay
+    // shouldn't let the screen sleep. Enabled here, disabled in dispose().
+    unawaited(widget.wakelockController.enable());
     // Steal focus from the content area (autofocus won't do this if another
     // widget already holds focus when the player opens via the AppShell Stack).
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -489,7 +489,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _errorButtonFocusNode.dispose();
     unawaited(_stateSubscription?.cancel());
     unawaited(_errorSubscription?.cancel());
-    unawaited(_wakelockGate.release());
+    unawaited(widget.wakelockController.disable());
     unawaited(widget.orchestrator.stop());
     super.dispose();
   }
@@ -633,11 +633,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _pendingComskipSeekTimer = null;
     }
     _checkComskip();
-
-    // Keep the screen on only while the user is actively watching.
-    // The gate transitions on play/pause/completed/stopped; buffering is a
-    // no-op (it's still part of active playback).
-    unawaited(_wakelockGate.onPlaybackStatus(state.status));
 
     // Only re-evaluate the hide timer on an actual play/pause transition:
     // pausing cancels it (keeping the overlay up), resuming restarts the
