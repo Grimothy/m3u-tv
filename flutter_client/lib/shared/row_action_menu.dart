@@ -271,6 +271,12 @@ class _RowActionMenuState extends State<RowActionMenu>
               icon: Icons.more_vert,
               tooltip: widget.moreLabel,
               onPressed: _toggleExpanded,
+              // These buttons are always already on-screen (part of a
+              // fixed row), and sit close to the trailing edge of any
+              // enclosing horizontally-scrolling ancestor (e.g. a tab's
+              // PageView) — auto-scroll-into-view's edge padding would
+              // otherwise nudge that ancestor sideways on every hover.
+              autoScroll: false,
             ),
           ),
         ],
@@ -314,6 +320,8 @@ class _InlineAction extends StatelessWidget {
                   ? AppButtonVariant.destructive
                   : AppButtonVariant.tonal,
               onPressed: onPressed,
+              // See the matching comment on the trigger button above.
+              autoScroll: false,
             ),
           ),
         ),
