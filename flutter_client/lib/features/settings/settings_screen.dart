@@ -355,7 +355,7 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody>
           tabs: [l.settingsTabPair, l.settingsTabSignIn],
         ),
         Expanded(
-          child: TabBarView(
+          child: DpadTabBarView(
             controller: _tabController,
             children: [
               SingleChildScrollView(
@@ -845,7 +845,7 @@ class _ConnectedViewState extends State<_ConnectedView>
           ],
         ),
         Expanded(
-          child: TabBarView(
+          child: DpadTabBarView(
             controller: _tabController,
             children: [
               SingleChildScrollView(

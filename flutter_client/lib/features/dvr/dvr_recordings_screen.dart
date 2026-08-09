@@ -177,7 +177,7 @@ class _DvrRecordingsScreenState extends State<DvrRecordingsScreen>
             ],
           ),
           Expanded(
-            child: TabBarView(
+            child: DpadTabBarView(
               controller: _tabController,
               children: [
                 Padding(

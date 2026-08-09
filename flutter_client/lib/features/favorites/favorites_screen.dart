@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
+import 'package:m3u_tv/shared/dpad_tab_bar.dart';
 
 /// Favorites screen with tabs for Live TV, Movies, and Series favorites.
 ///
@@ -124,7 +125,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
             tabs: _tabs,
           ),
           Expanded(
-            child: TabBarView(
+            child: DpadTabBarView(
               controller: _tabController,
               children: [
                 _buildLiveTvTab(),
