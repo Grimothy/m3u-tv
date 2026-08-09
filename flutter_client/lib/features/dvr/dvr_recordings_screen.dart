@@ -1341,6 +1341,9 @@ class _SelectionActionBar extends StatelessWidget {
                   icon: Icons.delete,
                   variant: AppButtonVariant.destructive,
                   onPressed: onDelete,
+                  // Always on-screen once the selection bar is showing —
+                  // see the matching comment in row_action_menu.dart.
+                  autoScroll: false,
                 ),
             ],
           ),
@@ -1400,6 +1403,9 @@ class _SelectionRail extends StatelessWidget {
                 tooltip: l10n.dvrExitSelection,
                 onPressed: onExit,
                 focusNode: onDelete == null ? focusNode : null,
+                // Docked rail is always on-screen — see the matching
+                // comment in row_action_menu.dart.
+                autoScroll: false,
               ),
               const SizedBox(height: 20),
               Tooltip(
@@ -1419,6 +1425,7 @@ class _SelectionRail extends StatelessWidget {
                   variant: AppButtonVariant.destructive,
                   onPressed: onDelete,
                   focusNode: focusNode,
+                  autoScroll: false,
                 ),
             ],
           ),
