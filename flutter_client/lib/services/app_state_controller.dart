@@ -15,7 +15,6 @@ import 'package:m3u_tv/services/device_pairing_service.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/epg_service.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
-import 'package:m3u_tv/services/m3u_parser.dart';
 import 'package:m3u_tv/services/persistent_store.dart';
 import 'package:m3u_tv/services/proxy_playback_settings.dart';
 import 'package:m3u_tv/services/push_notification_service.dart';
@@ -28,7 +27,7 @@ import 'package:m3u_tv/services/tv_notification_store.dart';
 import 'package:m3u_tv/services/viewer_service.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 
-enum AppSourceType { none, xtream, m3u }
+enum AppSourceType { none, xtream }
 
 typedef MediaRequestOwner = ({
   int sourceGeneration,
@@ -49,7 +48,6 @@ class AppStateController extends ChangeNotifier {
     ResumeService? resumeService,
     ViewerService? viewerService,
     EpgService? epgService,
-    M3UParser? m3uParser,
     PersistentJsonStore? persistentStore,
     TvNotificationService? tvNotificationService,
     TvNotificationStore? tvNotificationStore,
@@ -88,7 +86,6 @@ class AppStateController extends ChangeNotifier {
       resumeService: resumeService ?? ResumeService(store: store),
       viewerService: viewerService ?? ViewerService(store: store),
       epgService: epgService ?? EpgService(),
-      m3uParser: m3uParser ?? M3UParser(),
       traktService: TraktService(storage: resolvedSecureStorage),
       devicePairingService: devicePairingService ?? DevicePairingService(),
       tvNotificationService: tvNotificationService ?? TvNotificationService(),
@@ -116,7 +113,6 @@ class AppStateController extends ChangeNotifier {
     required this.resumeService,
     required this.viewerService,
     required this.epgService,
-    required this.m3uParser,
     required this.traktService,
     required this.devicePairingService,
     required this._tvNotificationService,
@@ -302,7 +298,6 @@ class AppStateController extends ChangeNotifier {
 
   final ViewerService viewerService;
   final EpgService epgService;
-  final M3UParser m3uParser;
   final TraktService traktService;
   final DevicePairingService devicePairingService;
 
@@ -386,7 +381,6 @@ class AppStateController extends ChangeNotifier {
   );
   String get sourceLabel => switch (_sourceType) {
     AppSourceType.xtream => 'Xtream',
-    AppSourceType.m3u => 'M3U',
     AppSourceType.none => 'Not connected',
   };
 
@@ -416,69 +410,64 @@ class AppStateController extends ChangeNotifier {
     }
 
     final savedSource = await _readSavedSourceType();
-    if (savedSource == AppSourceType.xtream ||
-        savedSource == AppSourceType.none) {
-      final restored = await authNotifier.loadSavedCredentials(
-        isCurrent: () => !_sourceOperationGeneration.isStale(sourceGeneration),
-      );
-      if (restored) {
-        _resetEpgSession();
-        final credentials = authNotifier.credentials!;
-        final notificationGeneration = _notificationSessionGeneration.advance();
-        if (await _hydrateCachedXtreamContent(
-          sourceGeneration: sourceGeneration,
-        )) {
-          _isBootstrapping = false;
-          notifyListeners();
-          final activeViewer = _activeViewer;
-          final viewerGeneration = _viewerOperationGeneration.current;
-          if (activeViewer != null) {
-            _runBackgroundPersistence(
-              _syncFavoritesForActiveViewer(
-                activeViewer,
-                sourceGeneration: sourceGeneration,
-                viewerGeneration: viewerGeneration,
-              ),
-            );
-            _runBackgroundPersistence(
-              _refreshRecentlyWatchedForActiveViewer(
-                activeViewer,
-                sourceGeneration: sourceGeneration,
-                viewerGeneration: viewerGeneration,
-              ),
-            );
-          }
+    final restored = await authNotifier.loadSavedCredentials(
+      isCurrent: () => !_sourceOperationGeneration.isStale(sourceGeneration),
+    );
+    if (restored) {
+      _resetEpgSession();
+      final credentials = authNotifier.credentials!;
+      final notificationGeneration = _notificationSessionGeneration.advance();
+      if (await _hydrateCachedXtreamContent(
+        sourceGeneration: sourceGeneration,
+      )) {
+        _isBootstrapping = false;
+        notifyListeners();
+        final activeViewer = _activeViewer;
+        final viewerGeneration = _viewerOperationGeneration.current;
+        if (activeViewer != null) {
           _runBackgroundPersistence(
-            _replaceWithXtreamContent(
-              clearCache: false,
+            _syncFavoritesForActiveViewer(
+              activeViewer,
               sourceGeneration: sourceGeneration,
+              viewerGeneration: viewerGeneration,
             ),
           );
-          _pushRegistrationSuspended = false;
           _runBackgroundPersistence(
-            _connectTvNotifications(credentials, notificationGeneration),
+            _refreshRecentlyWatchedForActiveViewer(
+              activeViewer,
+              sourceGeneration: sourceGeneration,
+              viewerGeneration: viewerGeneration,
+            ),
           );
-          unawaited(_registerPushToken(credentials));
-          return;
         }
-        final loaded = await _replaceWithXtreamContent(
-          clearCache: false,
-          sourceGeneration: sourceGeneration,
+        _runBackgroundPersistence(
+          _replaceWithXtreamContent(
+            clearCache: false,
+            sourceGeneration: sourceGeneration,
+          ),
         );
-        if (loaded) {
-          _pushRegistrationSuspended = false;
-          _runBackgroundPersistence(
-            _connectTvNotifications(credentials, notificationGeneration),
-          );
-          unawaited(_registerPushToken(credentials));
-        }
-      } else if (savedSource == AppSourceType.xtream &&
-          authNotifier.error != null) {
-        _sourceType = AppSourceType.xtream;
-        _error = authNotifier.error;
+        _pushRegistrationSuspended = false;
+        _runBackgroundPersistence(
+          _connectTvNotifications(credentials, notificationGeneration),
+        );
+        unawaited(_registerPushToken(credentials));
+        return;
       }
-    } else if (savedSource == AppSourceType.m3u) {
-      await _loadSavedM3uSource();
+      final loaded = await _replaceWithXtreamContent(
+        clearCache: false,
+        sourceGeneration: sourceGeneration,
+      );
+      if (loaded) {
+        _pushRegistrationSuspended = false;
+        _runBackgroundPersistence(
+          _connectTvNotifications(credentials, notificationGeneration),
+        );
+        unawaited(_registerPushToken(credentials));
+      }
+    } else if (savedSource == AppSourceType.xtream &&
+        authNotifier.error != null) {
+      _sourceType = AppSourceType.xtream;
+      _error = authNotifier.error;
     }
 
     _isBootstrapping = false;
@@ -667,78 +656,6 @@ class AppStateController extends ChangeNotifier {
       return;
     }
     await _registerPushToken(credentials);
-  }
-
-  Future<bool> switchToM3u({
-    required String playlistText,
-    String name = 'Direct M3U',
-  }) async {
-    _isLoadingContent = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-      final playlist = m3uParser.parse(playlistText);
-      final sourceGeneration = _sourceOperationGeneration.advance();
-      _sourceRollbackGeneration.advance();
-      _notificationSessionGeneration.advance();
-      _clearNotificationOwner();
-      _pushRegistrationSuspended = true;
-      _pushLifecycleGeneration.advance();
-      await _unregisterPushToken();
-      if (_sourceOperationGeneration.isStale(sourceGeneration)) return false;
-      await _reverbService.disconnect();
-      if (_sourceOperationGeneration.isStale(sourceGeneration)) return false;
-      await authNotifier.disconnect();
-      if (_sourceOperationGeneration.isStale(sourceGeneration)) return false;
-      await cacheService.clear();
-      if (_sourceOperationGeneration.isStale(sourceGeneration)) return false;
-      await cacheService.set('sourceType', 'm3u');
-      if (_sourceOperationGeneration.isStale(sourceGeneration)) return false;
-      await cacheService.set('liveCategories', playlist.categories);
-      if (_sourceOperationGeneration.isStale(sourceGeneration)) return false;
-      await cacheService.set('liveStreams', playlist.channels);
-      if (_sourceOperationGeneration.isStale(sourceGeneration)) return false;
-      await secureStorage.write(
-        _sourceKey,
-        jsonEncode(<String, Object?>{
-          'type': 'm3u',
-          'name': name,
-          'playlist': playlistText,
-        }),
-      );
-      if (_sourceOperationGeneration.isStale(sourceGeneration)) return false;
-      _resetEpgSession();
-      _sourceType = AppSourceType.m3u;
-      _liveCategories = playlist.categories;
-      _vodCategories = const <Category>[];
-      _seriesCategories = const <Category>[];
-      _channels = playlist.channels;
-      _vodItems = const <VodItem>[];
-      _seriesList = const <Series>[];
-      _dvrRecordings = const <DvrRecording>[];
-      _dvrStorageInfo = null;
-      _recordingChannelIds = const <int>{};
-      _dvrSeriesRules = const <DvrSeriesRule>[];
-      _mediaRequests = const <MediaRequestSummary>[];
-      _activeViewer = const Viewer(
-        id: 0,
-        ulid: 'local-m3u',
-        name: 'Local M3U',
-        isAdmin: true,
-      );
-      final progress = await resumeService.all(_activeViewer!.ulid);
-      if (_sourceOperationGeneration.isStale(sourceGeneration)) return false;
-      _progressList = progress;
-      _isLoadingContent = false;
-      notifyListeners();
-      return true;
-    } on M3UParseException catch (error) {
-      _error = 'M3U parse error: ${error.message}';
-      _isLoadingContent = false;
-      notifyListeners();
-      return false;
-    }
   }
 
   Future<void> _connectTvNotifications(
@@ -1272,8 +1189,8 @@ class AppStateController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Pushes a local Live/VOD/Series favorite change to the server. No-op for
-  /// local M3U sources (nothing to sync to) — mirrors the same
+  /// Pushes a local Live/VOD/Series favorite change to the server. No-op
+  /// when not connected (nothing to sync to) — mirrors the same
   /// `sourceType == xtream` gate used for progress pushes in app_shell.dart.
   void _pushFavoriteChange(
     String contentType,
@@ -2780,25 +2697,12 @@ class AppStateController extends ChangeNotifier {
     if (clearGuide) epgService.clear();
   }
 
-  Future<void> _loadSavedM3uSource() async {
-    final raw = await secureStorage.read(_sourceKey);
-    if (raw == null) return;
-    final json = jsonDecode(raw) as Map<String, Object?>;
-    final playlist = json['playlist'];
-    if (playlist is String) {
-      await switchToM3u(
-        playlistText: playlist,
-        name: '${json['name'] ?? 'Direct M3U'}',
-      );
-    }
-  }
-
   Future<AppSourceType> _readSavedSourceType() async {
     final raw = await secureStorage.read(_sourceKey);
     if (raw == null) return AppSourceType.none;
     try {
-      final json = jsonDecode(raw) as Map<String, Object?>;
-      return json['type'] == 'm3u' ? AppSourceType.m3u : AppSourceType.xtream;
+      jsonDecode(raw);
+      return AppSourceType.xtream;
     } on Object catch (_) {
       return AppSourceType.none;
     }

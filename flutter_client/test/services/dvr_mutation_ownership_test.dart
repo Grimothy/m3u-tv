@@ -40,7 +40,7 @@ final _program = EpgProgram(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('delayed account A schedule cannot notify M3U state', () async {
+  test('delayed account A schedule cannot notify account B state', () async {
     final transport = _DvrMutationTransport();
     final controller = _controller(transport);
     addTearDown(controller.dispose);
@@ -49,13 +49,7 @@ void main() {
     final staleSchedule = controller.scheduleDvr(_channel, _program);
     await transport.scheduleStarted.future;
 
-    expect(
-      await controller.switchToM3u(
-        playlistText:
-            '#EXTM3U\n#EXTINF:-1,Local channel\nhttps://local.example/live',
-      ),
-      isTrue,
-    );
+    expect(await controller.connectXtream(_accountB), isTrue);
     await pumpEventQueue();
     var notifications = 0;
     controller.addListener(() => notifications += 1);
@@ -65,8 +59,11 @@ void main() {
     await pumpEventQueue();
 
     expect(transport.scheduleUsers, <String>[_accountA.username]);
-    expect(controller.sourceType, AppSourceType.m3u);
-    expect(controller.dvrRecordings, isEmpty);
+    expect(controller.authNotifier.credentials, _accountB);
+    expect(
+      controller.dvrRecordings.map((recording) => recording.title),
+      <String>['Account B recording'],
+    );
     expect(notifications, 0);
   });
 

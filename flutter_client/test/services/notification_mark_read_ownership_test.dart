@@ -62,19 +62,6 @@ void main() {
       },
     ),
     _Handoff(
-      name: 'Direct M3U',
-      successorOwner: 'm3u',
-      run: (controller) async {
-        expect(
-          await controller.switchToM3u(
-            playlistText:
-                '#EXTM3U\n#EXTINF:-1,Local channel\nhttps://local.example/live',
-          ),
-          isTrue,
-        );
-      },
-    ),
-    _Handoff(
       name: 'logged-out state',
       successorOwner: 'logged-out',
       run: (controller) => controller.disconnect(),

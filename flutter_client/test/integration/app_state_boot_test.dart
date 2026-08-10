@@ -655,49 +655,6 @@ void main() {
       );
     });
 
-    test('late Xtream EPG response is ignored after M3U switch', () async {
-      final now = DateTime.now();
-      final xtreamEpg = Completer<Object?>();
-      final fixtures = _FakeXtreamTransport.success();
-      Future<Object?> transport(XtreamRequest request) {
-        if (request.action == 'get_epg_batch') return xtreamEpg.future;
-        return fixtures.call(request);
-      }
-
-      final controller = _controller(
-        storage: InMemorySecureStorage(),
-        transport: transport,
-      );
-      addTearDown(controller.dispose);
-
-      expect(
-        await controller.connectXtream(
-          const UserCredentials(
-            server: 'https://server-a.example',
-            username: 'fixture-user',
-            password: 'fixture-password',
-          ),
-        ),
-        isTrue,
-      );
-      expect(
-        await controller.switchToM3u(
-          playlistText:
-              '#EXTM3U\n'
-              '#EXTINF:-1 tvg-id="bbc.one" group-title="News",Local BBC\n'
-              'https://streams.example/live/bbc-one.m3u8',
-        ),
-        isTrue,
-      );
-
-      xtreamEpg.complete(_epgBatch('Late server A guide', now));
-      await Future<void>.delayed(Duration.zero);
-
-      expect(controller.sourceType, AppSourceType.m3u);
-      expect(controller.channels.single.epgChannelId, 'bbc.one');
-      expect(controller.epgService.lookup('bbc.one'), isNull);
-    });
-
     test(
       'cached Xtream state is visible before remote refresh finishes',
       () async {
@@ -1075,73 +1032,6 @@ void main() {
         expect(restarted.progressList.single.streamId, 201);
         expect(restarted.progressList.single.positionSeconds, 91);
         expect(restarted.error, isNot(contains('fixture-password')));
-      },
-    );
-
-    testWidgets(
-      'source switch failure path preserves prior cache and redacts credentials',
-      (tester) async {
-        final storage = InMemorySecureStorage();
-        final cacheMemory = <String, Object?>{};
-        final localMemory = <String, Object?>{};
-        final controller = _controller(
-          storage: storage,
-          cacheMemory: cacheMemory,
-          localMemory: localMemory,
-          transport: _FakeXtreamTransport.success().call,
-        );
-
-        final connected = await controller.connectXtream(
-          const UserCredentials(
-            server: 'https://fixture.example',
-            username: 'fixture-user',
-            password: 'fixture-password',
-          ),
-        );
-        expect(connected, isTrue);
-        expect(controller.channels.single.name, 'BBC One');
-
-        final cachedXtreamChannels = await controller.cacheService
-            .get<List<Channel>>('liveStreams');
-        expect(cachedXtreamChannels?.data.single.name, 'BBC One');
-
-        final switched = await controller.switchToM3u(
-          playlistText:
-              '#EXTM3U\n#EXTINF:-1 group-title="News",BBC One HD\nhttps://streams.example/live/bbc-one.m3u8',
-        );
-        expect(switched, isTrue);
-        expect(controller.sourceType, AppSourceType.m3u);
-        expect(controller.channels.single.name, 'BBC One HD');
-        expect(
-          (await controller.cacheService.get<List<Channel>>(
-            'liveStreams',
-          ))?.data.single.name,
-          'BBC One HD',
-        );
-
-        final failed = await controller.switchToM3u(
-          playlistText: 'fixture-password is not a playlist',
-        );
-        expect(failed, isFalse);
-        expect(controller.error, contains('M3U parse error'));
-        expect(controller.error, isNot(contains('fixture-password')));
-        expect(controller.channels.single.name, 'BBC One HD');
-        expect(
-          (await controller.cacheService.get<List<Channel>>(
-            'liveStreams',
-          ))?.data.single.name,
-          'BBC One HD',
-        );
-
-        await tester.pumpWidget(_TestApp(controller: controller));
-        await _pumpAppState(tester);
-        await _tapSidebarDestination(tester, 'Settings');
-        await _pumpAppState(tester);
-
-        expect(find.text('Last error'), findsOneWidget);
-        expect(_visibleText(tester), contains('M3U parse error'));
-        expect(_visibleText(tester), isNot(contains('fixture-password')));
-        expect(_visibleText(tester), isNot(contains('fixture-user')));
       },
     );
 

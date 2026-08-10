@@ -54,7 +54,7 @@ void main() {
   );
 
   test(
-    'delayed request refresh cannot publish after switching to M3U',
+    'delayed request refresh cannot publish after switching to account B',
     () async {
       final transport = _RequestTransport();
       final controller = _controller(transport);
@@ -67,18 +67,12 @@ void main() {
 
       final staleRefresh = controller.refreshMediaRequests();
       await transport.historyStarted.future;
-      expect(
-        await controller.switchToM3u(
-          playlistText:
-              '#EXTM3U\n#EXTINF:-1,Local channel\nhttps://local.example/live',
-        ),
-        isTrue,
-      );
+      expect(await controller.connectXtream(_accountB), isTrue);
 
       transport.releaseHistory.complete();
       await staleRefresh;
 
-      expect(controller.sourceType, AppSourceType.m3u);
+      expect(controller.authNotifier.credentials, _accountB);
       expect(controller.mediaRequests, isEmpty);
     },
   );

@@ -9,7 +9,6 @@ import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/services/auth_notifier.dart';
 import 'package:m3u_tv/services/device_pairing_service.dart';
 import 'package:m3u_tv/services/domain_models.dart';
-import 'package:m3u_tv/services/m3u_parser.dart';
 import 'package:m3u_tv/services/secure_storage.dart';
 import 'package:m3u_tv/services/trakt_service.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
@@ -1002,47 +1001,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Not connected'), findsOneWidget);
-    });
-  });
-
-  // --- M3U source diagnostics ---
-
-  group('M3U source diagnostics', () {
-    test('valid M3U URL source parses successfully', () async {
-      final parser = M3UParser();
-      const m3uContent =
-          '#EXTM3U\n'
-          '#EXTINF:-1 tvg-id="ch1" group-title="News",Channel 1\n'
-          'http://streams.example/live/1.m3u8\n';
-      final result = parser.parse(m3uContent);
-
-      expect(result.channels, hasLength(1));
-      expect(result.channels.first.name, 'Channel 1');
-      expect(
-        result.channels.first.streamUrl,
-        'http://streams.example/live/1.m3u8',
-      );
-    });
-
-    test('malformed M3U source throws parse exception', () {
-      final parser = M3UParser();
-      // Content without #EXTM3U header
-      const malformed = 'just random text\nnot a playlist';
-
-      expect(() => parser.parse(malformed), throwsA(isA<M3UParseException>()));
-    });
-
-    test('invalid URL in M3U source is captured in channel', () async {
-      final parser = M3UParser();
-      const m3uContent =
-          '#EXTM3U\n'
-          '#EXTINF:-1 tvg-id="ch1",Channel 1\n'
-          'not-a-valid-url\n';
-      final result = parser.parse(m3uContent);
-
-      // Parser should still capture the entry even with invalid URL
-      expect(result.channels, hasLength(1));
-      expect(result.channels.first.streamUrl, 'not-a-valid-url');
     });
   });
 }

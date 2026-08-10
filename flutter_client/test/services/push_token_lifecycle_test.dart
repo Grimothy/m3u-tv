@@ -119,27 +119,6 @@ void main() {
       ]);
     });
 
-    test('switching to direct M3U unsubscribes the prior requester', () async {
-      final fixture = _Fixture();
-      addTearDown(fixture.controller.dispose);
-      expect(await fixture.controller.connectXtream(_firstCredentials), isTrue);
-      await fixture.controller.setPushToken('device-token');
-      fixture.push.events.clear();
-
-      expect(
-        await fixture.controller.switchToM3u(
-          playlistText:
-              '#EXTM3U\n#EXTINF:-1,Fixture Channel\nhttps://media.invalid/live.m3u8',
-        ),
-        isTrue,
-      );
-
-      expect(fixture.push.events, <String>[
-        'unsubscribe:first:device-token:true',
-      ]);
-      expect(fixture.auth.credentials, isNull);
-    });
-
     test('credential replacement ignores stale notification setup', () async {
       final api = _DelayedTvNotificationService();
       final reverb = _RecordingReverbService();
@@ -214,13 +193,7 @@ void main() {
                 ),
               );
             } else {
-              expect(
-                await fixture.controller.switchToM3u(
-                  playlistText:
-                      '#EXTM3U\n#EXTINF:-1,Fixture Channel\nhttps://media.invalid/live.m3u8',
-                ),
-                isTrue,
-              );
+              await fixture.controller.disconnect();
             }
             controllerNotifications = 0;
             notificationPersistence.resetCommits();
@@ -353,13 +326,7 @@ void main() {
               ),
             );
           } else {
-            expect(
-              await fixture.controller.switchToM3u(
-                playlistText:
-                    '#EXTM3U\n#EXTINF:-1,Fixture Channel\nhttps://media.invalid/live.m3u8',
-              ),
-              isTrue,
-            );
+            await fixture.controller.disconnect();
           }
           controllerNotifications = 0;
           write.release.complete();
@@ -570,7 +537,7 @@ void main() {
       },
     );
 
-    test('direct M3U exposes no prior account notification data', () async {
+    test('account B exposes no prior account notification data', () async {
       final api = _AccountNotificationService();
       final fixture = _Fixture(notificationApi: api);
       addTearDown(fixture.controller.dispose);
@@ -582,10 +549,7 @@ void main() {
       await fixture.controller.setNotificationChannels(<String>{'dvr'});
 
       expect(
-        await fixture.controller.switchToM3u(
-          playlistText:
-              '#EXTM3U\n#EXTINF:-1,Fixture Channel\nhttps://media.invalid/live.m3u8',
-        ),
+        await fixture.controller.connectXtream(_secondCredentials),
         isTrue,
       );
 
@@ -595,8 +559,10 @@ void main() {
         isEmpty,
       );
       expect(
-        await fixture.controller.notificationStore.knownChannels(),
-        isEmpty,
+        (await fixture.controller.notificationStore.knownChannels()).map(
+          (channel) => channel.name,
+        ),
+        <String>['general'],
       );
       expect(fixture.controller.unreadNotificationCount, 0);
     });
@@ -632,98 +598,73 @@ void main() {
       },
     );
 
-    for (final transition in <String>['account B', 'direct M3U']) {
-      test(
-        'delayed dvr.status detail cannot survive A to $transition',
-        () async {
-          final transport = _DvrOwnershipTransport();
-          addTearDown(transport.releaseDetail);
-          final reverb = _RecordingReverbService();
-          final fixture = _Fixture(
-            transport: transport.call,
-            notificationApi: _SessionTvNotificationService(),
-            reverbService: reverb,
-          );
-          addTearDown(fixture.controller.dispose);
-          expect(
-            await fixture.controller.connectXtream(_firstCredentials),
-            isTrue,
-          );
-          await reverb.firstConnected.future;
-
-          reverb.emitDvrStatus('first', _dvrStatusPing);
-          await transport.detailStarted.future;
-          if (transition == 'account B') {
-            expect(
-              await fixture.controller.connectXtream(_secondCredentials),
-              isTrue,
-            );
-            await reverb.secondConnected.future;
-          } else {
-            expect(
-              await fixture.controller.switchToM3u(
-                playlistText:
-                    '#EXTM3U\n#EXTINF:-1,Fixture Channel\nhttps://media.invalid/live.m3u8',
-              ),
-              isTrue,
-            );
-          }
-          reverb.emitDvrStatus('first', _dvrStatusPing);
-          transport.releaseDetail();
-          await transport.detailReturned.future;
-          await pumpEventQueue();
-
-          expect(transport.detailUsers, <String>['first']);
-          expect(fixture.controller.dvrRecordings, isEmpty);
-          expect(fixture.controller.recordingChannelIds, isEmpty);
-        },
+    test('delayed dvr.status detail cannot survive A to account B', () async {
+      final transport = _DvrOwnershipTransport();
+      addTearDown(transport.releaseDetail);
+      final reverb = _RecordingReverbService();
+      final fixture = _Fixture(
+        transport: transport.call,
+        notificationApi: _SessionTvNotificationService(),
+        reverbService: reverb,
       );
-
-      test(
-        'delayed Reverb onConnected DVR refresh cannot survive A to $transition',
-        () async {
-          final transport = _DvrOwnershipTransport();
-          addTearDown(transport.releaseActiveRefresh);
-          final reverb = _RecordingReverbService();
-          final fixture = _Fixture(
-            transport: transport.call,
-            notificationApi: _SessionTvNotificationService(),
-            reverbService: reverb,
-          );
-          addTearDown(fixture.controller.dispose);
-          expect(
-            await fixture.controller.connectXtream(_firstCredentials),
-            isTrue,
-          );
-          await reverb.firstConnected.future;
-
-          reverb.emitConnected('first');
-          await transport.activeRefreshStarted.future;
-          if (transition == 'account B') {
-            expect(
-              await fixture.controller.connectXtream(_secondCredentials),
-              isTrue,
-            );
-            await reverb.secondConnected.future;
-          } else {
-            expect(
-              await fixture.controller.switchToM3u(
-                playlistText:
-                    '#EXTM3U\n#EXTINF:-1,Fixture Channel\nhttps://media.invalid/live.m3u8',
-              ),
-              isTrue,
-            );
-          }
-          reverb.emitConnected('first');
-          transport.releaseActiveRefresh();
-          await transport.activeRefreshReturned.future;
-          await pumpEventQueue();
-
-          expect(transport.activeRefreshUsers, <String>['first']);
-          expect(fixture.controller.recordingChannelIds, isEmpty);
-        },
+      addTearDown(fixture.controller.dispose);
+      expect(
+        await fixture.controller.connectXtream(_firstCredentials),
+        isTrue,
       );
-    }
+      await reverb.firstConnected.future;
+
+      reverb.emitDvrStatus('first', _dvrStatusPing);
+      await transport.detailStarted.future;
+      expect(
+        await fixture.controller.connectXtream(_secondCredentials),
+        isTrue,
+      );
+      await reverb.secondConnected.future;
+      reverb.emitDvrStatus('first', _dvrStatusPing);
+      transport.releaseDetail();
+      await transport.detailReturned.future;
+      await pumpEventQueue();
+
+      expect(transport.detailUsers, <String>['first']);
+      expect(fixture.controller.dvrRecordings, isEmpty);
+      expect(fixture.controller.recordingChannelIds, isEmpty);
+    });
+
+    test(
+      'delayed Reverb onConnected DVR refresh cannot survive A to account B',
+      () async {
+        final transport = _DvrOwnershipTransport();
+        addTearDown(transport.releaseActiveRefresh);
+        final reverb = _RecordingReverbService();
+        final fixture = _Fixture(
+          transport: transport.call,
+          notificationApi: _SessionTvNotificationService(),
+          reverbService: reverb,
+        );
+        addTearDown(fixture.controller.dispose);
+        expect(
+          await fixture.controller.connectXtream(_firstCredentials),
+          isTrue,
+        );
+        await reverb.firstConnected.future;
+
+        reverb.emitConnected('first');
+        await transport.activeRefreshStarted.future;
+        expect(
+          await fixture.controller.connectXtream(_secondCredentials),
+          isTrue,
+        );
+        await reverb.secondConnected.future;
+        reverb.emitConnected('first');
+        transport.releaseActiveRefresh();
+        await transport.activeRefreshReturned.future;
+        await pumpEventQueue();
+
+        expect(transport.activeRefreshUsers, <String>['first']);
+        expect(fixture.controller.recordingChannelIds, isEmpty);
+      },
+    );
 
     test('late source operation cannot replace a newer connection', () async {
       final transport = _RacingXtreamTransport();
