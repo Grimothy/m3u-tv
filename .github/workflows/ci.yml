@@ -204,6 +204,12 @@ jobs:
             -e 's/"CODE_SIGN_IDENTITY\[sdk=appletvos\*\]" = [^;]*/"CODE_SIGN_IDENTITY[sdk=appletvos*]" = ""/g' \
             tvos/Runner.xcodeproj/project.pbxproj
 
+      - name: Bundle Flutter assets
+        # Works around a flutter-tvos bug - see release.yml's build-tvos job
+        # ("Bundle Flutter assets" step) for the full root-cause explanation.
+        run: |
+          flutter-tvos build bundle --release
+
       - name: Stage tvOS Flutter artifacts
         # Expected to exit non-zero - see release.yml's build-tvos job for why.
         run: |
