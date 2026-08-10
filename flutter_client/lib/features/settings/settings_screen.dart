@@ -13,6 +13,7 @@ import 'package:m3u_tv/services/proxy_playback_settings.dart';
 import 'package:m3u_tv/services/trakt_service.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/app_button.dart';
+import 'package:m3u_tv/shared/app_callout.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/dpad_tab_bar.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
@@ -342,6 +343,7 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody>
             ),
             const SizedBox(height: 24),
             _buildError(theme, displayError),
+            _buildCredentialHelp(theme, l),
             ..._buildSignInFields(l, autofocusServer: true),
           ],
         ),
@@ -419,6 +421,7 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody>
                     ),
                     const SizedBox(height: 24),
                     _buildError(theme, displayError),
+                    _buildCredentialHelp(theme, l),
                     ..._buildSignInFields(l, autofocusServer: false),
                   ],
                 ),
@@ -438,6 +441,13 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody>
         displayError,
         style: TextStyle(color: theme.colorScheme.error),
       ),
+    );
+  }
+
+  Widget _buildCredentialHelp(ThemeData theme, AppLocalizations l) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: AppCallout(message: l.settingsConnectionSettingsHelp),
     );
   }
 
