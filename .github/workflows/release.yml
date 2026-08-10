@@ -364,18 +364,57 @@ jobs:
             -e 's/"CODE_SIGN_IDENTITY\[sdk=appletvos\*\]" = [^;]*/"CODE_SIGN_IDENTITY[sdk=appletvos*]" = ""/g' \
             tvos/Runner.xcodeproj/project.pbxproj
 
-      - name: Build tvOS (unsigned)
+      - name: Stage tvOS Flutter artifacts
+        # `flutter-tvos build tvos --release` always forces CODE_SIGN_STYLE=Automatic
+        # on the xcodebuild archive call it runs internally, with no way to opt out -
+        # against this project's Manual-signing tvOS config that call reliably fails
+        # with "conflicting provisioning settings" (see flutter_client/README.md,
+        # "Apple TV / tvOS (manual App Store submission)"). That failure is expected
+        # and cosmetic: the Dart AOT compile + asset bundling that writes
+        # tvos/Flutter/App.framework and tvos/Flutter/flutter_assets completes first,
+        # before the doomed internal xcodebuild call even runs. So this step's exit
+        # code is tolerated - but what it actually staged is verified explicitly
+        # below, since a tolerated exit code with no such check is exactly what let
+        # a genuinely-empty flutter_assets slip through as issue #186.
         run: |
-          flutter-tvos build tvos --release
+          flutter-tvos build tvos --release || \
+            echo "flutter-tvos build tvos exited non-zero - expected, see step description. Verifying staged output below."
+
+      - name: Verify staged tvOS Flutter artifacts
+        run: |
+          set -euo pipefail
+          if [ ! -s "tvos/Flutter/flutter_assets/AssetManifest.bin" ]; then
+            echo "ERROR: tvos/Flutter/flutter_assets/AssetManifest.bin missing or empty after flutter-tvos build - Flutter asset staging did not complete."
+            exit 1
+          fi
+          if [ ! -d "tvos/Flutter/App.framework" ]; then
+            echo "ERROR: tvos/Flutter/App.framework missing after flutter-tvos build - Dart AOT compile did not complete."
+            exit 1
+          fi
+
+      - name: Archive tvOS (unsigned)
+        # Do the actual archive+package ourselves via a direct xcodebuild call
+        # rather than relying on flutter-tvos's own internal xcodebuild invocation
+        # (see "Stage tvOS Flutter artifacts" above for why that one is unreliable
+        # here). This picks up the artifacts staged in tvos/Flutter/ by the
+        # previous step and runs this project's own Manual-signing (now
+        # disabled/unsigned per the earlier step) tvOS project config directly -
+        # the same path documented as reliable in flutter_client/README.md.
+        run: |
+          xcodebuild archive \
+            -workspace tvos/Runner.xcworkspace -scheme Runner \
+            -sdk appletvos -configuration Release \
+            -destination 'generic/platform=tvOS' \
+            -archivePath build/Runner.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
 
       - name: Package IPA
-        # flutter-tvos build tvos creates an xcarchive; package the .app manually.
         run: |
           VERSION="${{ needs.validate.outputs.version }}"
-          APP=$(find build/tvos -name "Runner.app" | head -1)
-          if [ -z "$APP" ]; then
-            echo "ERROR: Runner.app not found - listing build/tvos/:"
-            find build/tvos -name "*.app" -o -name "*.xcarchive" || true
+          APP="build/Runner.xcarchive/Products/Applications/Runner.app"
+          if [ ! -d "$APP" ]; then
+            echo "ERROR: Runner.app not found at expected xcarchive path - listing build/Runner.xcarchive/:"
+            find build/Runner.xcarchive -maxdepth 4 || true
             exit 1
           fi
           mkdir -p build/tvos/Payload
@@ -384,6 +423,41 @@ jobs:
             "../../m3u-tv-v${VERSION}-tvos.ipa" Payload/)
           IPA="m3u-tv-v${VERSION}-tvos.ipa"
           shasum -a 256 "$IPA" > "$IPA.sha256"
+
+      - name: Verify tvOS IPA contains flutter_assets
+        # Regression check for issue #186: a bug in the manual "Copy
+        # flutter_assets" Xcode phase let the tvOS archive succeed with no
+        # Flutter assets at all. Unzip the packaged IPA (not just the
+        # pre-zip .app) so this also catches any corruption introduced by
+        # the packaging step itself.
+        run: |
+          set -euo pipefail
+          IPA="m3u-tv-v${{ needs.validate.outputs.version }}-tvos.ipa"
+          VERIFY_DIR="$RUNNER_TEMP/tvos-ipa-verify"
+          rm -rf "$VERIFY_DIR"
+          mkdir -p "$VERIFY_DIR"
+          unzip -q "$IPA" -d "$VERIFY_DIR"
+          ASSETS="$VERIFY_DIR/Payload/Runner.app/flutter_assets"
+          if [ ! -d "$ASSETS" ]; then
+            echo "ERROR: flutter_assets directory missing from packaged IPA at $ASSETS"
+            exit 1
+          fi
+          for f in AssetManifest.bin FontManifest.json; do
+            if [ ! -s "$ASSETS/$f" ]; then
+              echo "ERROR: required file missing or empty in flutter_assets: $f"
+              exit 1
+            fi
+          done
+          if [ -z "$(find "$ASSETS/assets" -type f 2>/dev/null | head -1)" ]; then
+            echo "ERROR: flutter_assets/assets contains no files"
+            exit 1
+          fi
+          for f in kernel_blob.bin isolate_snapshot_data vm_snapshot_data; do
+            if [ -e "$ASSETS/$f" ]; then
+              echo "ERROR: JIT-only debug artifact '$f' found in a release flutter_assets - should have been excluded by the tvOS Copy flutter_assets build phase"
+              exit 1
+            fi
+          done
 
       - uses: actions/upload-artifact@v7
         with:

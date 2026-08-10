@@ -164,3 +164,116 @@ jobs:
               throw "Required Windows bundle file is empty: $Path"
             }
           }
+
+  # ── TEMPORARY: tvOS smoke build ──────────────────────────────────────────
+  # Added to validate the issue #186 fix (tvOS releases shipping with no
+  # flutter_assets at all, in every release v1.0.0-v1.0.10) against real CI,
+  # since ci.yml never exercised tvOS before and release.yml only runs on a
+  # version tag. Mirrors the build-tvos job in release.yml minus signing/
+  # publishing. Revert this job once a run has confirmed the fix works.
+  build-tvos-smoke:
+    name: "[TEMP] tvOS smoke build"
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: flutter_client
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install flutter-tvos
+        run: |
+          git clone --depth 1 --branch v3.44.2-tvos.1.3.1 \
+            https://github.com/fluttertv/flutter-tvos.git $HOME/flutter-tvos
+          echo "$HOME/flutter-tvos/bin" >> $GITHUB_PATH
+
+      - name: Precache tvOS engine artifacts
+        run: flutter-tvos precache
+
+      - name: Get dependencies
+        run: flutter-tvos pub get
+
+      - name: Disable code signing in tvOS project
+        run: |
+          sed -i '' \
+            -e 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' \
+            -e 's/DEVELOPMENT_TEAM = [^;]*/DEVELOPMENT_TEAM = ""/g' \
+            -e 's/"DEVELOPMENT_TEAM\[sdk=appletvos\*\]" = [^;]*/"DEVELOPMENT_TEAM[sdk=appletvos*]" = ""/g' \
+            -e 's/PROVISIONING_PROFILE_SPECIFIER = [^;]*/PROVISIONING_PROFILE_SPECIFIER = ""/g' \
+            -e 's/"PROVISIONING_PROFILE_SPECIFIER\[sdk=appletvos\*\]" = [^;]*/"PROVISIONING_PROFILE_SPECIFIER[sdk=appletvos*]" = ""/g' \
+            -e 's/CODE_SIGN_IDENTITY = "Apple Development"/CODE_SIGN_IDENTITY = ""/g' \
+            -e 's/"CODE_SIGN_IDENTITY\[sdk=appletvos\*\]" = [^;]*/"CODE_SIGN_IDENTITY[sdk=appletvos*]" = ""/g' \
+            tvos/Runner.xcodeproj/project.pbxproj
+
+      - name: Stage tvOS Flutter artifacts
+        # Expected to exit non-zero - see release.yml's build-tvos job for why.
+        run: |
+          flutter-tvos build tvos --release || \
+            echo "flutter-tvos build tvos exited non-zero - expected, see step description. Verifying staged output below."
+
+      - name: Verify staged tvOS Flutter artifacts
+        run: |
+          set -euo pipefail
+          if [ ! -s "tvos/Flutter/flutter_assets/AssetManifest.bin" ]; then
+            echo "ERROR: tvos/Flutter/flutter_assets/AssetManifest.bin missing or empty after flutter-tvos build - Flutter asset staging did not complete."
+            exit 1
+          fi
+          if [ ! -d "tvos/Flutter/App.framework" ]; then
+            echo "ERROR: tvos/Flutter/App.framework missing after flutter-tvos build - Dart AOT compile did not complete."
+            exit 1
+          fi
+
+      - name: Archive tvOS (unsigned)
+        run: |
+          xcodebuild archive \
+            -workspace tvos/Runner.xcworkspace -scheme Runner \
+            -sdk appletvos -configuration Release \
+            -destination 'generic/platform=tvOS' \
+            -archivePath build/Runner.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+
+      - name: Package IPA
+        run: |
+          APP="build/Runner.xcarchive/Products/Applications/Runner.app"
+          if [ ! -d "$APP" ]; then
+            echo "ERROR: Runner.app not found at expected xcarchive path - listing build/Runner.xcarchive/:"
+            find build/Runner.xcarchive -maxdepth 4 || true
+            exit 1
+          fi
+          mkdir -p build/tvos/Payload
+          cp -r "$APP" build/tvos/Payload/Runner.app
+          (cd build/tvos && zip -qr "../../m3u-tv-tvos-smoke.ipa" Payload/)
+
+      - name: Verify tvOS IPA contains flutter_assets
+        run: |
+          set -euo pipefail
+          VERIFY_DIR="$RUNNER_TEMP/tvos-ipa-verify"
+          rm -rf "$VERIFY_DIR"
+          mkdir -p "$VERIFY_DIR"
+          unzip -q "m3u-tv-tvos-smoke.ipa" -d "$VERIFY_DIR"
+          ASSETS="$VERIFY_DIR/Payload/Runner.app/flutter_assets"
+          if [ ! -d "$ASSETS" ]; then
+            echo "ERROR: flutter_assets directory missing from packaged IPA at $ASSETS"
+            exit 1
+          fi
+          for f in AssetManifest.bin FontManifest.json; do
+            if [ ! -s "$ASSETS/$f" ]; then
+              echo "ERROR: required file missing or empty in flutter_assets: $f"
+              exit 1
+            fi
+          done
+          if [ -z "$(find "$ASSETS/assets" -type f 2>/dev/null | head -1)" ]; then
+            echo "ERROR: flutter_assets/assets contains no files"
+            exit 1
+          fi
+          for f in kernel_blob.bin isolate_snapshot_data vm_snapshot_data; do
+            if [ -e "$ASSETS/$f" ]; then
+              echo "ERROR: JIT-only debug artifact '$f' found in a release flutter_assets - should have been excluded by the tvOS Copy flutter_assets build phase"
+              exit 1
+            fi
+          done
+          echo "tvOS smoke build OK: flutter_assets present, populated, and free of debug JIT artifacts."
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tvos-smoke-ipa
+          path: flutter_client/m3u-tv-tvos-smoke.ipa
