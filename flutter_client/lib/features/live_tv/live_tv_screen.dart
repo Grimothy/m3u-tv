@@ -126,18 +126,29 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   }
 
   Future<void> _reloadViewSettings() async {
-    final viewSettings = widget.viewSettingsService;
-    if (viewSettings == null) return;
     final generation = _viewSettingsGeneration;
+    final loaded = await _loadViewSettings();
+    if (loaded == null || !mounted || generation != _viewSettingsGeneration) {
+      return;
+    }
+    setState(() {
+      _viewMode = _layoutToViewMode(loaded.layout);
+      _epgStartView = loaded.epgStartView;
+    });
+  }
+
+  Future<({LiveTvLayout layout, EpgStartView epgStartView})?>
+  _loadViewSettings() async {
+    final viewSettings = widget.viewSettingsService;
+    if (viewSettings == null) return null;
     final results = await Future.wait([
       viewSettings.liveTvLayout(),
       viewSettings.epgStartView(),
     ]);
-    if (!mounted || generation != _viewSettingsGeneration) return;
-    setState(() {
-      _viewMode = _layoutToViewMode(results[0] as LiveTvLayout);
-      _epgStartView = results[1] as EpgStartView;
-    });
+    return (
+      layout: results[0] as LiveTvLayout,
+      epgStartView: results[1] as EpgStartView,
+    );
   }
 
   void _onFavoritesChanged() {
@@ -158,10 +169,15 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
           await viewSettings.setLiveTvLayout(_viewModeToLayout(legacyViewMode));
         }
       }
-      await _reloadViewSettings();
-      if (mounted) {
+      final generation = _viewSettingsGeneration;
+      final loaded = await _loadViewSettings();
+      if (mounted && generation == _viewSettingsGeneration) {
         setState(() {
           _selectedCategory = lastCat;
+          if (loaded != null) {
+            _viewMode = _layoutToViewMode(loaded.layout);
+            _epgStartView = loaded.epgStartView;
+          }
         });
       }
     } else {
