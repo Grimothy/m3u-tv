@@ -1067,4 +1067,28 @@ class AppLocalizationsFr extends AppLocalizations {
   String showNotFound(String title) {
     return 'Show « $title » introuvable';
   }
+
+  @override
+  String get settingsView => 'Affichage';
+
+  @override
+  String get settingsLiveTvLayout => 'Mise en page TV en direct';
+
+  @override
+  String get settingsLiveTvLayoutList => 'Liste';
+
+  @override
+  String get settingsLiveTvLayoutGrid => 'Grille';
+
+  @override
+  String get settingsLiveTvLayoutTimeline => 'Chronologie';
+
+  @override
+  String get settingsEpgStartView => 'Le guide démarre à';
+
+  @override
+  String get settingsEpgStartViewCurrentTime => 'Heure actuelle';
+
+  @override
+  String get settingsEpgStartViewPrimeTime => 'Prime time';
 }

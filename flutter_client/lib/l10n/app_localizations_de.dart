@@ -1063,4 +1063,28 @@ class AppLocalizationsDe extends AppLocalizations {
   String showNotFound(String title) {
     return 'Show „$title\" nicht gefunden';
   }
+
+  @override
+  String get settingsView => 'Ansicht';
+
+  @override
+  String get settingsLiveTvLayout => 'Live-TV-Layout';
+
+  @override
+  String get settingsLiveTvLayoutList => 'Liste';
+
+  @override
+  String get settingsLiveTvLayoutGrid => 'Raster';
+
+  @override
+  String get settingsLiveTvLayoutTimeline => 'Zeitleiste';
+
+  @override
+  String get settingsEpgStartView => 'EPG startet um';
+
+  @override
+  String get settingsEpgStartViewCurrentTime => 'Aktuelle Uhrzeit';
+
+  @override
+  String get settingsEpgStartViewPrimeTime => 'Prime Time';
 }

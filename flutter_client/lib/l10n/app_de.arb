@@ -567,5 +567,13 @@
         "type": "String"
       }
     }
-  }
+  },
+  "settingsView": "Ansicht",
+  "settingsLiveTvLayout": "Live-TV-Layout",
+  "settingsLiveTvLayoutList": "Liste",
+  "settingsLiveTvLayoutGrid": "Raster",
+  "settingsLiveTvLayoutTimeline": "Zeitleiste",
+  "settingsEpgStartView": "EPG startet um",
+  "settingsEpgStartViewCurrentTime": "Aktuelle Uhrzeit",
+  "settingsEpgStartViewPrimeTime": "Prime Time"
 }

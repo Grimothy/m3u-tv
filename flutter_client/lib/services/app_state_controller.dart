@@ -24,6 +24,7 @@ import 'package:m3u_tv/services/secure_storage.dart';
 import 'package:m3u_tv/services/trakt_service.dart';
 import 'package:m3u_tv/services/tv_notification_service.dart';
 import 'package:m3u_tv/services/tv_notification_store.dart';
+import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/services/viewer_service.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 
@@ -57,6 +58,7 @@ class AppStateController extends ChangeNotifier {
     ComskipSettings? comskipSettings,
     PushNotificationService? pushNotificationService,
     DevicePairingService? devicePairingService,
+    ViewSettingsService? viewSettingsService,
   }) {
     final store = persistentStore ?? PersistentJsonStore();
     final resolvedSecureStorage =
@@ -99,6 +101,8 @@ class AppStateController extends ChangeNotifier {
       comskipSettings: comskipSettings ?? ComskipSettings(store: store),
       pushNotificationService:
           pushNotificationService ?? PushNotificationService(),
+      viewSettingsService:
+          viewSettingsService ?? ViewSettingsService(store: store),
     );
   }
 
@@ -122,6 +126,7 @@ class AppStateController extends ChangeNotifier {
     required this.proxyPlaybackSettings,
     required this.comskipSettings,
     required this._pushNotificationService,
+    required this.viewSettingsService,
   }) {
     epgService.cacheTtl = cacheService.refreshInterval;
     favoritesService.onChanged = (streamId, {required favorited}) =>
@@ -164,6 +169,7 @@ class AppStateController extends ChangeNotifier {
   final AIOStreamsFavoritesService aioFavoritesService;
   final ProxyPlaybackSettings proxyPlaybackSettings;
   final ComskipSettings comskipSettings;
+  final ViewSettingsService viewSettingsService;
   final TvNotificationService _tvNotificationService;
   final TvNotificationStore notificationStore;
   final ReverbService _reverbService;
