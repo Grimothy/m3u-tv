@@ -3,12 +3,15 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import 'package:m3u_tv/features/epg/epg_recording_state.dart';
+import 'package:m3u_tv/features/epg/program_recording_indicator.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/epg_service.dart';
 import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/shared/catchup_badge.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
+import 'package:m3u_tv/shared/epg_icon_pill.dart';
 import 'package:m3u_tv/shared/recording_dot.dart';
 
 typedef CatchupProgramSelect =
@@ -41,6 +44,7 @@ class TimelineEpgView extends StatefulWidget {
     this.onEnsureEpg,
     this.onChannelLongPress,
     this.recordingChannelIds = const <int>{},
+    this.recordingStateFor = _noRecordingState,
     this.windowHours = 24,
     this.futureDays = 7,
     this.clock = DateTime.now,
@@ -63,6 +67,24 @@ class TimelineEpgView extends StatefulWidget {
   final CatchupProgramSelect? onChannelLongPress;
 
   final Set<int> recordingChannelIds;
+
+  /// Resolves which per-programme recording indicator (if any) should be
+  /// drawn on a given EPG block. Defaults to [EpgRecordingState.none] for
+  /// every block, so the widget renders identically to the pre-#185
+  /// version when no resolver is supplied. The caller (typically the
+  /// EPG screen with the matching-logic index in scope) is responsible
+  /// for mapping a recording to each programme.
+  ///
+  /// Takes the [Channel] as well as the [EpgProgram] because the two carry
+  /// different notions of "channel id": [EpgProgram.channelId] is the EPG
+  /// (tvg) identifier, whereas a recording references the channel's database
+  /// id. Only the row's [Channel] has the latter, so the resolver needs both
+  /// to line a recording up with a block.
+  final EpgRecordingState Function(Channel channel, EpgProgram program)
+  recordingStateFor;
+
+  static EpgRecordingState _noRecordingState(Channel _, EpgProgram _) =>
+      EpgRecordingState.none;
 
   /// How many hours the selected-day window spans (default 24).
   final int windowHours;
@@ -410,6 +432,12 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
                                     rowHeight: _kRowH,
                                     catchupRetentionDays: catchupRetentionDays,
                                     now: now,
+                                    // Curry the row's channel in: _ProgramsRow
+                                    // only sees programmes, but resolving a
+                                    // recording needs the channel's database
+                                    // id, which lives on the Channel.
+                                    recordingStateFor: (program) => widget
+                                        .recordingStateFor(channel, program),
                                     onTap: (program) {
                                       final canReplay = _canReplay(
                                         catchupRetentionDays,
@@ -728,6 +756,7 @@ class _ProgramsRow extends StatelessWidget {
     required this.catchupRetentionDays,
     required this.now,
     this.onLongPress,
+    this.recordingStateFor = _noRecordingState,
   });
 
   final List<EpgProgram> programs;
@@ -742,6 +771,14 @@ class _ProgramsRow extends StatelessWidget {
 
   /// Opens the favorite/record context menu for the pressed block.
   final void Function(EpgProgram program)? onLongPress;
+
+  /// Resolves the per-programme recording indicator for a block. Defaults
+  /// to [EpgRecordingState.none], which renders no badge and is visually
+  /// identical to the pre-#185 layout.
+  final EpgRecordingState Function(EpgProgram program) recordingStateFor;
+
+  static EpgRecordingState _noRecordingState(EpgProgram _) =>
+      EpgRecordingState.none;
 
   bool showCatchupIcon(EpgProgram program) =>
       _canReplay(catchupRetentionDays, program, now);
@@ -778,6 +815,9 @@ class _ProgramsRow extends StatelessWidget {
       final borderColor = isCurrent
           ? colorScheme.primary.withValues(alpha: 0.6)
           : colorScheme.outline.withValues(alpha: 0.25);
+      final recordingState = recordingStateFor(p);
+      final hasCatchup = showCatchupIcon(p);
+      final hasRecording = recordingState != EpgRecordingState.none;
       blocks.add(
         Positioned(
           left: left + 1,
@@ -802,7 +842,8 @@ class _ProgramsRow extends StatelessWidget {
                 children: [
                   Padding(
                     padding: EdgeInsets.only(
-                      right: showCatchupIcon(p) ? 22 : 0,
+                      left: hasRecording ? 18 : 0,
+                      right: hasCatchup ? 22 : 0,
                     ),
                     child: Text(
                       p.title,
@@ -816,21 +857,20 @@ class _ProgramsRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (showCatchupIcon(p))
+                  if (hasRecording)
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      child: ProgramRecordingIndicator(state: recordingState),
+                    ),
+                  if (hasCatchup)
                     Positioned(
                       right: 0,
                       top: 0,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 3,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colorScheme.tertiaryContainer,
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: colorScheme.tertiary.withValues(alpha: 0.55),
-                          ),
+                      child: EpgIconPill(
+                        color: colorScheme.tertiaryContainer,
+                        borderColor: colorScheme.tertiary.withValues(
+                          alpha: 0.55,
                         ),
                         child: Icon(
                           Icons.replay_rounded,

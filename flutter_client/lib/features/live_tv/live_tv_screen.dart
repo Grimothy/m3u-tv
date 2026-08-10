@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3u_tv/features/epg/epg_recording_index.dart';
 import 'package:m3u_tv/features/epg/timeline_epg_view.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
@@ -458,6 +459,9 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
                       filtered,
                       epgService,
                       recordingChannelIds,
+                      EpgRecordingIndex.fromRecordings(
+                        ref.watch(dvrRecordingsProvider),
+                      ),
                     ),
                     _ViewMode.logoGrid => _buildGridView(
                       filtered,
@@ -563,6 +567,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     List<Channel> channels,
     EpgService epgService,
     Set<int> recordingChannelIds,
+    EpgRecordingIndex recordingIndex,
   ) {
     return DpadRegion(
       memoryKey: 'live-tv/epg',
@@ -576,6 +581,11 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
         channels: channels,
         epgService: epgService,
         recordingChannelIds: recordingChannelIds,
+        recordingStateFor: (channel, program) => recordingIndex.stateFor(
+          channelId: channel.id,
+          programStart: program.start,
+          programEnd: program.end,
+        ),
         epgStartView: _epgStartView,
         onChannelSelect: (channel) {
           widget.onChannelContextChanged?.call(channels);
