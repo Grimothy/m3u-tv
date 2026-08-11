@@ -23,7 +23,6 @@ const double _kChannelColW = 128;
 const double _kTimeHeaderH = 28;
 const double _kRowH = 60;
 const double _kPxPerMin = 5; // 300 px per hour
-const int _kCatchupFallbackDays = 7;
 
 /// Horizontal TV-guide style EPG with channels on Y and time on X.
 ///
@@ -150,7 +149,7 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
 
   int get _maxCatchupDays => widget.channels
       .map(
-        (channel) => _effectiveCatchupDays(
+        (channel) => EpgService.effectiveCatchupRetentionDays(
           channel.catchupSupported,
           channel.catchupDays,
         ),
@@ -359,7 +358,7 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
                             itemBuilder: (_, i) {
                               final channel = widget.channels[i];
                               final catchupRetentionDays =
-                                  _effectiveCatchupDays(
+                                  EpgService.effectiveCatchupRetentionDays(
                                     channel.catchupSupported,
                                     channel.catchupDays,
                                   );
@@ -397,7 +396,7 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
                                     catchupRetentionDays: catchupRetentionDays,
                                     now: now,
                                     onTap: (program) {
-                                      final canReplay = _canReplay(
+                                      final canReplay = EpgService.canReplay(
                                         catchupRetentionDays,
                                         program,
                                         widget.clock(),
@@ -730,7 +729,7 @@ class _ProgramsRow extends StatelessWidget {
   final void Function(EpgProgram program)? onLongPress;
 
   bool showCatchupIcon(EpgProgram program) =>
-      _canReplay(catchupRetentionDays, program, now);
+      EpgService.canReplay(catchupRetentionDays, program, now);
 
   @override
   Widget build(BuildContext context) {
@@ -876,28 +875,4 @@ class _ProgramsRow extends StatelessWidget {
       ),
     );
   }
-}
-
-int _effectiveCatchupDays(bool catchupSupported, int? catchupDays) {
-  if (!catchupSupported) return 0;
-  return catchupDays ?? _kCatchupFallbackDays;
-}
-
-bool _canReplay(
-  int catchupRetentionDays,
-  EpgProgram program,
-  DateTime now,
-) {
-  if (catchupRetentionDays <= 0 || !program.end.isBefore(now)) return false;
-  final earliest = DateTime(
-    now.year,
-    now.month,
-    now.day - catchupRetentionDays,
-    now.hour,
-    now.minute,
-    now.second,
-    now.millisecond,
-    now.microsecond,
-  );
-  return !program.start.isBefore(earliest);
 }

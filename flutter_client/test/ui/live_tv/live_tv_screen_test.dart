@@ -126,6 +126,134 @@ void main() {
     },
   );
 
+  testWidgets(
+    'long press menu shows Catchup shows only when channel supports it',
+    (tester) async {
+      final favorites = FavoritesService(memory: <String, Object?>{});
+      final epg = EpgService(clock: () => DateTime.utc(2026, 1, 1, 12));
+      const channels = [
+        Channel(
+          id: 101,
+          name: 'Route News',
+          streamUrl: 'https://example.com/news.m3u8',
+          catchupSupported: true,
+        ),
+        Channel(
+          id: 202,
+          name: 'Plain Sports',
+          streamUrl: 'https://example.com/sports.m3u8',
+        ),
+      ];
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            isBootstrappingProvider.overrideWith((_) => false),
+            isConfiguredProvider.overrideWith((_) => true),
+            isLoadingContentProvider.overrideWith((_) => false),
+            liveChannelsProvider.overrideWith((_) => channels),
+            liveCategoriesProvider.overrideWith((_) => const []),
+            epgServiceProvider.overrideWith((_) => epg),
+            dvrRecordingsProvider.overrideWith((_) => const []),
+            recordingChannelIdsProvider.overrideWith((_) => const <int>{}),
+          ],
+          child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: LiveTvScreen(
+              favoritesService: favorites,
+              onChannelSelect: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.longPress(find.text('Route News'));
+      await tester.pumpAndSettle();
+      expect(find.text('Catchup shows'), findsOneWidget);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      await tester.longPress(find.text('Plain Sports'));
+      await tester.pumpAndSettle();
+      expect(find.text('Catchup shows'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'selecting a catchup show from the list starts catchup playback',
+    (tester) async {
+      final favorites = FavoritesService(memory: <String, Object?>{});
+      final now = DateTime.utc(2026, 1, 1, 12);
+      final epg = EpgService(clock: () => now)
+        ..loadPrograms([
+          EpgProgram(
+            channelId: 'news.epg',
+            title: 'Morning Report',
+            description: 'News',
+            start: now.subtract(const Duration(hours: 3)),
+            end: now.subtract(const Duration(hours: 2)),
+          ),
+        ]);
+      Channel? selectedChannel;
+      EpgProgram? selectedProgram;
+      const channels = [
+        Channel(
+          id: 101,
+          name: 'Route News',
+          streamUrl: 'https://example.com/news.m3u8',
+          epgChannelId: 'news.epg',
+          catchupSupported: true,
+          catchupDays: 7,
+        ),
+      ];
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            isBootstrappingProvider.overrideWith((_) => false),
+            isConfiguredProvider.overrideWith((_) => true),
+            isLoadingContentProvider.overrideWith((_) => false),
+            liveChannelsProvider.overrideWith((_) => channels),
+            liveCategoriesProvider.overrideWith((_) => const []),
+            epgServiceProvider.overrideWith((_) => epg),
+            dvrRecordingsProvider.overrideWith((_) => const []),
+            recordingChannelIdsProvider.overrideWith((_) => const <int>{}),
+          ],
+          child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: LiveTvScreen(
+              favoritesService: favorites,
+              onChannelSelect: (_) {},
+              onCatchupProgramSelect: (channel, program) {
+                selectedChannel = channel;
+                selectedProgram = program;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.longPress(find.text('Route News'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Catchup shows'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Morning Report'), findsOneWidget);
+
+      await tester.tap(find.text('Morning Report'));
+      await tester.pumpAndSettle();
+
+      expect(selectedChannel?.id, 101);
+      expect(selectedProgram?.title, 'Morning Report');
+    },
+  );
+
   testWidgets('list clears stale current and next guide data', (tester) async {
     final now = DateTime.utc(2026, 1, 1, 12);
     final favorites = FavoritesService(memory: <String, Object?>{});

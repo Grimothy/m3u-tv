@@ -43,6 +43,8 @@
   "liveTvRecording": "录制中",
   "liveTvFavorite": "收藏",
   "liveTvRemoveFavorite": "取消收藏",
+  "liveTvCatchupShows": "回看节目",
+  "catchupShowsEmpty": "暂无可回看节目",
   "catchupBadgeAvailable": "可回看",
   "catchupBadgeAvailableDays": "可回看 {days} 天",
   "@catchupBadgeAvailableDays": {

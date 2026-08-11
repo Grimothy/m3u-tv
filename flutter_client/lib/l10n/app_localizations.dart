@@ -278,6 +278,18 @@ abstract class AppLocalizations {
   /// **'Remove favorite'**
   String get liveTvRemoveFavorite;
 
+  /// No description provided for @liveTvCatchupShows.
+  ///
+  /// In en, this message translates to:
+  /// **'Catchup shows'**
+  String get liveTvCatchupShows;
+
+  /// No description provided for @catchupShowsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No catchup shows available'**
+  String get catchupShowsEmpty;
+
   /// No description provided for @catchupBadgeAvailable.
   ///
   /// In en, this message translates to:

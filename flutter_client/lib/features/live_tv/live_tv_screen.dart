@@ -4,6 +4,7 @@ import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3u_tv/features/epg/timeline_epg_view.dart';
+import 'package:m3u_tv/features/live_tv/catchup_shows_dialog.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/domain_models.dart';
@@ -232,6 +233,16 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
                     dialogContext,
                   ).pop(_ChannelContextAction.toggleFavorite),
                 ),
+                if (channel.catchupSupported)
+                  _ContextMenuOption(
+                    icon: Icons.video_library,
+                    label: AppLocalizations.of(
+                      dialogContext,
+                    ).liveTvCatchupShows,
+                    onTap: () => Navigator.of(
+                      dialogContext,
+                    ).pop(_ChannelContextAction.catchupShows),
+                  ),
                 _ContextMenuOption(
                   icon: Icons.close,
                   label: AppLocalizations.of(dialogContext).cancel,
@@ -263,6 +274,18 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
         }
       case _ChannelContextAction.toggleFavorite:
         await _toggleFavorite(channel);
+      case _ChannelContextAction.catchupShows:
+        final programs = ref
+            .read(epgServiceProvider)
+            .catchupProgramsForChannel(channel);
+        final program = await showCatchupShowsDialog(
+          context,
+          channel: channel,
+          programs: programs,
+        );
+        if (program != null) {
+          widget.onCatchupProgramSelect?.call(channel, program);
+        }
       case null:
         break;
     }
@@ -487,7 +510,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   }
 }
 
-enum _ChannelContextAction { record, toggleFavorite }
+enum _ChannelContextAction { record, toggleFavorite, catchupShows }
 
 class _ContextMenuOption extends StatelessWidget {
   const _ContextMenuOption({

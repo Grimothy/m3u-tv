@@ -7,6 +7,44 @@ class EpgService extends ChangeNotifier {
   EpgService({Clock? clock, this.cacheTtl = const Duration(minutes: 30)})
     : _clock = clock ?? DateTime.now;
 
+  /// Fallback catchup retention window (in days) used when a channel
+  /// supports catchup but does not advertise an explicit [Channel.catchupDays].
+  static const int kCatchupFallbackDays = 7;
+
+  /// Resolves the number of days of catchup a channel actually offers: `0`
+  /// if catchup isn't supported, otherwise [catchupDays] or
+  /// [kCatchupFallbackDays] when unspecified.
+  static int effectiveCatchupRetentionDays(
+    // ignore: avoid_positional_boolean_parameters
+    bool catchupSupported,
+    int? catchupDays,
+  ) {
+    if (!catchupSupported) return 0;
+    return catchupDays ?? kCatchupFallbackDays;
+  }
+
+  /// Whether [program] is still within the catchup retention window and has
+  /// already finished airing, given [catchupRetentionDays] and the current
+  /// time [now].
+  static bool canReplay(
+    int catchupRetentionDays,
+    EpgProgram program,
+    DateTime now,
+  ) {
+    if (catchupRetentionDays <= 0 || !program.end.isBefore(now)) return false;
+    final earliest = DateTime(
+      now.year,
+      now.month,
+      now.day - catchupRetentionDays,
+      now.hour,
+      now.minute,
+      now.second,
+      now.millisecond,
+      now.microsecond,
+    );
+    return !program.start.isBefore(earliest);
+  }
+
   final Clock _clock;
   final Duration cacheTtl;
 
@@ -150,6 +188,20 @@ class EpgService extends ChangeNotifier {
       if (programs != null && programs.isNotEmpty) return programs;
     }
     return const <EpgProgram>[];
+  }
+
+  /// Returns [channel]'s replayable catchup programs, most-recent-first.
+  /// Empty if the channel doesn't support catchup or none currently qualify.
+  List<EpgProgram> catchupProgramsForChannel(Channel channel) {
+    final retentionDays = effectiveCatchupRetentionDays(
+      channel.catchupSupported,
+      channel.catchupDays,
+    );
+    if (retentionDays <= 0) return const <EpgProgram>[];
+    final programs = programsForChannel(
+      channel,
+    ).where((p) => canReplay(retentionDays, p, now)).toList();
+    return programs.reversed.toList();
   }
 
   void clear() {
