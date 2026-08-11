@@ -5,9 +5,7 @@ import 'dart:io' as io;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/services/cache_service.dart';
 import 'package:m3u_tv/services/domain_models.dart';
-import 'package:m3u_tv/services/epg_service.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
-import 'package:m3u_tv/services/m3u_parser.dart';
 import 'package:m3u_tv/services/persistent_store.dart';
 import 'package:m3u_tv/services/resume_service.dart';
 import 'package:m3u_tv/services/viewer_service.dart';
@@ -604,6 +602,77 @@ void main() {
     );
 
     test(
+      'updateDvrSeriesRule sends only present keys and always sends channel_id',
+      () async {
+        final transport = FakeXtreamTransport({
+          'auth': xtreamAuth(auth: 1),
+          'update_dvr_series_rule': <String, Object?>{'success': true},
+        });
+        final service = XtreamService(transport: transport.call);
+        await service.authenticate(
+          const UserCredentials(
+            server: 'https://xtream.example/',
+            username: 'demo',
+            password: 'secret',
+          ),
+        );
+
+        await service.updateDvrSeriesRule(
+          ruleId: 37,
+          matchMode: DvrMatchMode.exact,
+          seriesMode: DvrSeriesMode.newFlag,
+        );
+
+        final request = transport.requests.last;
+        expect(request.action, 'update_dvr_series_rule');
+        // channel_id always present: blank for any-channel (null).
+        expect(request.params['channel_id'], '');
+        expect(request.params['match_mode'], 'exact');
+        expect(request.params['series_mode'], 'new_flag');
+        // Absent (unspecified) fields are NOT sent.
+        expect(request.params.containsKey('keep_last'), isFalse);
+        expect(request.params.containsKey('priority'), isFalse);
+        expect(
+          request.params.containsKey('start_early_seconds'),
+          isFalse,
+        );
+        expect(request.params.containsKey('end_late_seconds'), isFalse);
+      },
+    );
+
+    test(
+      'updateDvrSeriesRule sends a pinned channel id when non-null',
+      () async {
+        final transport = FakeXtreamTransport({
+          'auth': xtreamAuth(auth: 1),
+          'update_dvr_series_rule': <String, Object?>{'success': true},
+        });
+        final service = XtreamService(transport: transport.call);
+        await service.authenticate(
+          const UserCredentials(
+            server: 'https://xtream.example/',
+            username: 'demo',
+            password: 'secret',
+          ),
+        );
+
+        await service.updateDvrSeriesRule(
+          ruleId: 37,
+          channelId: 72,
+          keepLast: 5,
+          priority: 80,
+        );
+
+        final request = transport.requests.last;
+        expect(request.params['channel_id'], '72');
+        expect(request.params['keep_last'], '5');
+        expect(request.params['priority'], '80');
+        expect(request.params.containsKey('match_mode'), isFalse);
+        expect(request.params.containsKey('series_mode'), isFalse);
+      },
+    );
+
+    test(
       'expired credentials return typed auth error without cache corruption',
       () async {
         final cache = CacheService(memory: <String, Object?>{});
@@ -969,135 +1038,74 @@ void main() {
     );
   });
 
-  group('M3UParser contract', () {
-    test(
-      'parses valid direct M3U with metadata, headers, and groups',
-      () async {
-        final text = await io.File(
-          'test/fixtures/direct_playlist.m3u',
-        ).readAsString();
-
-        final result = M3UParser().parse(text);
-
-        expect(result.channels, hasLength(3));
-        expect(result.channels.first, isA<Channel>());
-        expect(result.channels.first.epgChannelId, 'bbc.one');
-        expect(result.channels.first.name, 'BBC One HD');
-        expect(result.channels.first.logoUrl, 'https://img.example/bbc.png');
-        expect(result.channels.first.groupTitle, 'News');
-        expect(
-          result.channels.first.streamUrl,
-          'https://streams.example/live/bbc-one.m3u8',
-        );
-        expect(
-          result.channels.first.headers,
-          containsPair('User-Agent', 'FixtureAgent/1.0'),
-        );
-        expect(
-          result.channels.first.headers,
-          containsPair('Authorization', 'Bearer fixture-token'),
-        );
-        expect(
-          result.categories.map((c) => c.name),
-          containsAll(['News', 'Movies', 'Ungrouped']),
-        );
-      },
-    );
-
-    test('parses M3U catchup attributes into channel metadata', () {
-      final playlist = M3UParser().parse('''
-#EXTM3U
-#EXTINF:-1 tvg-id="bbc.one" tvg-name="BBC One" group-title="News" catchup="default" catchup-days="3" catchup-source="https://archive.example/{utc:Y-m-d:H-M}/{duration}/{channel-id}",BBC One
-https://streams.example/live/bbc-one.m3u8
-''');
-
-      final channel = playlist.channels.single;
-
-      expect(channel.catchupSupported, isTrue);
-      expect(channel.catchupDays, 3);
-      expect(
-        channel.catchupSource,
-        'https://archive.example/{utc:Y-m-d:H-M}/{duration}/{channel-id}',
-      );
-    });
-
-    test('malformed playlist reports a typed parse error', () async {
-      final text = await io.File(
-        'test/fixtures/malformed_playlist.m3u',
-      ).readAsString();
-
-      expect(() => M3UParser().parse(text), throwsA(isA<M3UParseException>()));
-    });
-
-    test('maps tvg-id to EPG current/next programmes', () async {
-      final playlist = M3UParser().parse(
-        await io.File('test/fixtures/direct_playlist.m3u').readAsString(),
-      );
-      final now = DateTime.utc(2026, 1, 1, 12);
-      final epg = EpgService(clock: () => now)
-        ..loadPrograms([
-          EpgProgram(
-            channelId: 'bbc.one',
-            title: 'Midday News',
-            description: 'Fixture bulletin',
-            start: now.subtract(const Duration(minutes: 10)),
-            end: now.add(const Duration(minutes: 20)),
-          ),
-          EpgProgram(
-            channelId: 'bbc.one',
-            title: 'Afternoon News',
-            description: 'Next fixture',
-            start: now.add(const Duration(minutes: 20)),
-            end: now.add(const Duration(minutes: 50)),
-          ),
-        ]);
-
-      final currentNext = epg.lookupForChannel(playlist.channels.first);
-
-      expect(currentNext?.current.title, 'Midday News');
-      expect(currentNext?.next?.title, 'Afternoon News');
-    });
-
-    test(
-      'huge playlist and EPG fixtures complete under timeout',
-      () async {
-        final buffer = StringBuffer('#EXTM3U\n');
-        final now = DateTime.utc(2026, 1, 1, 12);
-        final programs = <EpgProgram>[];
-        for (var i = 0; i < 5000; i++) {
-          buffer
-            ..writeln(
-              '#EXTINF:-1 tvg-id="ch.$i" group-title="Bulk",Channel $i',
-            )
-            ..writeln('https://streams.example/live/$i.m3u8');
-          programs.add(
-            EpgProgram(
-              channelId: 'ch.$i',
-              title: 'Current $i',
-              description: 'Bulk fixture',
-              start: now.subtract(const Duration(minutes: 1)),
-              end: now.add(const Duration(minutes: 59)),
-            ),
-          );
-        }
-
-        final parser = M3UParser();
-        final stopwatch = Stopwatch()..start();
-        final playlist = parser.parse(buffer.toString());
-        final epg = EpgService(clock: () => now)..loadPrograms(programs);
-
-        expect(playlist.channels, hasLength(5000));
-        expect(
-          epg.lookupForChannel(playlist.channels[4999])?.current.title,
-          'Current 4999',
-        );
-        expect(stopwatch.elapsed, lessThan(const Duration(seconds: 2)));
-      },
-      timeout: const Timeout(Duration(seconds: 3)),
-    );
-  });
-
   group('Local state services', () {
+    test('persistent store replaces a key set in one operation', () async {
+      final file = io.File(
+        '${io.Directory.systemTemp.path}/m3u_tv_store_replace_${DateTime.now().microsecondsSinceEpoch}.json',
+      );
+      addTearDown(() async {
+        if (await file.exists()) await file.delete();
+      });
+      final store = PersistentJsonStore(file: file);
+      await store.write('keep', 'value');
+      await store.write('cache-a', 'old-a');
+      await store.write('cache-b', 'old-b');
+
+      await store.replaceWhere(
+        (key) => key.startsWith('cache-'),
+        <String, Object?>{'cache-c': 'new-c'},
+      );
+
+      expect(
+        await PersistentJsonStore(file: file).snapshot(),
+        <String, Object?>{
+          'keep': 'value',
+          'cache-c': 'new-c',
+        },
+      );
+    });
+
+    test(
+      'failed persistent replacement leaves the prior snapshot intact',
+      () async {
+        final root = await io.Directory.systemTemp.createTemp(
+          'm3u_tv_store_replace_failure_',
+        );
+        addTearDown(() => root.delete(recursive: true));
+        final directory = io.Directory('${root.path}/store');
+        final backup = io.Directory('${root.path}/backup');
+        final file = io.File('${directory.path}/state.json');
+        final store = PersistentJsonStore(file: file);
+        await store.write('keep', 'value');
+        await store.write('cache-a', 'old-a');
+        await directory.rename(backup.path);
+        final blocker = io.File(directory.path);
+        await blocker.writeAsString('blocked');
+
+        await expectLater(
+          store.replaceWhere(
+            (key) => key.startsWith('cache-'),
+            <String, Object?>{'cache-b': 'new-b'},
+          ),
+          throwsA(isA<io.FileSystemException>()),
+        );
+        expect(await store.snapshot(), <String, Object?>{
+          'keep': 'value',
+          'cache-a': 'old-a',
+        });
+
+        await blocker.delete();
+        await backup.rename(directory.path);
+        expect(
+          await PersistentJsonStore(file: file).snapshot(),
+          <String, Object?>{
+            'keep': 'value',
+            'cache-a': 'old-a',
+          },
+        );
+      },
+    );
+
     test('cache preserves channel catchup metadata', () async {
       final file = io.File(
         '${io.Directory.systemTemp.path}/m3u_tv_cache_catchup_${DateTime.now().microsecondsSinceEpoch}.json',

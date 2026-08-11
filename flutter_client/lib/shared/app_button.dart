@@ -120,12 +120,20 @@ class _HoverFocusable extends StatefulWidget {
     required this.onSelect,
     this.autofocus = false,
     this.focusNode,
+    this.autoScroll = true,
   });
 
   final Widget child;
   final VoidCallback? onSelect;
   final bool autofocus;
   final FocusNode? focusNode;
+
+  /// Whether gaining focus scrolls this button into view. Set to `false`
+  /// for buttons that are always already on-screen (e.g. row actions) —
+  /// otherwise a mouse hover close to a scrollable's edge can trigger
+  /// `DpadFocusable`'s auto-scroll-into-view padding correction, visibly
+  /// nudging the whole scrollable and snapping back on every hover.
+  final bool autoScroll;
 
   @override
   State<_HoverFocusable> createState() => _HoverFocusableState();
@@ -150,6 +158,7 @@ class _HoverFocusableState extends State<_HoverFocusable> {
       child: DpadFocusable(
         focusNode: _focusNode,
         autofocus: widget.autofocus,
+        autoScroll: widget.autoScroll,
         onSelect: widget.onSelect,
         effects: kStadiumFocusEffects,
         child: widget.child,
@@ -178,6 +187,7 @@ class AppButton extends StatelessWidget {
     this.autofocus = false,
     this.focusNode,
     this.loading = false,
+    this.autoScroll = true,
   });
 
   final String label;
@@ -186,6 +196,9 @@ class AppButton extends StatelessWidget {
   final AppButtonVariant variant;
   final bool autofocus;
   final FocusNode? focusNode;
+
+  /// See [_HoverFocusable.autoScroll].
+  final bool autoScroll;
 
   /// Shows a spinner in place of the label/icon and disables the button —
   /// for in-flight async actions (e.g. connecting, creating).
@@ -268,6 +281,7 @@ class AppButton extends StatelessWidget {
     return _HoverFocusable(
       autofocus: autofocus,
       focusNode: focusNode,
+      autoScroll: autoScroll,
       onSelect: effectiveOnPressed,
       child: button,
     );
@@ -286,6 +300,7 @@ class AppIconButton extends StatelessWidget {
     this.variant = AppButtonVariant.tonal,
     this.autofocus = false,
     this.focusNode,
+    this.autoScroll = true,
   });
 
   final IconData icon;
@@ -294,6 +309,9 @@ class AppIconButton extends StatelessWidget {
   final AppButtonVariant variant;
   final bool autofocus;
   final FocusNode? focusNode;
+
+  /// See [_HoverFocusable.autoScroll].
+  final bool autoScroll;
 
   @override
   Widget build(BuildContext context) {
@@ -349,8 +367,37 @@ class AppIconButton extends StatelessWidget {
     return _HoverFocusable(
       autofocus: autofocus,
       focusNode: focusNode,
+      autoScroll: autoScroll,
       onSelect: onPressed,
       child: button,
+    );
+  }
+}
+
+/// Small pill badge for a status/count label (e.g. "3 episodes", "Series
+/// rule active") — the one non-button "chip" look shared across screens.
+class AppBadge extends StatelessWidget {
+  const AppBadge({super.key, required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: scheme.onPrimaryContainer,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 }

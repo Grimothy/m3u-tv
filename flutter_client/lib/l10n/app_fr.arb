@@ -60,6 +60,8 @@
   "epgNextDay": "Jour suivant",
   "epgChannels": "CHAÎNES",
   "epgNoData": "Aucune donnée EPG",
+  "epgProgramScheduledToRecord": "Programmé pour enregistrement",
+  "epgProgramCurrentlyRecording": "En cours d'enregistrement",
   "playerGoBack": "Retour",
   "playerResumeWatching": "Reprendre la lecture",
   "playerContinue": "Continuer",
@@ -156,6 +158,7 @@
   "settingsFillAllFields": "Veuillez remplir tous les champs",
   "settingsConnectionSettings": "Paramètres de connexion",
   "settingsConnectionSettingsSubtitle": "Entrez vos identifiants Xtream Codes",
+  "settingsConnectionSettingsHelp": "Utilisez les informations de connexion Xtream de la playlist m3u-editor, pas votre connexion web m3u-editor. Vous avez besoin de l'URL du serveur, du nom d'utilisateur Xtream et du mot de passe Xtream.",
   "settingsServerUrl": "URL du serveur",
   "settingsUsername": "Nom d'utilisateur",
   "settingsPassword": "Mot de passe",
@@ -432,5 +435,149 @@
         "type": "int"
       }
     }
-  }
+  },
+  "dvrSeriesChannel": "Chaîne",
+  "@dvrEpisodeCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dvrSeriesStartEarly": "Démarrer en avance",
+  "dvrSeriesUseDefault": "Par défaut",
+  "dvrEpisodeCount": "{count, plural, =1{1 épisode} other{{count} épisodes}}",
+  "dvrDeleteSeriesRule": "Supprimer la règle",
+  "dvrEditSeriesRule": "Modifier la règle",
+  "dvrUpdateSeriesRuleFailed": "Impossible de mettre à jour la règle de série",
+  "dvrSeriesSave": "Enregistrer",
+  "dvrSeriesSecondsSuffix": "sec",
+  "dvrSeriesMode": "Mode série",
+  "dvrUpdateSeriesRuleSuccess": "Règle de série mise à jour",
+  "dvrSeriesModeAll": "Tous les épisodes",
+  "dvrSeriesMatchModeStartsWith": "Commence par",
+  "dvrDeleteSeriesRuleConfirm": "Supprimer cette règle de série ?",
+  "dvrSeriesCancel": "Annuler",
+  "dvrDeleteSeriesRuleSuccess": "Règle de série supprimée",
+  "dvrSeriesRulesTitle": "Règles de séries",
+  "dvrSeriesMatchModeContains": "Contient",
+  "dvrSeriesMatchModeExact": "Exact",
+  "dvrSeriesModeUseDefault": "Par défaut",
+  "dvrSeriesModeNewFlag": "Nouveaux uniquement",
+  "dvrDeleteSeriesRuleFailed": "Impossible de supprimer la règle de série",
+  "dvrSeriesKeepLast": "Garder dernière",
+  "dvrSeriesModeUniqueSe": "S-E unique",
+  "dvrSeriesAnyChannel": "N'importe quelle chaîne",
+  "dvrSeriesMatchMode": "Mode de correspondance",
+  "dvrSeriesEndLate": "Fin tard",
+  "dvrSeriesOptions": "Options",
+  "dvrSeriesOptionsFor": "Options : {title}",
+  "@dvrSeriesOptionsFor": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "dvrSeriesAllEpisodesWarning": "Enregistrer tous les épisodes sur n'importe quelle chaîne peut créer des doublons — utilisez Nouveaux uniquement ou S-E unique pour dédupliquer.",
+  "dvrSeriesRulesEmpty": "Aucune règle de série",
+  "dvrSeriesPriority": "Priorité",
+  "epgRecordSeries": "Enregistrer la série",
+  "epgRecordSeriesSuccess": "Enregistrement de série activé pour {title}",
+  "@epgRecordSeriesSuccess": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "epgRecordSeriesFailed": "Impossible d'activer l'enregistrement de la série",
+  "epgRecordSeriesDuplicate": "Enregistrement de série déjà activé",
+  "navShows": "Shows",
+  "showAiringNext": "Prochaine diffusion",
+  "showAiringNone": "Aucun épisode à venir dans l'EPG",
+  "showChannelCount": "{count, plural, =1{1 chaîne} other{{count} chaînes}}",
+  "@showChannelCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "showDeleteRule": "Supprimer la règle de série",
+  "showDeleteRuleConfirm": "Supprimer la règle de série pour {title} ? Les futurs épisodes ne seront pas enregistrés. Les enregistrements déjà effectués ne seront pas supprimés.",
+  "@showDeleteRuleConfirm": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "showSeriesRuleActive": "Règle de série active",
+  "showDetailTitle": "Détails du show",
+  "showEpisodesCount": "{count, plural, =1{1 épisode} other{{count} épisodes}}",
+  "@showEpisodesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "showRecordSeries": "Enregistrer la série",
+  "showRecordSeriesConfirm": "Enregistrer chaque épisode de {title} sur {channel} ?",
+  "@showRecordSeriesConfirm": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      },
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "showRecordSeriesFailed": "Impossible d'activer l'enregistrement de la série pour {title}",
+  "@showRecordSeriesFailed": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "showRecordSeriesSuccess": "Enregistrement de série activé pour {title}",
+  "@showRecordSeriesSuccess": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "showRecordSeriesDuplicate": "Enregistrement de série déjà activé pour {title}",
+  "@showRecordSeriesDuplicate": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "showsError": "Impossible de rechercher des shows",
+  "showsNoResults": "Aucun show ne correspond à votre recherche",
+  "showsSearchError": "Échec de la recherche",
+  "showsSearchHint": "Rechercher des shows par titre",
+  "showsTitle": "Shows",
+  "showNotFound": "Show « {title} » introuvable",
+  "@showNotFound": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsView": "Affichage",
+  "settingsLiveTvLayout": "Mise en page TV en direct",
+  "settingsLiveTvLayoutList": "Liste",
+  "settingsLiveTvLayoutGrid": "Grille",
+  "settingsLiveTvLayoutTimeline": "Chronologie",
+  "settingsEpgStartView": "Le guide démarre à",
+  "settingsEpgStartViewCurrentTime": "Heure actuelle",
+  "settingsEpgStartViewPrimeTime": "Prime time"
 }

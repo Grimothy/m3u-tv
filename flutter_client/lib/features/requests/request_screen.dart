@@ -184,7 +184,7 @@ class _RequestScreenState extends ConsumerState<RequestScreen>
               tabs: [l.requestsTabSearch, l.requestsTabMyRequests],
             ),
             Expanded(
-              child: TabBarView(
+              child: DpadTabBarView(
                 controller: _tabController,
                 children: [
                   _buildSearchTab(l, myRequests),

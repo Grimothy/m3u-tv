@@ -210,7 +210,7 @@ class _AIOStreamsSearchScreenState extends State<AIOStreamsSearchScreen>
               ],
             ),
             Expanded(
-              child: TabBarView(
+              child: DpadTabBarView(
                 controller: _tabController,
                 children: [
                   _buildResults(l, theme, _allResults),

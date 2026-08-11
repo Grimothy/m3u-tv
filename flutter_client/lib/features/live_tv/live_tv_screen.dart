@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3u_tv/features/epg/epg_recording_index.dart';
 import 'package:m3u_tv/features/epg/timeline_epg_view.dart';
 import 'package:m3u_tv/features/live_tv/catchup_shows_dialog.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
@@ -10,6 +11,8 @@ import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/epg_service.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
+import 'package:m3u_tv/services/view_settings_service.dart';
+import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/dvr_action_dialogs.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
@@ -30,6 +33,7 @@ class LiveTvScreen extends ConsumerStatefulWidget {
     super.key,
     required this.favoritesService,
     required this.onChannelSelect,
+    this.viewSettingsService,
     this.onChannelContextChanged,
     this.onCatchupProgramSelect,
     this.onSidebarActivate,
@@ -37,9 +41,11 @@ class LiveTvScreen extends ConsumerStatefulWidget {
     this.onEnsureEpg,
     this.onCancelRecording,
     this.onCancelAndDeleteRecording,
+    this.onRecordSeries,
   });
 
   final FavoritesService favoritesService;
+  final ViewSettingsService? viewSettingsService;
   final void Function(Channel) onChannelSelect;
 
   /// Called with the filtered channel list (category/favorites/search) right
@@ -51,6 +57,17 @@ class LiveTvScreen extends ConsumerStatefulWidget {
   final void Function(Channel, EpgProgram)? onScheduleProgram;
   final Future<void> Function(String uuid)? onCancelRecording;
   final Future<void> Function(String uuid)? onCancelAndDeleteRecording;
+
+  /// Wired by AppShell against `XtreamService.createDvrSeriesRule`. Receives
+  /// the long-pressed channel and the program whose title should be matched
+  /// by the new series rule. Returns the outcome so the caller can
+  /// distinguish created / duplicate / failed instead of collapsing every
+  /// non-success into a generic failure SnackBar.
+  final Future<CreateDvrSeriesRuleOutcome> Function(
+    Channel channel,
+    EpgProgram program,
+  )?
+  onRecordSeries;
 
   /// Requests EPG data for the given channels be fetched (lazily, debounced)
   /// if not already fresh. Called per-item as the visible list/grid builds,
@@ -68,18 +85,72 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   Set<int> _favoriteIds = {};
   final Map<int, EpgCurrentNext?> _epgMap = {};
   _ViewMode _viewMode = _ViewMode.list;
+  EpgStartView _epgStartView = EpgStartView.currentTime;
+  int _viewSettingsGeneration = 0;
 
   @override
   void initState() {
     super.initState();
     widget.favoritesService.addListener(_onFavoritesChanged);
+    _attachViewSettingsListener();
     unawaited(_initCategory());
+  }
+
+  @override
+  void didUpdateWidget(covariant LiveTvScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.viewSettingsService != widget.viewSettingsService) {
+      _viewSettingsGeneration++;
+      _detachViewSettingsListener(oldWidget.viewSettingsService);
+      _attachViewSettingsListener();
+      unawaited(_reloadViewSettings());
+    }
   }
 
   @override
   void dispose() {
     widget.favoritesService.removeListener(_onFavoritesChanged);
+    _detachViewSettingsListener(widget.viewSettingsService);
     super.dispose();
+  }
+
+  void _attachViewSettingsListener() {
+    widget.viewSettingsService?.addListener(_onViewSettingsChanged);
+  }
+
+  void _detachViewSettingsListener(ViewSettingsService? service) {
+    service?.removeListener(_onViewSettingsChanged);
+  }
+
+  void _onViewSettingsChanged() {
+    _viewSettingsGeneration++;
+    unawaited(_reloadViewSettings());
+  }
+
+  Future<void> _reloadViewSettings() async {
+    final generation = _viewSettingsGeneration;
+    final loaded = await _loadViewSettings();
+    if (loaded == null || !mounted || generation != _viewSettingsGeneration) {
+      return;
+    }
+    setState(() {
+      _viewMode = _layoutToViewMode(loaded.layout);
+      _epgStartView = loaded.epgStartView;
+    });
+  }
+
+  Future<({LiveTvLayout layout, EpgStartView epgStartView})?>
+  _loadViewSettings() async {
+    final viewSettings = widget.viewSettingsService;
+    if (viewSettings == null) return null;
+    final results = await Future.wait([
+      viewSettings.liveTvLayout(),
+      viewSettings.epgStartView(),
+    ]);
+    return (
+      layout: results[0] as LiveTvLayout,
+      epgStartView: results[1] as EpgStartView,
+    );
   }
 
   void _onFavoritesChanged() {
@@ -88,17 +159,42 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
 
   Future<void> _initCategory() async {
     final lastCat = await widget.favoritesService.getLastCategory();
-    final lastMode = await widget.favoritesService.getLastViewMode();
-    if (mounted) {
-      setState(() {
-        _selectedCategory = lastCat;
-        if (lastMode != null) {
-          _viewMode = _ViewMode.values.firstWhere(
-            (m) => m.name == lastMode,
+    final viewSettings = widget.viewSettingsService;
+    if (viewSettings != null) {
+      if (!await viewSettings.hasLiveTvLayout()) {
+        final legacyMode = await widget.favoritesService.getLastViewMode();
+        if (legacyMode != null) {
+          final legacyViewMode = _ViewMode.values.firstWhere(
+            (m) => m.name == legacyMode,
             orElse: () => _ViewMode.list,
           );
+          await viewSettings.setLiveTvLayout(_viewModeToLayout(legacyViewMode));
         }
-      });
+      }
+      final generation = _viewSettingsGeneration;
+      final loaded = await _loadViewSettings();
+      if (mounted && generation == _viewSettingsGeneration) {
+        setState(() {
+          _selectedCategory = lastCat;
+          if (loaded != null) {
+            _viewMode = _layoutToViewMode(loaded.layout);
+            _epgStartView = loaded.epgStartView;
+          }
+        });
+      }
+    } else {
+      final lastMode = await widget.favoritesService.getLastViewMode();
+      if (mounted) {
+        setState(() {
+          _selectedCategory = lastCat;
+          if (lastMode != null) {
+            _viewMode = _ViewMode.values.firstWhere(
+              (m) => m.name == lastMode,
+              orElse: () => _ViewMode.list,
+            );
+          }
+        });
+      }
     }
     await _loadFavorites();
   }
@@ -132,6 +228,18 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
         )
         .toList(growable: false);
   }
+
+  static _ViewMode _layoutToViewMode(LiveTvLayout layout) => switch (layout) {
+    LiveTvLayout.list => _ViewMode.list,
+    LiveTvLayout.grid => _ViewMode.logoGrid,
+    LiveTvLayout.timeline => _ViewMode.epgGrid,
+  };
+
+  static LiveTvLayout _viewModeToLayout(_ViewMode mode) => switch (mode) {
+    _ViewMode.list => LiveTvLayout.list,
+    _ViewMode.logoGrid => LiveTvLayout.grid,
+    _ViewMode.epgGrid => LiveTvLayout.timeline,
+  };
 
   List<CategoryTabData> _categoryTabs(List<Category> categories) {
     return [
@@ -184,6 +292,8 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     final hasRecord = activeRecording != null
         ? widget.onCancelRecording != null
         : recordableProgram != null && widget.onScheduleProgram != null;
+    final hasSeriesRule =
+        recordableProgram != null && widget.onRecordSeries != null;
     final isFavorite = _favoriteIds.contains(channel.id);
 
     final action = await showDialog<_ChannelContextAction>(
@@ -223,12 +333,22 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
                       dialogContext,
                     ).pop(_ChannelContextAction.record),
                   ),
+                if (hasSeriesRule)
+                  _ContextMenuOption(
+                    icon: Icons.fiber_new,
+                    label: AppLocalizations.of(dialogContext).epgRecordSeries,
+                    subtitle: recordableProgram.title,
+                    autofocus: !hasRecord,
+                    onTap: () => Navigator.of(
+                      dialogContext,
+                    ).pop(_ChannelContextAction.recordSeries),
+                  ),
                 _ContextMenuOption(
                   icon: isFavorite ? Icons.star : Icons.star_border,
                   label: isFavorite
                       ? AppLocalizations.of(dialogContext).liveTvRemoveFavorite
                       : AppLocalizations.of(dialogContext).liveTvFavorite,
-                  autofocus: !hasRecord,
+                  autofocus: !hasRecord && !hasSeriesRule,
                   onTap: () => Navigator.of(
                     dialogContext,
                   ).pop(_ChannelContextAction.toggleFavorite),
@@ -271,6 +391,29 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
           if (program != null) {
             widget.onScheduleProgram?.call(channel, program);
           }
+        }
+      case _ChannelContextAction.recordSeries:
+        final program = recordableProgram;
+        if (program == null || widget.onRecordSeries == null) return;
+        final messenger = ScaffoldMessenger.of(context);
+        final l10n = AppLocalizations.of(context);
+        try {
+          final outcome = await widget.onRecordSeries!(channel, program);
+          if (!context.mounted) return;
+          final message = switch (outcome) {
+            CreateDvrSeriesRuleOutcome.created => l10n.epgRecordSeriesSuccess(
+              program.title,
+            ),
+            CreateDvrSeriesRuleOutcome.duplicate =>
+              l10n.epgRecordSeriesDuplicate,
+            CreateDvrSeriesRuleOutcome.failed => l10n.epgRecordSeriesFailed,
+          };
+          messenger.showSnackBar(SnackBar(content: Text(message)));
+        } on Object catch (_) {
+          if (!context.mounted) return;
+          messenger.showSnackBar(
+            SnackBar(content: Text(l10n.epgRecordSeriesFailed)),
+          );
         }
       case _ChannelContextAction.toggleFavorite:
         await _toggleFavorite(channel);
@@ -339,6 +482,9 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
                       filtered,
                       epgService,
                       recordingChannelIds,
+                      EpgRecordingIndex.fromRecordings(
+                        ref.watch(dvrRecordingsProvider),
+                      ),
                     ),
                     _ViewMode.logoGrid => _buildGridView(
                       filtered,
@@ -389,7 +535,12 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
             _ViewMode.epgGrid => _ViewMode.list,
           };
           setState(() => _viewMode = next);
-          unawaited(widget.favoritesService.setLastViewMode(next.name));
+          final viewSettings = widget.viewSettingsService;
+          if (viewSettings != null) {
+            unawaited(viewSettings.setLiveTvLayout(_viewModeToLayout(next)));
+          } else {
+            unawaited(widget.favoritesService.setLastViewMode(next.name));
+          }
         },
         tooltip: switch (_viewMode) {
           _ViewMode.list => 'Logo grid',
@@ -439,6 +590,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     List<Channel> channels,
     EpgService epgService,
     Set<int> recordingChannelIds,
+    EpgRecordingIndex recordingIndex,
   ) {
     return DpadRegion(
       memoryKey: 'live-tv/epg',
@@ -452,6 +604,12 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
         channels: channels,
         epgService: epgService,
         recordingChannelIds: recordingChannelIds,
+        recordingStateFor: (channel, program) => recordingIndex.stateFor(
+          channelId: channel.id,
+          programStart: program.start,
+          programEnd: program.end,
+        ),
+        epgStartView: _epgStartView,
         onChannelSelect: (channel) {
           widget.onChannelContextChanged?.call(channels);
           widget.onChannelSelect(channel);
@@ -510,7 +668,12 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   }
 }
 
-enum _ChannelContextAction { record, toggleFavorite, catchupShows }
+enum _ChannelContextAction {
+  record,
+  recordSeries,
+  toggleFavorite,
+  catchupShows,
+}
 
 class _ContextMenuOption extends StatelessWidget {
   const _ContextMenuOption({

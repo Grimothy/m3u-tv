@@ -7,7 +7,9 @@ import 'package:m3u_tv/features/aiostreams/aiostreams_detail_screen.dart';
 import 'package:m3u_tv/features/aiostreams/aiostreams_search_screen.dart';
 import 'package:m3u_tv/features/requests/request_detail_screen.dart';
 import 'package:m3u_tv/features/series/series_details_screen.dart';
+import 'package:m3u_tv/features/shows/show_detail_screen.dart';
 import 'package:m3u_tv/features/vod/vod_details_screen.dart';
+import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/navigation/content_actions.dart';
 import 'package:m3u_tv/navigation/route_names.dart';
@@ -265,7 +267,9 @@ GoRouter createGoRouter({
               ),
             ],
           ),
-          // Branch 6: DVR
+          // Branch 6: DVR with nested show-detail (Shows is now a tab on
+          // DvrRecordingsScreen, not a top-level sidebar destination, so
+          // /dvr/shows/:normalizedTitle lives under this branch).
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -273,6 +277,41 @@ GoRouter createGoRouter({
                 pageBuilder: (context, state) => NoTransitionPage(
                   child: _withGradient(_tabScreen(context, RouteNames.dvr)),
                 ),
+                routes: [
+                  GoRoute(
+                    path: RouteNames.showsDetailsPath,
+                    pageBuilder: (context, state) {
+                      final normalizedTitle =
+                          state.pathParameters['normalizedTitle'] ?? '';
+                      final extra = state.extra;
+                      final show = extra is EpgShow ? extra : null;
+                      if (show == null) {
+                        return NoTransitionPage(
+                          child: Scaffold(
+                            body: SafeArea(
+                              bottom: false,
+                              child: Center(
+                                child: Text(
+                                  AppLocalizations.of(context).showNotFound(
+                                    normalizedTitle,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      final actions = ContentActions.of(context);
+                      return _slidePage(
+                        ShowDetailScreen(
+                          show: show,
+                          onRecordSeries: actions.onRecordSeries,
+                          onDeleteSeriesRule: actions.onDeleteSeriesRule,
+                        ),
+                      );
+                    },
+                  ),
+                ],
               ),
             ],
           ),
@@ -292,12 +331,28 @@ GoRouter createGoRouter({
                     pageBuilder: (context, state) {
                       final result = state.extra! as ContentRequestSearchResult;
                       final actions = ContentActions.of(context);
+                      final requestOwner = actions.appState.mediaRequestOwner;
                       return _slidePage(
                         ListenableBuilder(
                           listenable: actions.appState,
                           builder: (ctx, _) => RequestDetailScreen(
                             result: result,
-                            onSubmit: actions.appState.submitContentRequest,
+                            isOwnerCurrent:
+                                actions.appState.mediaRequestOwner ==
+                                requestOwner,
+                            onSubmit:
+                                ({
+                                  required type,
+                                  required integrationId,
+                                  required externalId,
+                                  seasons,
+                                }) => actions.appState.submitContentRequest(
+                                  type: type,
+                                  integrationId: integrationId,
+                                  externalId: externalId,
+                                  seasons: seasons,
+                                  requestOwner: requestOwner,
+                                ),
                           ),
                         ),
                       );

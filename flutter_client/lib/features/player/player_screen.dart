@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:m3u_tv/features/player/epg_overlay.dart';
 import 'package:m3u_tv/features/player/now_playing_overlay.dart';
 import 'package:m3u_tv/features/player/playback_controls.dart';
+import 'package:m3u_tv/features/player/wakelock_controller.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/playback/playback_capabilities.dart';
@@ -39,6 +40,7 @@ class PlayerScreen extends StatefulWidget {
     this.comskipSettings,
     this.progressReporter,
     this.traktService,
+    this.wakelockController = const PlatformWakelockController(),
     this.viewerId = '',
     this.onClose,
     this.onPlaybackFailure,
@@ -56,6 +58,7 @@ class PlayerScreen extends StatefulWidget {
   final ComskipSettings? comskipSettings;
   final void Function(Progress progress)? progressReporter;
   final TraktService? traktService;
+  final WakelockController wakelockController;
   final String viewerId;
   final VoidCallback? onClose;
   final VoidCallback? onPlaybackFailure;
@@ -177,6 +180,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    // Screen must stay on for the entire time the player route is active,
+    // not just while actively playing — e.g. staying paused on an overlay
+    // shouldn't let the screen sleep. Enabled here, disabled in dispose().
+    unawaited(widget.wakelockController.enable());
     // Steal focus from the content area (autofocus won't do this if another
     // widget already holds focus when the player opens via the AppShell Stack).
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -482,6 +489,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _errorButtonFocusNode.dispose();
     unawaited(_stateSubscription?.cancel());
     unawaited(_errorSubscription?.cancel());
+    unawaited(widget.wakelockController.disable());
     unawaited(widget.orchestrator.stop());
     super.dispose();
   }
@@ -714,21 +722,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (!_isLive || widget.args.epgChannelId == null) return;
     final channelId = widget.args.epgChannelId!;
     final result = widget.epgService.lookup(channelId);
-    if (result != null) {
-      if (mounted) {
-        setState(() => _epgData = result);
-      }
-      return;
-    }
-
-    if (mounted) {
-      setState(() => _epgData = result);
-    }
+    if (mounted) setState(() => _epgData = result);
 
     final streamId = widget.args.streamId;
     final xtreamService = widget.xtreamService;
-    if (streamId == null || xtreamService == null || _epgFetch != null) return;
+    if (streamId == null ||
+        xtreamService == null ||
+        _epgFetch != null ||
+        !widget.epgService.shouldFetchData(channelId)) {
+      return;
+    }
 
+    final sourceGeneration = widget.epgService.markFetchStarted(<String>[
+      channelId,
+    ]);
     final fetch = xtreamService.getShortEpg(
       streamId,
       channelId: channelId,
@@ -737,18 +744,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _epgFetch = fetch;
     try {
       final programs = await fetch;
+      widget.epgService.applySuccessfulResponse(
+        <String>[channelId],
+        programs,
+        sourceGeneration: sourceGeneration,
+      );
       // The player may have switched to a different channel while this was
       // in flight (didUpdateWidget cancels the timer but can't cancel this
       // future) — don't let a stale response overwrite the new channel's EPG.
       if (_disposed || !mounted || widget.args.epgChannelId != channelId) {
         return;
       }
-      widget.epgService.mergePrograms(programs);
       final refreshed = widget.epgService.lookup(channelId);
       if (mounted) {
         setState(() => _epgData = refreshed);
       }
     } on Object catch (_) {
+      widget.epgService.markFetchFailed(
+        <String>[channelId],
+        sourceGeneration: sourceGeneration,
+      );
       if (_disposed || !mounted) return;
     } finally {
       if (identical(_epgFetch, fetch)) {

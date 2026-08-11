@@ -2,6 +2,7 @@
 
 import 'dart:convert';
 
+import 'package:m3u_tv/services/async_lifecycle.dart';
 import 'package:m3u_tv/services/cache_service.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_http_transport_stub.dart'
@@ -31,6 +32,7 @@ class XtreamHttpException implements Exception {
     required this.uri,
     this.reasonPhrase,
     this.serverMessage,
+    this.bodyJson,
   });
 
   final int statusCode;
@@ -38,6 +40,14 @@ class XtreamHttpException implements Exception {
   final Uri uri;
   final String? reasonPhrase;
   final String? serverMessage;
+
+  /// Parsed JSON body of the error response, when the server replied with a
+  /// parseable body and `statusCode >= 400`. Null when the body was empty,
+  /// non-JSON (e.g. an HTML error page), or when no body was parsed. Callers
+  /// that need typed fields (e.g. `create_dvr_series_rule`'s 409 `rule_id`)
+  /// should key off `statusCode` first and treat `bodyJson` as a best-effort
+  /// enrichment — never trust its shape.
+  final Object? bodyJson;
 
   @override
   String toString() {
@@ -112,6 +122,40 @@ class XtreamDvrScheduleException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Thrown by `XtreamService.createDvrSeriesRule` when the server rejects a
+/// `create_dvr_series_rule` call because a series rule for the same
+/// normalized title already exists on this playlist/DVR setting (the A3
+/// duplicate guard — HTTP 409). Carries the existing rule's id when the
+/// server returned one, so the caller can flip straight to the "rule exists"
+/// state instead of asking the user to confirm another create.
+class DvrSeriesRuleExistsException implements Exception {
+  const DvrSeriesRuleExistsException(this.message, {this.ruleId});
+
+  final String message;
+  final int? ruleId;
+
+  @override
+  String toString() => message;
+}
+
+/// Outcome of `XtreamService.createDvrSeriesRule`, surfaced by the AppShell
+/// wrapper that owns the refresh-rules-on-mutation pattern. The UI layers
+/// (`ShowDetailScreen`, `LiveTvScreen`) branch on this rather than the raw
+/// exception so duplicate vs failed stays distinguishable all the way to the
+/// SnackBar.
+enum CreateDvrSeriesRuleOutcome {
+  /// Rule was created on the server.
+  created,
+
+  /// Server rejected the create as a duplicate of an existing rule
+  /// (HTTP 409). The local rules cache has been refreshed so the UI can
+  /// show the existing-rule state.
+  duplicate,
+
+  /// Create failed for any other reason (network, auth, unknown 4xx/5xx).
+  failed,
 }
 
 /// Thrown when an m3u-editor `request_*` action returns its documented error
@@ -300,6 +344,20 @@ class XtreamAuthResponse {
   bool get hasRequests => hasFeature('requests') && requests != null;
 }
 
+class XtreamSessionSnapshot {
+  const XtreamSessionSnapshot._({
+    required UserCredentials? credentials,
+    required tz.Location serverLocation,
+    required bool isM3UEditor,
+  }) : _credentials = credentials,
+       _serverLocation = serverLocation,
+       _isM3UEditor = isM3UEditor;
+
+  final UserCredentials? _credentials;
+  final tz.Location _serverLocation;
+  final bool _isM3UEditor;
+}
+
 class XtreamService {
   XtreamService({XtreamTransport? transport, CacheService? cache})
     : _transport = transport ?? createDefaultXtreamTransport(),
@@ -314,6 +372,9 @@ class XtreamService {
   UserCredentials? _credentials;
   tz.Location _serverLocation = tz.UTC;
   bool _isM3UEditor = false;
+  final Generation _sessionGeneration = Generation();
+  final Generation _authenticationGeneration = Generation();
+  int _liveCategoryCacheSuppressions = 0;
 
   bool get isConfigured => _credentials != null;
 
@@ -323,7 +384,23 @@ class XtreamService {
 
   UserCredentials? get credentials => _credentials;
 
+  XtreamSessionSnapshot snapshotSession() => XtreamSessionSnapshot._(
+    credentials: _credentials,
+    serverLocation: _serverLocation,
+    isM3UEditor: _isM3UEditor,
+  );
+
+  void restoreSession(XtreamSessionSnapshot snapshot) {
+    _credentials = snapshot._credentials;
+    _serverLocation = snapshot._serverLocation;
+    _isM3UEditor = snapshot._isM3UEditor;
+    _sessionGeneration.advance();
+    _authenticationGeneration.advance();
+  }
+
   Future<XtreamAuthResponse> authenticate(UserCredentials credentials) async {
+    final authenticationGeneration = _authenticationGeneration.advance();
+    _sessionGeneration.advance();
     final normalized = credentials.normalized();
     final response = await _requestWithCredentials(
       normalized,
@@ -357,14 +434,13 @@ class XtreamService {
       );
     }
 
-    _credentials = normalized;
-    _isM3UEditor = true;
     final tzName =
         _stringOrNull(_asMap(json['server_info'])['timezone']) ?? 'UTC';
+    late final tz.Location serverLocation;
     try {
-      _serverLocation = tz.getLocation(tzName);
+      serverLocation = tz.getLocation(tzName);
     } on Exception catch (_) {
-      _serverLocation = tz.UTC;
+      serverLocation = tz.UTC;
     }
     final features = _asList(m3uEditor['features'])
         .map((feature) => '$feature')
@@ -382,7 +458,7 @@ class XtreamService {
     final requests = requestsJson is Map<String, dynamic>
         ? RequestsCapability.fromJson(requestsJson)
         : null;
-    return XtreamAuthResponse(
+    final authResponse = XtreamAuthResponse(
       isAuthenticated: true,
       status: status,
       m3uEditorVersion: '${m3uEditor['version'] ?? ''}',
@@ -391,16 +467,33 @@ class XtreamService {
       proxy: proxy,
       requests: requests,
     );
+    if (!_authenticationGeneration.isStale(authenticationGeneration)) {
+      _credentials = normalized;
+      _isM3UEditor = true;
+      _serverLocation = serverLocation;
+    }
+    return authResponse;
   }
 
   void clearCredentials() {
     _credentials = null;
     _isM3UEditor = false;
     _serverLocation = tz.UTC;
+    _sessionGeneration.advance();
+    _authenticationGeneration.advance();
   }
 
   Future<List<Category>> getLiveCategories() async =>
       _categories('get_live_categories');
+  Future<List<Category>> getLiveCategoriesUncached() async {
+    _liveCategoryCacheSuppressions += 1;
+    try {
+      return await getLiveCategories();
+    } finally {
+      _liveCategoryCacheSuppressions -= 1;
+    }
+  }
+
   Future<List<Category>> getVodCategories() async =>
       _categories('get_vod_categories');
   Future<List<Category>> getSeriesCategories() async =>
@@ -457,7 +550,20 @@ class XtreamService {
     DvrRecordingStatus? status,
     int? limit,
   }) async {
-    final response = await _request(
+    final params = {'status': ?status?.name, 'limit': ?limit?.toString()};
+    final response = await _request('get_dvr_recordings', params: params);
+    return _asList(response)
+        .map((item) => DvrRecording.fromXtream(_asMap(item)))
+        .toList(growable: false);
+  }
+
+  Future<List<DvrRecording>> getDvrRecordingsFor(
+    UserCredentials credentials, {
+    DvrRecordingStatus? status,
+    int? limit,
+  }) async {
+    final response = await _requestWithCredentials(
+      credentials,
       'get_dvr_recordings',
       params: {'status': ?status?.name, 'limit': ?limit?.toString()},
     );
@@ -467,10 +573,20 @@ class XtreamService {
   }
 
   Future<DvrRecording> getDvrRecording(String uuid) async {
-    final response = await _request(
+    // m3u-editor's XtreamApiController::getDvrRecording() reads
+    // `recording_id`, not `uuid`.
+    final params = {'recording_id': uuid};
+    final response = await _request('get_dvr_recording', params: params);
+    return DvrRecording.fromXtream(_asMap(response));
+  }
+
+  Future<DvrRecording> getDvrRecordingFor(
+    UserCredentials credentials,
+    String uuid,
+  ) async {
+    final response = await _requestWithCredentials(
+      credentials,
       'get_dvr_recording',
-      // m3u-editor's XtreamApiController::getDvrRecording() reads
-      // `recording_id`, not `uuid`.
       params: {'recording_id': uuid},
     );
     return DvrRecording.fromXtream(_asMap(response));
@@ -482,6 +598,16 @@ class XtreamService {
   /// and hide the feature rather than surfacing an error.
   Future<DvrStorageInfo> getDvrStorage() async {
     final response = await _request('get_dvr_storage');
+    return DvrStorageInfo.fromXtream(_asMap(response));
+  }
+
+  Future<DvrStorageInfo> getDvrStorageFor(
+    UserCredentials credentials,
+  ) async {
+    final response = await _requestWithCredentials(
+      credentials,
+      'get_dvr_storage',
+    );
     return DvrStorageInfo.fromXtream(_asMap(response));
   }
 
@@ -499,8 +625,23 @@ class XtreamService {
     required String title,
     required DateTime startTime,
     required DateTime endTime,
+  }) => scheduleDvrFor(
+    _requireCredentials(),
+    channelId: channelId,
+    title: title,
+    startTime: startTime,
+    endTime: endTime,
+  );
+
+  Future<int> scheduleDvrFor(
+    UserCredentials credentials, {
+    required int channelId,
+    required String title,
+    required DateTime startTime,
+    required DateTime endTime,
   }) async {
-    final response = await _request(
+    final response = await _requestWithCredentials(
+      credentials,
       'schedule_dvr',
       method: 'POST',
       body: {
@@ -531,8 +672,15 @@ class XtreamService {
   /// `{ success: true }` on success or HTTP 404 with `{ error }` if the
   /// recording is not found or no longer cancellable. Throws the standard
   /// request exception on failure so callers can surface the error message.
-  Future<void> cancelDvrRecording(String uuid) async {
-    final response = await _request(
+  Future<void> cancelDvrRecording(String uuid) =>
+      cancelDvrRecordingFor(_requireCredentials(), uuid);
+
+  Future<void> cancelDvrRecordingFor(
+    UserCredentials credentials,
+    String uuid,
+  ) async {
+    final response = await _requestWithCredentials(
+      credentials,
       'cancel_dvr_recording',
       method: 'POST',
       body: {'recording_id': uuid},
@@ -550,8 +698,15 @@ class XtreamService {
   /// Server returns `{ success: true }` on success or HTTP 404 with
   /// `{ error }` if the recording is not found or not in a deletable
   /// state. Throws the standard request exception on failure.
-  Future<void> deleteDvrRecording(String uuid) async {
-    final response = await _request(
+  Future<void> deleteDvrRecording(String uuid) =>
+      deleteDvrRecordingFor(_requireCredentials(), uuid);
+
+  Future<void> deleteDvrRecordingFor(
+    UserCredentials credentials,
+    String uuid,
+  ) async {
+    final response = await _requestWithCredentials(
+      credentials,
       'delete_dvr_recording',
       method: 'POST',
       body: {'recording_id': uuid},
@@ -572,8 +727,23 @@ class XtreamService {
     String? type,
     int page = 1,
     int perPage = 20,
+  }) => searchContentRequestsFor(
+    _requireCredentials(),
+    query,
+    type: type,
+    page: page,
+    perPage: perPage,
+  );
+
+  Future<List<ContentRequestSearchResult>> searchContentRequestsFor(
+    UserCredentials credentials,
+    String query, {
+    String? type,
+    int page = 1,
+    int perPage = 20,
   }) async {
-    final response = await _request(
+    final response = await _requestWithCredentials(
+      credentials,
       'request_search',
       params: {
         'query': query,
@@ -601,8 +771,23 @@ class XtreamService {
     required int integrationId,
     required String externalId,
     List<int>? seasons,
+  }) => submitContentRequestFor(
+    _requireCredentials(),
+    type: type,
+    integrationId: integrationId,
+    externalId: externalId,
+    seasons: seasons,
+  );
+
+  Future<MediaRequestSummary> submitContentRequestFor(
+    UserCredentials credentials, {
+    required String type,
+    required int integrationId,
+    required String externalId,
+    List<int>? seasons,
   }) async {
-    final response = await _request(
+    final response = await _requestWithCredentials(
+      credentials,
       'request_submit',
       method: 'POST',
       body: {
@@ -731,9 +916,20 @@ class XtreamService {
     await _request('get_viewers'),
   ).map((item) => Viewer.fromJson(_asMap(item))).toList(growable: false);
 
-  Future<Viewer> createViewer(String name) async => Viewer.fromJson(
+  Future<Viewer> createViewer(String name) =>
+      createViewerFor(_requireCredentials(), name);
+
+  Future<Viewer> createViewerFor(
+    UserCredentials credentials,
+    String name,
+  ) async => Viewer.fromJson(
     _asMap(
-      await _request('create_viewer', method: 'POST', body: {'name': name}),
+      await _requestWithCredentials(
+        credentials,
+        'create_viewer',
+        method: 'POST',
+        body: {'name': name},
+      ),
     ),
   );
 
@@ -976,12 +1172,155 @@ class XtreamService {
     return '${c.server}/series/${c.username}/${c.password}/$episodeId.$extension';
   }
 
+  /// Creates a persistent series recording rule on m3u-editor's
+  /// `create_dvr_series_rule` action.
+  ///
+  /// Returns the new rule's integer id, or `0` if the response did not include
+  /// one (treat as failure — callers should fall back to refreshing the rule
+  /// list before deciding whether the create succeeded).
+  ///
+  /// All optional parameters follow **omit-to-inherit**: when a value is
+  /// null the corresponding query key is dropped entirely so the server can
+  /// fall back to `dvr_setting.default_*` instead of overriding the user's
+  /// DVR settings with a guessed default.
+  ///
+  /// Throws [DvrSeriesRuleExistsException] (carrying the existing rule id
+  /// when the server included it) on the A3 duplicate-guard 409. Throws
+  /// any other [XtreamHttpException] unchanged.
+  Future<int> createDvrSeriesRule({
+    int? channelId,
+    required String title,
+    DvrMatchMode? matchMode,
+    DvrSeriesMode? seriesMode,
+    int? keepLast,
+    int? priority,
+    int? startEarlySeconds,
+    int? endLateSeconds,
+  }) async {
+    final params = <String, String>{
+      'title': title,
+      if (channelId != null) 'channel_id': '$channelId',
+      if (matchMode != null) 'match_mode': matchMode.wireValue,
+      if (seriesMode != null) 'series_mode': seriesMode.wireValue,
+      if (keepLast != null) 'keep_last': '$keepLast',
+      if (priority != null) 'priority': '$priority',
+      if (startEarlySeconds != null)
+        'start_early_seconds': '$startEarlySeconds',
+      if (endLateSeconds != null) 'end_late_seconds': '$endLateSeconds',
+    };
+    try {
+      final response = await _request(
+        'create_dvr_series_rule',
+        params: params,
+      );
+      final map = _asMap(response);
+      final id = map['rule_id'];
+      if (id is num) return id.toInt();
+      if (id is String) return int.tryParse(id) ?? 0;
+      return 0;
+    } on XtreamHttpException catch (error) {
+      if (error.statusCode != 409) rethrow;
+      final body = error.bodyJson;
+      final ruleId =
+          body is Map &&
+              body['rule_id'] is num &&
+              (body['duplicate'] == true || body['rule_id'] != null)
+          ? (body['rule_id'] as num).toInt()
+          : null;
+      throw DvrSeriesRuleExistsException(
+        error.serverMessage ?? 'Series rule already exists',
+        ruleId: ruleId,
+      );
+    }
+  }
+
+  /// Lists every active series recording rule for the current playlist via
+  /// m3u-editor's `list_dvr_series_rules` action.
+  Future<List<DvrSeriesRule>> listDvrSeriesRules() async =>
+      listDvrSeriesRulesFor(_requireCredentials());
+
+  Future<List<DvrSeriesRule>> listDvrSeriesRulesFor(
+    UserCredentials credentials,
+  ) async {
+    final response = await _requestWithCredentials(
+      credentials,
+      'list_dvr_series_rules',
+    );
+    return _asList(response)
+        .map((item) => DvrSeriesRule.fromXtream(_asMap(item)))
+        .toList(growable: false);
+  }
+
+  /// Deletes a series recording rule by integer id via m3u-editor's
+  /// `delete_dvr_series_rule` action.
+  Future<void> deleteDvrSeriesRule(int id) async {
+    await _request(
+      'delete_dvr_series_rule',
+      params: {'rule_id': '$id'},
+    );
+  }
+
+  /// Updates an existing series recording rule via m3u-editor's
+  /// `update_dvr_series_rule` action.
+  ///
+  /// Omit-to-inherit ON UPDATE differs from create: absent fields keep their
+  /// current value (they are never nulled out). Only fields the caller passes
+  /// here are sent. [channelId] is special — null means "any channel", so it is
+  /// always sent (as an empty value) to distinguish an explicit switch to
+  /// any-channel from "leave unchanged".
+  Future<void> updateDvrSeriesRule({
+    required int ruleId,
+    int? channelId,
+    DvrMatchMode? matchMode,
+    DvrSeriesMode? seriesMode,
+    int? keepLast,
+    int? priority,
+    int? startEarlySeconds,
+    int? endLateSeconds,
+  }) async {
+    final params = <String, String>{
+      'rule_id': '$ruleId',
+      if (channelId == null) 'channel_id': '' else 'channel_id': '$channelId',
+      if (matchMode != null) 'match_mode': matchMode.wireValue,
+      if (seriesMode != null) 'series_mode': seriesMode.wireValue,
+      if (keepLast != null) 'keep_last': '$keepLast',
+      if (priority != null) 'priority': '$priority',
+      if (startEarlySeconds != null)
+        'start_early_seconds': '$startEarlySeconds',
+      if (endLateSeconds != null) 'end_late_seconds': '$endLateSeconds',
+    };
+    await _request(
+      'update_dvr_series_rule',
+      params: params,
+    );
+  }
+
+  /// Searches EPG shows across the playlist's mapped channels via
+  /// m3u-editor's `search_epg_shows` action. Returns shows grouped by
+  /// normalized title, sorted by next-airing-first. Queries shorter than
+  /// two characters short-circuit to an empty list rather than hitting the
+  /// server.
+  Future<List<EpgShow>> searchEpgShows(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.length < 2) return const <EpgShow>[];
+    final response = await _request(
+      'search_epg_shows',
+      params: {'q': trimmed},
+    );
+    return _asList(
+      response,
+    ).map((item) => EpgShow.fromXtream(_asMap(item))).toList(growable: false);
+  }
+
   Future<List<Category>> _categories(String action) async {
+    final sessionGeneration = _sessionGeneration.current;
     final response = await _request(action);
     final categories = _asList(
       response,
     ).map((item) => Category.fromXtream(_asMap(item))).toList(growable: false);
-    if (action == 'get_live_categories') {
+    if (_liveCategoryCacheSuppressions == 0 &&
+        action == 'get_live_categories' &&
+        !_sessionGeneration.isStale(sessionGeneration)) {
       await _cache?.set('liveCategories', categories);
     }
     return categories;

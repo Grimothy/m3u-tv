@@ -133,7 +133,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
             ],
           ),
           Expanded(
-            child: TabBarView(
+            child: DpadTabBarView(
               controller: _tabController,
               children: [
                 SingleChildScrollView(

@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:dpad/dpad.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 /// A [TabBar] replacement that integrates with the D-pad focus system.
@@ -41,6 +44,56 @@ class DpadTabBar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A [TabBarView] that disables swipe-to-switch on desktop.
+///
+/// On desktop, a click-drag that starts on a right-aligned action button
+/// (e.g. a row action on the DVR Recordings screen) is picked up by
+/// [TabBarView]'s default [PageView] physics as a horizontal drag, so the
+/// page nudges left and snaps back before the click registers. Desktop
+/// users switch tabs by clicking [DpadTabBar] directly, so swipe gains
+/// nothing there. Touch and D-pad/TV navigation are unaffected — TV never
+/// drives this via mouse drag, and touch swipe is a primary affordance on
+/// mobile.
+class DpadTabBarView extends StatelessWidget {
+  const DpadTabBarView({
+    super.key,
+    required this.controller,
+    required this.children,
+  });
+
+  final TabController controller;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return TabBarView(
+      controller: controller,
+      physics: isDesktopPlatform(context)
+          ? const NeverScrollableScrollPhysics()
+          : const PageScrollPhysics(),
+      children: children,
+    );
+  }
+}
+
+/// True for mouse-and-keyboard desktop windows (Linux/macOS/Windows, not
+/// tvOS and not directional/D-pad navigation mode). Kept local rather than
+/// reusing `device_type_resolver.dart`'s `DeviceType` to avoid importing
+/// `app_shell.dart` transitively — the same import-cycle concern documented
+/// on `_useInlineRowActions` in `dvr_recordings_screen.dart`.
+bool isDesktopPlatform(BuildContext context) {
+  if (!kIsWeb && Platform.operatingSystem == 'tvos') return false;
+  if (MediaQuery.maybeNavigationModeOf(context) == NavigationMode.directional) {
+    return false;
+  }
+  return switch (defaultTargetPlatform) {
+    TargetPlatform.linux ||
+    TargetPlatform.macOS ||
+    TargetPlatform.windows => true,
+    _ => false,
+  };
 }
 
 class _DpadTab extends StatefulWidget {
