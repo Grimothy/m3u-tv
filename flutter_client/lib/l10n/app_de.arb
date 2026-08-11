@@ -43,6 +43,8 @@
   "liveTvRecording": "Aufnahme läuft",
   "liveTvFavorite": "Favorit",
   "liveTvRemoveFavorite": "Aus Favoriten entfernen",
+  "liveTvCatchupShows": "Catchup-Sendungen",
+  "catchupShowsEmpty": "Keine Catchup-Sendungen verfügbar",
   "catchupBadgeAvailable": "Catchup verfügbar",
   "catchupBadgeAvailableDays": "Catchup verfügbar: {days} Tage",
   "@catchupBadgeAvailableDays": {

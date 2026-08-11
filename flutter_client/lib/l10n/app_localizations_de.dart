@@ -101,6 +101,12 @@ class AppLocalizationsDe extends AppLocalizations {
   String get liveTvRemoveFavorite => 'Aus Favoriten entfernen';
 
   @override
+  String get liveTvCatchupShows => 'Catchup-Sendungen';
+
+  @override
+  String get catchupShowsEmpty => 'Keine Catchup-Sendungen verfügbar';
+
+  @override
   String get catchupBadgeAvailable => 'Catchup verfügbar';
 
   @override
