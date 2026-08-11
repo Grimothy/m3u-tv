@@ -113,8 +113,8 @@ class _CatchupShowsListState extends State<_CatchupShowsList> {
                   icon: Icons.play_circle_outline,
                   label: program.title,
                   subtitle:
-                      '${startFormat.format(program.start)} '
-                      '– ${endFormat.format(program.end)}',
+                      '${startFormat.format(program.start.toLocal())} '
+                      '– ${endFormat.format(program.end.toLocal())}',
                   autofocus: index == 0,
                   onTap: () => Navigator.of(context).pop(program),
                 );
