@@ -408,6 +408,59 @@ void main() {
         expect(counts['get_series'], 3);
       },
     );
+
+    test(
+      'push arriving while a flush is still in-flight (slow network) is '
+      'coalesced into the next loop iteration, not run as a concurrent '
+      'duplicate fetch',
+      () async {
+        // Regression test for a bug where a push landing mid-flush — its own
+        // debounce timer already cleared by the in-flight flush — started an
+        // independent second flush that issued a duplicate `get_series` call
+        // while the first was still awaiting. The fix makes
+        // `_flushDvrContentRefresh` loop internally instead, guarded by
+        // `_dvrContentRefreshFlushing`.
+        final fixture = _Fixture();
+        addTearDown(fixture.dispose);
+        expect(
+          await fixture.controller.connectXtream(_testCredentials),
+          isTrue,
+        );
+        await fixture.reverb.connected.future;
+
+        final hold = Completer<void>();
+        fixture.transport.holdSeries = hold;
+        fixture.transport.setSeries(<Series>[_postPushSeries]);
+
+        // Push A: debounce fires, flush starts, `get_series` call #2 begins
+        // and parks on `hold`.
+        fixture.reverb.simulateDvrStatus(
+          _recording(uuid: 'rec-a', status: 'completed', season: 1, episode: 1),
+        );
+        await _waitForDebounce();
+        expect(fixture.transport.actionCounts['get_series'], 2);
+
+        // Push B arrives while flush A is still parked. Its own debounce
+        // timer fires 1500ms later, well before `hold` is released below.
+        fixture.reverb.simulateDvrStatus(
+          _recording(uuid: 'rec-b', status: 'completed', season: 1, episode: 2),
+        );
+        await _waitForDebounce();
+
+        // Push B's timer fired, but `_dvrContentRefreshFlushing` was still
+        // true, so it must NOT have started a concurrent second fetch — the
+        // call count stays at 2 while flush A is still parked.
+        expect(fixture.transport.actionCounts['get_series'], 2);
+
+        // Release flush A. It resolves, sees push B's target still pending,
+        // and loops to fetch it — one more call, not a race with a second
+        // in-flight one.
+        hold.complete();
+        await pumpEventQueue();
+
+        expect(fixture.transport.actionCounts['get_series'], 3);
+      },
+    );
   });
 
   group('error handling and notifications', () {

@@ -352,6 +352,12 @@ class AppStateController extends ChangeNotifier {
   Timer? _dvrContentRefreshDebounce;
   Set<_DvrContentRefreshTarget> _dvrContentRefreshPending =
       const <_DvrContentRefreshTarget>{};
+  // Guards against a second flush starting while one is already awaiting its
+  // fetches. Without it, a push landing mid-flush (its debounce timer already
+  // cleared by the in-flight run) would start an independent flush and
+  // duplicate the network call instead of being coalesced into it — see the
+  // while-loop in [_flushDvrContentRefresh].
+  bool _dvrContentRefreshFlushing = false;
   static const _dvrContentRefreshDebounceDelay = Duration(milliseconds: 1500);
   // Cancelling the debounce timer in [dispose] only helps if it hasn't fired
   // yet. Once [_flushDvrContentRefresh] is in flight its awaits can outlive
@@ -1229,48 +1235,66 @@ class AppStateController extends ChangeNotifier {
   }
 
   Future<void> _flushDvrContentRefresh(bool Function() ownsWork) async {
-    if (_disposed || _dvrContentRefreshPending.isEmpty) return;
-    if (!ownsWork()) return;
-    final targets = _dvrContentRefreshPending;
-    _dvrContentRefreshPending = const <_DvrContentRefreshTarget>{};
-    _dvrContentRefreshDebounce = null;
+    // A flush is already looping (see below) and will pick up whatever this
+    // call just merged into `_dvrContentRefreshPending` on its next
+    // iteration — starting a second, concurrent flush here would duplicate
+    // the network calls the first one is already making.
+    if (_dvrContentRefreshFlushing) return;
+    _dvrContentRefreshFlushing = true;
+    try {
+      // Loop rather than flushing once: a push that lands while this flush is
+      // awaiting its fetches merges into `_dvrContentRefreshPending` with no
+      // timer to pick it up (this flush already consumed and nulled it), so
+      // it must be handled before this method returns.
+      while (true) {
+        if (_disposed || _dvrContentRefreshPending.isEmpty) return;
+        if (!ownsWork()) return;
+        final targets = _dvrContentRefreshPending;
+        _dvrContentRefreshPending = const <_DvrContentRefreshTarget>{};
+        _dvrContentRefreshDebounce?.cancel();
+        _dvrContentRefreshDebounce = null;
 
-    var mutated = false;
-    if (targets.contains(_DvrContentRefreshTarget.vod)) {
-      if (await _refreshVodAfterDvr(ownsWork)) mutated = true;
+        final results = await Future.wait<bool>(<Future<bool>>[
+          if (targets.contains(_DvrContentRefreshTarget.vod))
+            _refreshContentAfterDvr<List<VodItem>>(
+              fetch: xtreamService.getVodStreams,
+              apply: (next) => _vodItems = next,
+              ownsWork: ownsWork,
+              label: 'VOD',
+            ),
+          if (targets.contains(_DvrContentRefreshTarget.series))
+            _refreshContentAfterDvr<List<Series>>(
+              fetch: xtreamService.getSeries,
+              apply: (next) => _seriesList = next,
+              ownsWork: ownsWork,
+              label: 'series',
+            ),
+        ]);
+        if (_disposed || !ownsWork()) return;
+        if (results.contains(true)) notifyListeners();
+      }
+    } finally {
+      _dvrContentRefreshFlushing = false;
     }
-    if (targets.contains(_DvrContentRefreshTarget.series)) {
-      if (await _refreshSeriesAfterDvr(ownsWork)) mutated = true;
-    }
-    if (_disposed || !ownsWork()) return;
-    if (mutated) notifyListeners();
   }
 
-  Future<bool> _refreshVodAfterDvr(bool Function() ownsWork) async {
+  Future<bool> _refreshContentAfterDvr<T>({
+    required Future<T> Function() fetch,
+    required void Function(T next) apply,
+    required bool Function() ownsWork,
+    required String label,
+  }) async {
     try {
-      final next = await xtreamService.getVodStreams();
+      final next = await fetch();
       if (!ownsWork() || _disposed) return false;
-      _vodItems = next;
-      // No cache write here — dev commits `vodStreams` only as part of the
-      // whole-bundle guarded replace in `_sourceReplacementQueue`. A
+      apply(next);
+      // No cache write here — dev commits `vodStreams`/`series` only as part
+      // of the whole-bundle guarded replace in `_sourceReplacementQueue`. A
       // per-key partial write would risk persisting another account's
       // library if the ownership predicate goes stale mid-fetch.
       return true;
     } on Object catch (error) {
-      debugPrint('DVR: refresh VOD after post-processing failed: $error');
-      return false;
-    }
-  }
-
-  Future<bool> _refreshSeriesAfterDvr(bool Function() ownsWork) async {
-    try {
-      final next = await xtreamService.getSeries();
-      if (!ownsWork() || _disposed) return false;
-      _seriesList = next;
-      // See [_refreshVodAfterDvr] for why no cache write here.
-      return true;
-    } on Object catch (error) {
-      debugPrint('DVR: refresh series after post-processing failed: $error');
+      debugPrint('DVR: refresh $label after post-processing failed: $error');
       return false;
     }
   }
