@@ -741,6 +741,203 @@ void main() {
       },
     );
   });
+
+  group('Active-recordings reconnect reconciliation', () {
+    // _refreshActiveDvrRecordings is the reconnect-time recovery path for a
+    // missed DVR status push: it must repair both _recordingChannelIds (the
+    // live-channel dot) AND _dvrRecordings (the list backing the Recordings
+    // screen and EPG badges). The bare-transport default returns [] for
+    // get_dvr_recordings, so each test below seeds the two filtered buckets
+    // (no status, status=recording) and inspects both controller fields.
+    Map<String, Object?> dvrRecordingsJson({
+      required String uuid,
+      required String status,
+      int? channelId,
+      String channelName = 'Channel A',
+      String title = 'Recording',
+    }) {
+      final json = <String, Object?>{
+        'uuid': uuid,
+        'title': title,
+        'status': status,
+      };
+      if (channelId != null) json['channel_id'] = channelId;
+      json['channel_name'] = channelName;
+      return json;
+    }
+
+    test(
+      'a) Scheduled recording flips to Recording on reconnect (REGRESSION)',
+      () async {
+        final fixture = _Fixture();
+        addTearDown(fixture.dispose);
+        // Initial state from the connect-time `get_dvr_recordings` (no
+        // status filter): one Scheduled recording on channel 42.
+        fixture.transport.setDvrRecordingsAll(<Map<String, Object?>>[
+          dvrRecordingsJson(
+            uuid: 'rec-flip',
+            status: 'scheduled',
+            channelId: 42,
+          ),
+        ]);
+        // Reconnect-time active fetch (status=recording): the server now
+        // reports the SAME recording as Recording.
+        fixture.transport.setDvrRecordingsActive(<Map<String, Object?>>[
+          dvrRecordingsJson(
+            uuid: 'rec-flip',
+            status: 'recording',
+            channelId: 42,
+          ),
+        ]);
+
+        expect(
+          await fixture.controller.connectXtream(_testCredentials),
+          isTrue,
+        );
+        await fixture.reverb.connected.future;
+
+        // Pre-refresh sanity: state is what the connect seeded.
+        expect(fixture.controller.dvrRecordings, hasLength(1));
+        expect(
+          fixture.controller.dvrRecordings.single.status,
+          DvrRecordingStatus.scheduled,
+        );
+        // (Note: _recordingChannelIds already contains 42 here, because the
+        // connect-time fetch also ran isInProgress filtering and 42 was
+        // filtered. Test (a)'s distinguishing power is the dvrRecordings
+        // status flip — not the channel id.)
+
+        // Drive the reconnect reconciliation explicitly. The harness's
+        // _RecordingReverbService does NOT fire the onConnected callback,
+        // so the production code's own unawaited _refreshActiveDvrRecordings
+        // has not yet run. Calling it directly is the same code path.
+        await fixture.controller.refreshActiveDvrRecordings();
+
+        // BOTH _recordingChannelIds and the entry in _dvrRecordings must
+        // now reflect Recording — this is the regression test: pre-fix, the
+        // active reconcile patched only the channel-ids set and left the
+        // dvrRecordings entry stuck on Scheduled.
+        expect(
+          fixture.controller.dvrRecordings.single.uuid,
+          'rec-flip',
+        );
+        expect(
+          fixture.controller.dvrRecordings.single.status,
+          DvrRecordingStatus.recording,
+        );
+        // Channel id parity: the dot is on, and the entry points at the
+        // same channel. _recordingChannelIds is private but observable via
+        // the public EPG channel map; assert via dvrRecordings instead.
+        expect(
+          fixture.controller.dvrRecordings.single.channelId,
+          42,
+        );
+      },
+    );
+
+    test(
+      'b) Already-Recording entry causes no splice and no notifyListeners',
+      () async {
+        final fixture = _Fixture();
+        addTearDown(fixture.dispose);
+        // Connect-time state: one recording already in Recording status.
+        fixture.transport.setDvrRecordingsAll(<Map<String, Object?>>[
+          dvrRecordingsJson(
+            uuid: 'rec-unchanged',
+            status: 'recording',
+            channelId: 7,
+          ),
+        ]);
+        // Reconnect-time active fetch: SAME uuid, SAME status. Nothing
+        // should change.
+        fixture.transport.setDvrRecordingsActive(<Map<String, Object?>>[
+          dvrRecordingsJson(
+            uuid: 'rec-unchanged',
+            status: 'recording',
+            channelId: 7,
+          ),
+        ]);
+
+        expect(
+          await fixture.controller.connectXtream(_testCredentials),
+          isTrue,
+        );
+        await fixture.reverb.connected.future;
+
+        // Wire a notify-count spy. attach it BEFORE refreshActive so we
+        // catch every notification fired by the function and its awaits.
+        var notifyCount = 0;
+        fixture.controller.addListener(() => notifyCount++);
+
+        await fixture.controller.refreshActiveDvrRecordings();
+
+        // Allow any trailing microtasks to settle so an erroneous late
+        // notify would be caught.
+        await pumpEventQueue();
+        await pumpEventQueue();
+
+        expect(
+          notifyCount,
+          0,
+          reason:
+              'No notifyListeners() must fire when _recordingChannelIds was '
+              'already correct AND _mergeActiveDvrRecordings returns null '
+              '(no status disagreement, no new uuids). A test that only '
+              'checked end-state would pass even if every reconcile '
+              'notifyed unnecessarily.',
+        );
+        // End-state sanity (defence in depth).
+        expect(fixture.controller.dvrRecordings, hasLength(1));
+        expect(
+          fixture.controller.dvrRecordings.single.status,
+          DvrRecordingStatus.recording,
+        );
+      },
+    );
+
+    test(
+      'c) Recording in active fetch but unknown to _dvrRecordings is '
+      'inserted, not dropped',
+      () async {
+        final fixture = _Fixture();
+        addTearDown(fixture.dispose);
+        // Connect-time state: empty — the controller knows of no recordings.
+        // (Default dvrRecordingsAll = []; default dvrRecordingsActive = []).
+        // Reconnect-time active fetch: a single recording the controller has
+        // never seen. This models "first connect racing a push" — the push
+        // path never ran for this recording, and connect-time fetch
+        // returned it under a status other than `recording` so it was
+        // missed there too.
+        fixture.transport.setDvrRecordingsActive(<Map<String, Object?>>[
+          dvrRecordingsJson(
+            uuid: 'rec-new',
+            status: 'recording',
+            channelId: 11,
+          ),
+        ]);
+
+        expect(
+          await fixture.controller.connectXtream(_testCredentials),
+          isTrue,
+        );
+        await fixture.reverb.connected.future;
+        expect(fixture.controller.dvrRecordings, isEmpty);
+
+        await fixture.controller.refreshActiveDvrRecordings();
+
+        expect(fixture.controller.dvrRecordings, hasLength(1));
+        expect(fixture.controller.dvrRecordings.single.uuid, 'rec-new');
+        expect(
+          fixture.controller.dvrRecordings.single.status,
+          DvrRecordingStatus.recording,
+        );
+        expect(fixture.controller.dvrRecordings.single.channelId, 11);
+        // Insertion convention: unknown uuid is inserted at index 0,
+        // matching _refreshDvrRecordingDetail's existing pattern.
+        expect(fixture.controller.dvrRecordings.first.uuid, 'rec-new');
+      },
+    );
+  });
 }
 
 class _Fixture {
@@ -844,9 +1041,27 @@ class _RecordingXtreamTransport {
   bool failVodNext = false;
   bool failSeriesNext = false;
 
+  /// `get_dvr_recordings` response when called with no status filter
+  /// (the connect-time fetch). Default empty — tests in the reconnect-
+  /// reconciliation group override per-test.
+  List<Map<String, Object?>> _dvrRecordingsAll = const <Map<String, Object?>>[];
+
+  /// `get_dvr_recordings` response when called with status=recording
+  /// (the reconnect-time active-fetch). Default empty.
+  List<Map<String, Object?>> _dvrRecordingsActive =
+      const <Map<String, Object?>>[];
+
   /// When set, `get_series` awaits this before returning, letting a test
   /// hold the refresh open and dispose the controller mid-flight.
   Completer<void>? holdSeries;
+
+  void setDvrRecordingsAll(List<Map<String, Object?>> items) {
+    _dvrRecordingsAll = List<Map<String, Object?>>.from(items);
+  }
+
+  void setDvrRecordingsActive(List<Map<String, Object?>> items) {
+    _dvrRecordingsActive = List<Map<String, Object?>>.from(items);
+  }
 
   void setVodItems(List<VodItem> items) {
     _vodItems = items
@@ -884,7 +1099,15 @@ class _RecordingXtreamTransport {
       case 'auth':
         return <String, Object?>{
           'user_info': <String, Object?>{'auth': 1, 'status': 'Active'},
-          'm3u_editor': <String, Object?>{'version': '0.10.0'},
+          'm3u_editor': <String, Object?>{
+            'version': '0.10.0',
+            // Enables AppStateController.hasDvrFeature so the connect-time
+            // fetch populates _dvrRecordings. Without this the controller
+            // short-circuits the DVR fetch at the feature-gate (line 2193)
+            // and leaves _dvrRecordings empty — which makes the reconnect-
+            // reconciliation tests below blind to their own state.
+            'features': <String>['dvr'],
+          },
         };
       case 'get_live_categories':
       case 'get_vod_categories':
@@ -926,8 +1149,23 @@ class _RecordingXtreamTransport {
         return <String, Object?>{..._defaultDvrDetail};
       case 'get_epg_batch':
         return <String, Object?>{};
+      case 'get_dvr_storage':
+        // The connect flow now calls refreshDvrStorage() (because
+        // features: ['dvr'] is enabled). Return an empty/unlimited scope so
+        // the helper returns false and the controller's _dvrStorageInfo
+        // stays null — the existing tests don't assert on storage state.
+        return <String, Object?>{
+          'used_bytes': 0,
+          'quota_bytes': null,
+          'percent_used': null,
+          'recording_count': 0,
+          'scope': 'account',
+        };
       case 'get_dvr_recordings':
-        return const <Object?>[];
+        if (request.params['status'] == 'recording') {
+          return List<Map<String, Object?>>.from(_dvrRecordingsActive);
+        }
+        return List<Map<String, Object?>>.from(_dvrRecordingsAll);
       default:
         throw StateError('No fixture for $action');
     }
