@@ -1896,6 +1896,36 @@ class AppStateController extends ChangeNotifier {
         .toSet();
   }
 
+  /// Splices freshly-fetched `active` (status=recording) entries into
+  /// `_dvrRecordings` by uuid — inserting one this list doesn't know about
+  /// yet, replacing one whose locally-known status disagrees with the
+  /// server's. Returns null when every entry already matches, so a caller
+  /// that finds nothing new doesn't force a `dvrRecordingsProvider` rebuild.
+  ///
+  /// This exists because [_onDvrStatusPush] is the only other writer of
+  /// `_dvrRecordings`, and it only runs for pushes actually received. A
+  /// `Scheduled -> Recording` push missed while disconnected previously left
+  /// `_dvrRecordings` stuck on `Scheduled` even after `_recordingChannelIds`
+  /// self-healed via this same function — the DVR Recordings screen and EPG
+  /// recording badges (#185) are both backed by `_dvrRecordings`, not
+  /// `_recordingChannelIds`.
+  List<DvrRecording>? _mergeActiveDvrRecordings(List<DvrRecording> active) {
+    List<DvrRecording>? next;
+    for (final recording in active) {
+      final source = next ?? _dvrRecordings;
+      final index = source.indexWhere((r) => r.uuid == recording.uuid);
+      if (index >= 0) {
+        if (source[index].status == recording.status) continue;
+        next ??= [..._dvrRecordings];
+        next[index] = recording;
+      } else {
+        next ??= [..._dvrRecordings];
+        next.insert(0, recording);
+      }
+    }
+    return next;
+  }
+
   /// Cancels a scheduled or in-progress DVR recording, keeping it in the
   /// local list with its refreshed (Cancelled) status — the server itself
   /// only marks the row cancelled and keeps history; deleting it is a
@@ -1994,10 +2024,15 @@ class AppStateController extends ChangeNotifier {
         limit: 200,
       );
       if (!ownsWork()) return;
+
       final ids = _extractRecordingChannelIds(active);
-      if (setEquals(_recordingChannelIds, ids)) return;
+      final idsChanged = !setEquals(_recordingChannelIds, ids);
+      final merged = _mergeActiveDvrRecordings(active);
+
+      if (!idsChanged && merged == null) return;
       if (!ownsWork()) return;
-      _recordingChannelIds = ids;
+      if (idsChanged) _recordingChannelIds = ids;
+      if (merged != null) _dvrRecordings = merged;
       if (!ownsWork()) return;
       notifyListeners();
     } on Object catch (error) {
