@@ -30,6 +30,12 @@ import 'package:m3u_tv/services/xtream_service.dart';
 
 enum AppSourceType { none, xtream }
 
+/// Which content lists need to be re-fetched after a DVR recording finishes
+/// post-processing so its upserted VOD/episode surfaces in the UI. Private
+/// to this file — only the debounce/coalesce machinery in [AppStateController]
+/// reasons about it.
+enum _DvrContentRefreshTarget { vod, series }
+
 typedef MediaRequestOwner = ({
   int sourceGeneration,
   int notificationGeneration,
@@ -346,6 +352,25 @@ class AppStateController extends ChangeNotifier {
   int _epgRequestGeneration = 0;
   static const _epgPrimeCount = 60;
   static const _epgFetchDebounceDelay = Duration(milliseconds: 250);
+  // Coalesce multiple DVR post-processing pushes that land in quick
+  // succession (e.g. several recordings finishing back-to-back) into a
+  // single re-fetch of VOD/Series. Mirrors the [_epgFetchDebounce] pattern.
+  Timer? _dvrContentRefreshDebounce;
+  Set<_DvrContentRefreshTarget> _dvrContentRefreshPending =
+      const <_DvrContentRefreshTarget>{};
+  // Guards against a second flush starting while one is already awaiting its
+  // fetches. Without it, a push landing mid-flush (its debounce timer already
+  // cleared by the in-flight run) would start an independent flush and
+  // duplicate the network call instead of being coalesced into it — see the
+  // while-loop in [_flushDvrContentRefresh].
+  bool _dvrContentRefreshFlushing = false;
+  static const _dvrContentRefreshDebounceDelay = Duration(milliseconds: 1500);
+  // Cancelling the debounce timer in [dispose] only helps if it hasn't fired
+  // yet. Once [_flushDvrContentRefresh] is in flight its awaits can outlive
+  // us, and it runs from a fire-and-forget Timer callback, so a
+  // notifyListeners() on a disposed notifier would surface as an unhandled
+  // async error rather than being caught anywhere.
+  bool _disposed = false;
 
   AppSourceType get sourceType => _sourceType;
   bool get isBootstrapping => _isBootstrapping;
@@ -1168,8 +1193,115 @@ class AppStateController extends ChangeNotifier {
       _dvrRecordings = next;
       if (!ownsWork()) return;
       notifyListeners();
+
+      // When a recording lands in `completed` or `postProcessing`, the server
+      // has just upserted it as a VOD movie or series episode. Re-fetch the
+      // affected list(s) so the new item appears in Movies / Series / Home
+      // without requiring a full reconnect — fixes #179.
+      if (detail.status == DvrRecordingStatus.completed ||
+          detail.status == DvrRecordingStatus.postProcessing) {
+        _scheduleDvrContentRefresh(_classifyContentTargets(detail), ownsWork);
+      }
     } on Object catch (error) {
       debugPrint('DVR: refresh recording detail after push failed: $error');
+    }
+  }
+
+  /// Decide which content lists to refresh for a finished recording. A
+  /// recording with both a season and episode number is unambiguously a
+  /// series episode; everything else (movies, one-offs, or server payloads
+  /// that omit season/episode metadata) falls back to refreshing both lists
+  /// — the issue permits over-refresh, never under-refresh.
+  Set<_DvrContentRefreshTarget> _classifyContentTargets(
+    DvrRecording recording,
+  ) {
+    if (recording.seasonNumber != null && recording.episodeNumber != null) {
+      return const <_DvrContentRefreshTarget>{_DvrContentRefreshTarget.series};
+    }
+    return const <_DvrContentRefreshTarget>{
+      _DvrContentRefreshTarget.vod,
+      _DvrContentRefreshTarget.series,
+    };
+  }
+
+  void _scheduleDvrContentRefresh(
+    Set<_DvrContentRefreshTarget> targets,
+    bool Function() ownsWork,
+  ) {
+    if (targets.isEmpty) return;
+    _dvrContentRefreshPending = <_DvrContentRefreshTarget>{
+      ..._dvrContentRefreshPending,
+      ...targets,
+    };
+    _dvrContentRefreshDebounce?.cancel();
+    _dvrContentRefreshDebounce = Timer(
+      _dvrContentRefreshDebounceDelay,
+      () => _flushDvrContentRefresh(ownsWork),
+    );
+  }
+
+  Future<void> _flushDvrContentRefresh(bool Function() ownsWork) async {
+    // A flush is already looping (see below) and will pick up whatever this
+    // call just merged into `_dvrContentRefreshPending` on its next
+    // iteration — starting a second, concurrent flush here would duplicate
+    // the network calls the first one is already making.
+    if (_dvrContentRefreshFlushing) return;
+    _dvrContentRefreshFlushing = true;
+    try {
+      // Loop rather than flushing once: a push that lands while this flush is
+      // awaiting its fetches merges into `_dvrContentRefreshPending` with no
+      // timer to pick it up (this flush already consumed and nulled it), so
+      // it must be handled before this method returns.
+      while (true) {
+        if (_disposed || _dvrContentRefreshPending.isEmpty) return;
+        if (!ownsWork()) return;
+        final targets = _dvrContentRefreshPending;
+        _dvrContentRefreshPending = const <_DvrContentRefreshTarget>{};
+        _dvrContentRefreshDebounce?.cancel();
+        _dvrContentRefreshDebounce = null;
+
+        final results = await Future.wait<bool>(<Future<bool>>[
+          if (targets.contains(_DvrContentRefreshTarget.vod))
+            _refreshContentAfterDvr<List<VodItem>>(
+              fetch: xtreamService.getVodStreams,
+              apply: (next) => _vodItems = next,
+              ownsWork: ownsWork,
+              label: 'VOD',
+            ),
+          if (targets.contains(_DvrContentRefreshTarget.series))
+            _refreshContentAfterDvr<List<Series>>(
+              fetch: xtreamService.getSeries,
+              apply: (next) => _seriesList = next,
+              ownsWork: ownsWork,
+              label: 'series',
+            ),
+        ]);
+        if (_disposed || !ownsWork()) return;
+        if (results.contains(true)) notifyListeners();
+      }
+    } finally {
+      _dvrContentRefreshFlushing = false;
+    }
+  }
+
+  Future<bool> _refreshContentAfterDvr<T>({
+    required Future<T> Function() fetch,
+    required void Function(T next) apply,
+    required bool Function() ownsWork,
+    required String label,
+  }) async {
+    try {
+      final next = await fetch();
+      if (!ownsWork() || _disposed) return false;
+      apply(next);
+      // No cache write here — dev commits `vodStreams`/`series` only as part
+      // of the whole-bundle guarded replace in `_sourceReplacementQueue`. A
+      // per-key partial write would risk persisting another account's
+      // library if the ownership predicate goes stale mid-fetch.
+      return true;
+    } on Object catch (error) {
+      debugPrint('DVR: refresh $label after post-processing failed: $error');
+      return false;
     }
   }
 
@@ -2761,8 +2893,10 @@ class AppStateController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _epgRequestGeneration += 1;
     _epgFetchDebounce?.cancel();
+    _dvrContentRefreshDebounce?.cancel();
     _pushTokenSubscription?.cancel().ignore();
     unawaited(_tvNotificationController.close());
     unawaited(_notificationActivationController.close());
