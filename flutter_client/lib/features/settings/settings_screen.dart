@@ -928,10 +928,6 @@ class _ConnectedViewState extends State<_ConnectedView>
         ),
         const SizedBox(height: 20),
 
-        if (widget.viewSettingsService != null)
-          _ViewSettingsSection(service: widget.viewSettingsService!),
-        if (widget.viewSettingsService != null) const SizedBox(height: 20),
-
         _SettingsSection(
           title: l.settingsApp,
           child: const _AppVersionCard(),
@@ -1012,43 +1008,57 @@ class _ConnectedViewState extends State<_ConnectedView>
         if (widget.activeViewer != null) ...[
           _SettingsSection(
             title: l.settingsActiveViewer,
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  backgroundColor: theme.colorScheme.primary,
-                  child: Text(
-                    widget.activeViewer!.name.isNotEmpty
-                        ? widget.activeViewer!.name[0].toUpperCase()
-                        : '?',
-                    style: TextStyle(color: theme.colorScheme.onPrimary),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.activeViewer!.name,
-                        style: theme.textTheme.titleMedium,
+                Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: theme.colorScheme.primary,
+                      child: Text(
+                        widget.activeViewer!.name.isNotEmpty
+                            ? widget.activeViewer!.name[0].toUpperCase()
+                            : '?',
+                        style: TextStyle(color: theme.colorScheme.onPrimary),
                       ),
-                      if (widget.activeViewer!.isAdmin)
-                        Text(
-                          l.admin,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.activeViewer!.name,
+                            style: theme.textTheme.titleMedium,
                           ),
-                        ),
-                    ],
-                  ),
+                          if (widget.activeViewer!.isAdmin)
+                            Text(
+                              l.admin,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                AppButton(
-                  label: AppLocalizations.of(context).settingsManageViewers,
-                  onPressed: () => _openViewerManagement(context),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    label: AppLocalizations.of(context).settingsManageViewers,
+                    onPressed: () => _openViewerManagement(context),
+                  ),
                 ),
               ],
             ),
           ),
+          const SizedBox(height: 20),
+        ],
+
+        if (widget.viewSettingsService != null) ...[
+          _ViewSettingsSection(service: widget.viewSettingsService!),
           const SizedBox(height: 20),
         ],
 
@@ -1117,33 +1127,36 @@ class _ConnectedViewState extends State<_ConnectedView>
             subtitle: l.settingsDvrSubtitle,
             child: ListenableBuilder(
               listenable: widget.comskipSettings!,
-              builder: (context, _) => Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(l.settingsComskip, style: theme.textTheme.titleSmall),
-                  const SizedBox(height: 4),
-                  Text(
-                    l.settingsComskipSubtitle,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+              builder: (context, _) => SizedBox(
+                width: double.infinity,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(l.settingsComskip, style: theme.textTheme.titleSmall),
+                    const SizedBox(height: 4),
+                    Text(
+                      l.settingsComskipSubtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      _IntervalChip(
-                        label: l.settingsComskipAutoSkip,
-                        isSelected: widget.comskipSettings!.autoSkipEnabled,
-                        onTap: () => unawaited(
-                          widget.comskipSettings!.setAutoSkipEnabled(
-                            enabled: !widget.comskipSettings!.autoSkipEnabled,
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        _IntervalChip(
+                          label: l.settingsComskipAutoSkip,
+                          isSelected: widget.comskipSettings!.autoSkipEnabled,
+                          onTap: () => unawaited(
+                            widget.comskipSettings!.setAutoSkipEnabled(
+                              enabled: !widget.comskipSettings!.autoSkipEnabled,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -2097,59 +2110,64 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
     final l = AppLocalizations.of(context);
     return _SettingsSection(
       title: l.settingsView,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            l.settingsLiveTvLayout,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            children: [
-              _IntervalChip(
-                label: l.settingsLiveTvLayoutList,
-                isSelected: _liveTvLayout == LiveTvLayout.list,
-                onTap: () => widget.service.setLiveTvLayout(LiveTvLayout.list),
-              ),
-              _IntervalChip(
-                label: l.settingsLiveTvLayoutGrid,
-                isSelected: _liveTvLayout == LiveTvLayout.grid,
-                onTap: () => widget.service.setLiveTvLayout(LiveTvLayout.grid),
-              ),
-              _IntervalChip(
-                label: l.settingsLiveTvLayoutTimeline,
-                isSelected: _liveTvLayout == LiveTvLayout.timeline,
-                onTap: () =>
-                    widget.service.setLiveTvLayout(LiveTvLayout.timeline),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            l.settingsEpgStartView,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            children: [
-              _IntervalChip(
-                label: l.settingsEpgStartViewCurrentTime,
-                isSelected: _epgStartView == EpgStartView.currentTime,
-                onTap: () =>
-                    widget.service.setEpgStartView(EpgStartView.currentTime),
-              ),
-              _IntervalChip(
-                label: l.settingsEpgStartViewPrimeTime,
-                isSelected: _epgStartView == EpgStartView.primeTime,
-                onTap: () =>
-                    widget.service.setEpgStartView(EpgStartView.primeTime),
-              ),
-            ],
-          ),
-        ],
+      child: SizedBox(
+        width: double.infinity,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              l.settingsLiveTvLayout,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                _IntervalChip(
+                  label: l.settingsLiveTvLayoutList,
+                  isSelected: _liveTvLayout == LiveTvLayout.list,
+                  onTap: () =>
+                      widget.service.setLiveTvLayout(LiveTvLayout.list),
+                ),
+                _IntervalChip(
+                  label: l.settingsLiveTvLayoutGrid,
+                  isSelected: _liveTvLayout == LiveTvLayout.grid,
+                  onTap: () =>
+                      widget.service.setLiveTvLayout(LiveTvLayout.grid),
+                ),
+                _IntervalChip(
+                  label: l.settingsLiveTvLayoutTimeline,
+                  isSelected: _liveTvLayout == LiveTvLayout.timeline,
+                  onTap: () =>
+                      widget.service.setLiveTvLayout(LiveTvLayout.timeline),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              l.settingsEpgStartView,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                _IntervalChip(
+                  label: l.settingsEpgStartViewCurrentTime,
+                  isSelected: _epgStartView == EpgStartView.currentTime,
+                  onTap: () =>
+                      widget.service.setEpgStartView(EpgStartView.currentTime),
+                ),
+                _IntervalChip(
+                  label: l.settingsEpgStartViewPrimeTime,
+                  isSelected: _epgStartView == EpgStartView.primeTime,
+                  onTap: () =>
+                      widget.service.setEpgStartView(EpgStartView.primeTime),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
