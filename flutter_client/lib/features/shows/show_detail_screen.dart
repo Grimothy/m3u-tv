@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +12,8 @@ import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/dvr_action_dialogs.dart';
+import 'package:m3u_tv/shared/dvr_schedule_feedback.dart';
+import 'package:m3u_tv/shared/leading_tile.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
 /// Detail screen for a single EPG show. Receives the [EpgShow] as the route
@@ -26,6 +30,7 @@ class ShowDetailScreen extends ConsumerStatefulWidget {
     required this.show,
     this.onRecordSeries,
     this.onDeleteSeriesRule,
+    this.onScheduleEpisode,
   });
 
   final EpgShow show;
@@ -52,12 +57,44 @@ class ShowDetailScreen extends ConsumerStatefulWidget {
   /// invoked when [ShowDetailScreen] detects an existing rule for this show.
   final Future<void> Function(DvrSeriesRule rule)? onDeleteSeriesRule;
 
+  /// Schedules a single DVR airing for one episode row. Wired by AppShell
+  /// against `AppStateController.scheduleDvrAiring`. Null hides the per-row
+  /// Record affordance (screen still works unwired, same convention as
+  /// [onRecordSeries]).
+  final Future<DvrRecording?> Function(EpgShowEpisode episode)?
+  onScheduleEpisode;
+
   @override
   ConsumerState<ShowDetailScreen> createState() => _ShowDetailScreenState();
 }
 
 class _ShowDetailScreenState extends ConsumerState<ShowDetailScreen> {
   bool _isSubmitting = false;
+
+  /// In-flight per-row schedule requests, keyed by
+  /// `channelId|startTime` so same-title airings on different channels (or
+  /// the same channel at different times) are tracked independently. Guards
+  /// against double-tap double-scheduling while the request is in flight.
+  final Set<String> _submittingEpisodeKeys = {};
+
+  Future<void> _scheduleEpisode(EpgShowEpisode episode) async {
+    final handler = widget.onScheduleEpisode;
+    if (handler == null) return;
+    final episodeKey = _episodeRecordKey(episode);
+    if (_submittingEpisodeKeys.contains(episodeKey)) return;
+    setState(() => _submittingEpisodeKeys.add(episodeKey));
+    try {
+      await scheduleDvrWithFeedback(
+        context,
+        schedule: () => handler(episode),
+        title: episode.title,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _submittingEpisodeKeys.remove(episodeKey));
+      }
+    }
+  }
 
   DvrSeriesRule? _findExistingRule(List<DvrSeriesRule> rules) {
     final ruleId = widget.show.seriesRuleId;
@@ -240,14 +277,31 @@ class _ShowDetailScreenState extends ConsumerState<ShowDetailScreen> {
               ),
             ),
             const SizedBox(height: MediaBrowsingMetrics.itemGap),
-            ...show.recentEpisodes.map(
-              (episode) => Padding(
-                padding: const EdgeInsets.only(
-                  bottom: MediaBrowsingMetrics.chipGap,
+            if (show.recentEpisodes.isEmpty)
+              Center(
+                child: Text(
+                  l10n.showAiringNone,
+                  style: theme.textTheme.bodyLarge,
                 ),
-                child: _EpisodeRow(episode: episode, localeTag: localized),
+              )
+            else
+              ...show.recentEpisodes.map(
+                (episode) => Padding(
+                  padding: const EdgeInsets.only(
+                    bottom: MediaBrowsingMetrics.itemGap,
+                  ),
+                  child: _EpisodeRow(
+                    episode: episode,
+                    localeTag: localized,
+                    onScheduleEpisode: widget.onScheduleEpisode == null
+                        ? null
+                        : _scheduleEpisode,
+                    isScheduling: _submittingEpisodeKeys.contains(
+                      _episodeRecordKey(episode),
+                    ),
+                  ),
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -284,9 +338,9 @@ class _Header extends StatelessWidget {
   final VoidCallback onOpenOptions;
   final VoidCallback? onDeleteRule;
 
-  // Below this width the title + action buttons no longer fit on one row —
-  // on a phone, forcing them into a Row starves the title's Expanded column
-  // down to a sliver, wrapping every word onto its own line.
+  // Below this width the title + action buttons no longer fit on one row
+  // (on a phone, forcing them into a Row starves the title's Expanded column
+  // down to a sliver, wrapping every word onto its own line).
   static const double _narrowBreakpoint = 420;
 
   Widget? _buildActions(AppLocalizations l10n) {
@@ -359,6 +413,10 @@ class _Header extends StatelessWidget {
 
     return Card(
       color: theme.colorScheme.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(MediaBrowsingMetrics.cardRadius),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(MediaBrowsingMetrics.contentPadding),
         child: LayoutBuilder(
@@ -392,37 +450,90 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _EpisodeRow extends StatelessWidget {
-  const _EpisodeRow({required this.episode, required this.localeTag});
+class _EpisodeRow extends StatefulWidget {
+  const _EpisodeRow({
+    required this.episode,
+    required this.localeTag,
+    this.onScheduleEpisode,
+    this.isScheduling = false,
+  });
+
   final EpgShowEpisode episode;
   final String localeTag;
 
+  /// One-shot Record action for this single airing. Null hides the
+  /// affordance (screen not wired); airings already over hide it too.
+  final Future<void> Function(EpgShowEpisode episode)? onScheduleEpisode;
+
+  /// True while this row's schedule request is in flight (disables the
+  /// Record button so a double-tap can't schedule the same airing twice).
+  final bool isScheduling;
+
+  @override
+  State<_EpisodeRow> createState() => _EpisodeRowState();
+}
+
+class _EpisodeRowState extends State<_EpisodeRow> {
+  Timer? _endTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleEndTimer();
+  }
+
+  @override
+  void didUpdateWidget(_EpisodeRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.episode.endTime != widget.episode.endTime) {
+      _scheduleEndTimer();
+    }
+  }
+
+  void _scheduleEndTimer() {
+    _endTimer?.cancel();
+    final remaining = widget.episode.endTime.difference(DateTime.now());
+    if (remaining.isNegative) return;
+    // Rebuilds once the airing ends so canSchedule (and the Record button)
+    // stops reflecting a now-stale "still airing" state without requiring
+    // the user to trigger some unrelated rebuild first.
+    _endTimer = Timer(remaining, () {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _endTimer?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final episode = widget.episode;
+    final localeTag = widget.localeTag;
+    final onScheduleEpisode = widget.onScheduleEpisode;
+    final isScheduling = widget.isScheduling;
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     final timeLabel = DateFormat.yMMMd(
       localeTag,
     ).add_jm().format(episode.startTime.toLocal());
+    // Don't offer to record an airing that has already ended (same check
+    // as the live-tv context menu's `pressedProgram.end.isAfter(now)`).
+    final canSchedule =
+        onScheduleEpisode != null && episode.endTime.isAfter(DateTime.now());
 
     return DpadInkWell(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(MediaBrowsingMetrics.cardRadius),
       color: theme.colorScheme.surfaceContainerHigh,
       child: Padding(
         padding: const EdgeInsets.all(MediaBrowsingMetrics.contentPadding),
         child: Row(
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.tertiaryContainer,
-                borderRadius: BorderRadius.circular(50),
-              ),
-              child: Icon(
-                Icons.play_arrow,
-                color: theme.colorScheme.onTertiaryContainer,
-                size: 22,
-              ),
+            LeadingTile(
+              icon: Icons.play_arrow,
+              tileColor: theme.colorScheme.tertiary,
             ),
             const SizedBox(width: MediaBrowsingMetrics.contentPadding),
             Expanded(
@@ -431,15 +542,23 @@ class _EpisodeRow extends StatelessWidget {
                 children: [
                   Text(
                     episode.title,
-                    style: theme.textTheme.titleSmall,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    '${episode.channelName} $timeLabel',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                  Text.rich(
+                    TextSpan(
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      children: [
+                        TextSpan(text: episode.channelName),
+                        const TextSpan(text: ' · '),
+                        TextSpan(text: timeLabel),
+                      ],
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -447,9 +566,35 @@ class _EpisodeRow extends StatelessWidget {
                 ],
               ),
             ),
+            if (canSchedule) ...[
+              const SizedBox(width: MediaBrowsingMetrics.chipGap),
+              // Direct AppIconButton rather than RowActionMenu: record is the
+              // only action on episode rows, so the "more" overflow that
+              // RowActionMenu exists to provide is semantically empty here;
+              // using it would force a 2-tap UX (tap more_vert -> tap record)
+              // for what is currently a single tap. AppIconButton already
+              // handles D-pad focus and touch adaptation itself, so there's
+              // no missing touch/TV behavior for the wrapper to add. If a
+              // future change adds a second per-row action (e.g. cancel a
+              // scheduled recording from the episode row), revisit and
+              // route both through RowActionMenu at that point.
+              AppIconButton(
+                icon: Icons.fiber_manual_record,
+                tooltip: l10n.liveTvRecord,
+                onPressed: isScheduling
+                    ? null
+                    : () => onScheduleEpisode(episode),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 }
+
+/// Unique per-airing key for the in-flight guard: `channelId|startTime`
+/// stays distinct even when the same title airs on another channel or at a
+/// different time.
+String _episodeRecordKey(EpgShowEpisode episode) =>
+    '${episode.channelId}|${episode.startTime.toIso8601String()}';

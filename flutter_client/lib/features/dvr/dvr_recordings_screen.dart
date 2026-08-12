@@ -13,6 +13,7 @@ import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/dpad_tab_bar.dart';
 import 'package:m3u_tv/shared/dvr_action_dialogs.dart';
+import 'package:m3u_tv/shared/leading_tile.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/row_action_menu.dart';
 
@@ -525,7 +526,7 @@ class _SeriesRuleCard extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    _LeadingTile(
+                    LeadingTile(
                       icon: Icons.fiber_manual_record,
                       selected: selected,
                       selectMode: selectMode,
@@ -1022,7 +1023,7 @@ class _RecordingCard extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
-                      _LeadingTile(
+                      LeadingTile(
                         icon: _recordingStatusIcon(recording.status),
                         selected: selected,
                         selectMode: selectMode,
@@ -1110,61 +1111,6 @@ class _RecordingCard extends StatelessWidget {
       DvrRecordingStatus.deleted => colorScheme.onSurfaceVariant,
       DvrRecordingStatus.unknown => colorScheme.onSurfaceVariant,
     };
-  }
-}
-
-/// Shared leading icon tile for both Recordings and Series Rules rows —
-/// either the row's status/kind icon, or (in select mode) a checkbox.
-/// [icon] is resolved by the caller since each row type derives it
-/// differently (recording status vs. a fixed series-rule glyph).
-class _LeadingTile extends StatelessWidget {
-  const _LeadingTile({
-    required this.icon,
-    required this.selected,
-    required this.selectMode,
-    required this.tileColor,
-  });
-
-  final IconData icon;
-  final bool selected;
-  final bool selectMode;
-  final Color tileColor;
-
-  static const double _size = 44;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    if (selectMode) {
-      final accent = selected ? colorScheme.primary : colorScheme.outline;
-      return Container(
-        width: _size,
-        height: _size,
-        decoration: BoxDecoration(
-          color: selected
-              ? colorScheme.primary.withValues(alpha: 0.14)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: accent, width: 2),
-        ),
-        child: Icon(
-          selected ? Icons.check_box : Icons.check_box_outline_blank,
-          color: accent,
-        ),
-      );
-    }
-
-    return Container(
-      width: _size,
-      height: _size,
-      decoration: BoxDecoration(
-        color: tileColor.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Icon(icon, color: tileColor),
-    );
   }
 }
 

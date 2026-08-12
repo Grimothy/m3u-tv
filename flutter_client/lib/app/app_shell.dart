@@ -35,6 +35,7 @@ import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/app_background.dart';
 import 'package:m3u_tv/shared/app_callout.dart';
 import 'package:m3u_tv/shared/dvr_action_dialogs.dart';
+import 'package:m3u_tv/shared/dvr_schedule_feedback.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/notification_toast.dart';
@@ -654,27 +655,29 @@ class AppShellState extends ConsumerState<AppShell>
     BuildContext context,
     Channel channel,
     EpgProgram program,
-  ) async {
-    try {
-      await _appState.scheduleDvr(channel, program);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            AppLocalizations.of(context).appRecordingScheduled(program.title),
-          ),
-        ),
-      );
-    } on Object catch (error) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            AppLocalizations.of(context).appRecordingFailed(error.toString()),
-          ),
-        ),
-      );
-    }
+  ) {
+    return scheduleDvrWithFeedback(
+      context,
+      schedule: () => _appState.scheduleDvrAiring(
+        channelId: channel.id,
+        title: program.title,
+        startTime: program.start,
+        endTime: program.end,
+      ),
+      title: program.title,
+    );
+  }
+
+  /// Schedules a single DVR airing for one Shows-search episode. No
+  /// SnackBar here: the screen owns success/failure feedback (mirroring
+  /// how the live-tv `_scheduleDvr` keeps it out of the scheduling call).
+  Future<DvrRecording?> _scheduleDvrAiring(EpgShowEpisode episode) {
+    return _appState.scheduleDvrAiring(
+      channelId: episode.channelId,
+      title: episode.title,
+      startTime: episode.startTime,
+      endTime: episode.endTime,
+    );
   }
 
   /// Calls the foundation-agent-owned `XtreamService.createDvrSeriesRule`
@@ -1140,6 +1143,7 @@ class AppShellState extends ConsumerState<AppShell>
       onSidebarActivate: _activateSidebar,
       onRecordSeries: _createDvrSeriesRule,
       onDeleteSeriesRule: _deleteDvrSeriesRule,
+      onScheduleEpisode: _scheduleDvrAiring,
       buildTabScreen: _buildTabScreen,
       child: FocusScope(
         node: _contentFocusNode,
