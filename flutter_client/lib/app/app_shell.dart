@@ -677,6 +677,18 @@ class AppShellState extends ConsumerState<AppShell>
     }
   }
 
+  /// Schedules a single DVR airing for one Shows-search episode. No
+  /// SnackBar here — the screen owns success/failure feedback (mirroring
+  /// how the live-tv `_scheduleDvr` keeps it out of the scheduling call).
+  Future<DvrRecording?> _scheduleDvrAiring(EpgShowEpisode episode) {
+    return _appState.scheduleDvrAiring(
+      channelId: episode.channelId,
+      title: episode.title,
+      startTime: episode.startTime,
+      endTime: episode.endTime,
+    );
+  }
+
   /// Calls the foundation-agent-owned `XtreamService.createDvrSeriesRule`
   /// and refreshes the cached series rules list so the DVR screen's new
   /// "Series Rules" section reflects the addition immediately.
@@ -1140,6 +1152,7 @@ class AppShellState extends ConsumerState<AppShell>
       onSidebarActivate: _activateSidebar,
       onRecordSeries: _createDvrSeriesRule,
       onDeleteSeriesRule: _deleteDvrSeriesRule,
+      onScheduleEpisode: _scheduleDvrAiring,
       buildTabScreen: _buildTabScreen,
       child: FocusScope(
         node: _contentFocusNode,

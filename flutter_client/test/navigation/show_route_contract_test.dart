@@ -33,6 +33,12 @@ void main() {
         reason:
             'ShowDetailScreen must receive a non-null onDeleteSeriesRule from ContentActions',
       );
+      expect(
+        source,
+        contains('onScheduleEpisode: actions.onScheduleEpisode'),
+        reason:
+            'ShowDetailScreen must receive a non-null onScheduleEpisode from ContentActions',
+      );
     },
   );
 }

@@ -1838,6 +1838,18 @@ class AppStateController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Schedules a one-shot DVR recording for a single EPG program and
+  /// refreshes the local list. Thin wrapper over [scheduleDvrAiring] — see
+  /// there for the full behavior contract.
+  Future<DvrRecording?> scheduleDvr(Channel channel, EpgProgram program) {
+    return scheduleDvrAiring(
+      channelId: channel.id,
+      title: program.title,
+      startTime: program.start,
+      endTime: program.end,
+    );
+  }
+
   /// Schedules a one-shot DVR recording and refreshes the local list.
   ///
   /// m3u-editor's `schedule_dvr` creates a DVR rule and (when DVR is enabled
@@ -1849,7 +1861,12 @@ class AppStateController extends ChangeNotifier {
   /// Returns the matching recording if the refresh surfaced one for this
   /// channel + start time; otherwise null (the scheduler tick may not have
   /// produced the row yet on slower servers).
-  Future<DvrRecording?> scheduleDvr(Channel channel, EpgProgram program) async {
+  Future<DvrRecording?> scheduleDvrAiring({
+    required int channelId,
+    required String title,
+    required DateTime startTime,
+    required DateTime endTime,
+  }) async {
     final credentials = authNotifier.credentials;
     if (credentials == null) {
       throw StateError('Xtream credentials not configured');
@@ -1858,10 +1875,10 @@ class AppStateController extends ChangeNotifier {
     if (!ownsWork()) return null;
     await xtreamService.scheduleDvrFor(
       credentials,
-      channelId: channel.id,
-      title: program.title,
-      startTime: program.start,
-      endTime: program.end,
+      channelId: channelId,
+      title: title,
+      startTime: startTime,
+      endTime: endTime,
     );
     if (!ownsWork()) return null;
     try {
@@ -1878,10 +1895,10 @@ class AppStateController extends ChangeNotifier {
     notifyListeners();
     unawaited(refreshDvrStorage());
     for (final recording in _dvrRecordings) {
-      if (recording.channelId != channel.id) continue;
+      if (recording.channelId != channelId) continue;
       final start = recording.scheduledStart;
       if (start == null) continue;
-      if (program.start.difference(start).abs() <= const Duration(minutes: 1)) {
+      if (startTime.difference(start).abs() <= const Duration(minutes: 1)) {
         return recording;
       }
     }

@@ -21,6 +21,7 @@ class ContentActions extends InheritedWidget {
     required this.onSidebarActivate,
     required this.onRecordSeries,
     required this.onDeleteSeriesRule,
+    this.onScheduleEpisode,
     required this.buildTabScreen,
     required super.child,
   });
@@ -67,6 +68,14 @@ class ContentActions extends InheritedWidget {
   /// it through to the screen so the rule-active state can offer a delete
   /// affordance without a separate round-trip to fetch the rule id.
   final Future<void> Function(DvrSeriesRule rule)? onDeleteSeriesRule;
+
+  /// Schedules a single DVR airing for one `EpgShowEpisode`. Wired by
+  /// AppShell against `AppStateController.scheduleDvrAiring`; the
+  /// `ShowDetailScreen` route passes it through so each episode row can
+  /// offer a one-shot Record affordance (unlike [onRecordSeries], no
+  /// persistent rule is created). Returns the matching recording if the
+  /// post-schedule refresh surfaced one, else null.
+  final Future<DvrRecording?> Function(EpgShowEpisode)? onScheduleEpisode;
 
   /// Builds the full tab screen for the given routeName.
   /// Provided by AppShell so go_router branch builders don't need to import
