@@ -1,6 +1,6 @@
 name: sqflite_tvos
 description: "tvOS (Apple TV) implementation of the sqflite Flutter plugin, provided by flutter-tvos."
-version: 0.0.2
+version: 0.0.3
 homepage: https://fluttertv.dev
 repository: https://github.com/fluttertv/plugins/tree/main/packages/sqflite_tvos
 issue_tracker: https://github.com/fluttertv/plugins/issues

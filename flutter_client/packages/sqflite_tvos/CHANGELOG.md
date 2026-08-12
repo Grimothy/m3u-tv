@@ -1,3 +1,11 @@
+## 0.0.3
+
+* Re-verified against `sqflite_darwin` 2.4.3+1 (previously 2.4.2). No native
+  code changes - upstream's changes in that range were tooling-only (Dart SDK
+  constraint, SPM support). The two manual fixes from 0.0.2 remain in place
+  and are now documented in `PORTING_REPORT.md`'s "Manual review items" so
+  they survive future re-ports.
+
 ## 0.0.2
 
 * **Fix:** `getDatabasesPath()` now resolves under `Library/Caches` instead of

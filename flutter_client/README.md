@@ -66,6 +66,30 @@ flutter-tvos run -d <device-id>   # run on simulator (hot reload works)
 flutter-tvos build tvos --simulator --debug   # build only
 ```
 
+#### Updating a ported plugin (`packages/*_tvos`)
+
+`packages/flutter_secure_storage_tvos`, `packages/sqflite_tvos`, and `packages/wakelock_plus_tvos` are manual tvOS ports of upstream iOS/macOS plugin implementations, generated with `flutter-tvos plugin port`. Pub has no idea these forks exist, so bumping the upstream package (`flutter_secure_storage_darwin`, `sqflite_darwin`, `wakelock_plus`, ...) in `pubspec.yaml` never updates the fork automatically - `test/release/tvos_port_drift_test.dart` exists to catch that drift and fail CI when it happens.
+
+To re-port after that test fails, run `plugin port` against the **upstream** iOS/macOS package - not the existing `_tvos` fork itself:
+
+```bash
+flutter-tvos plugin port --from-pub sqflite_darwin
+```
+
+Passing the fork's own name fails, since it already targets tvOS and there's nothing left to port from it:
+
+```
+flutter-tvos plugin port --from-pub sqflite_tvos
+sqflite_tvos already targets tvOS. Pass an iOS or macOS plugin instead.
+```
+
+Each fork's `PORTING_REPORT.md` records which upstream package and version it came from (see the `Source:` line) - use that to know which package name to pass. After porting:
+
+1. Diff the freshly generated output against `packages/<name>_tvos/` and merge in the native changes by hand - the porter regenerates from scratch, so any prior manual fixes listed under that package's `PORTING_REPORT.md` "Manual review items" may need to be reapplied.
+2. Update `packages/<name>_tvos/PORTING_REPORT.md`'s `Source:` line to the new upstream version.
+3. Bump `packages/<name>_tvos/pubspec.yaml`'s version and add a `CHANGELOG.md` entry.
+4. Run `flutter test test/release/tvos_port_drift_test.dart` to confirm the fork is back in sync.
+
 ## Release builds
 
 Release builds work with no extra setup — the app ships with a built-in public Trakt
