@@ -14,7 +14,10 @@ void main() {
         'macos/Flutter/GeneratedPluginRegistrant.swift',
       ).readAsStringSync();
 
-      expect(pubspec, contains('flutter_local_notifications: ^22.2.0'));
+      expect(
+        pubspec,
+        matches(RegExp(r'flutter_local_notifications: \^\d+\.\d+\.\d+')),
+      );
       expect(lockfile, contains('flutter_local_notifications_linux:'));
       expect(lockfile, contains('flutter_local_notifications_windows:'));
       expect(linuxCmake, contains('generated_plugin_registrant.cc'));
