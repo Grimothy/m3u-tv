@@ -1481,6 +1481,9 @@ EpgProgram? _epgProgramFromMap(
     ),
     start: start,
     end: end,
+    subtitle: _nullIfBlank(
+      _decodeBase64WhenApplicable(_stringOrNull(json['subtitle']) ?? ''),
+    ),
   );
 }
 
@@ -1552,3 +1555,9 @@ String? _stringOrNull(Object? value) {
   final text = '$value';
   return text.isEmpty ? null : text;
 }
+
+/// Treats `null` and blank/whitespace-only strings as "absent" so optional
+/// fields fall back cleanly at the display site without leaking the upstream
+/// `''` placeholder.
+String? _nullIfBlank(String? value) =>
+    (value == null || value.trim().isEmpty) ? null : value;

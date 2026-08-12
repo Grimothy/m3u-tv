@@ -845,7 +845,7 @@ class _ProgramsRow extends StatelessWidget {
                       right: hasCatchup ? 22 : 0,
                     ),
                     child: Text(
-                      p.title,
+                      p.subtitle ?? p.title,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: fgColor,
                         fontWeight: isCurrent

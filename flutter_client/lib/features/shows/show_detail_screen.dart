@@ -541,7 +541,7 @@ class _EpisodeRowState extends State<_EpisodeRow> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    episode.title,
+                    episode.subtitle ?? episode.title,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),

@@ -192,4 +192,48 @@ void main() {
       expect(info.percentUsed, 90.0);
     });
   });
+
+  // `search_epg_shows.recent_episodes[].subtitle` is plain text (not base64).
+  // The client treats `null` and blank/whitespace-only as "absent" so the
+  // display site can safely fall back to `title` via `subtitle ?? title`.
+  group('EpgShowEpisode.fromXtream subtitle handling', () {
+    Map<String, Object?> baseJson({Object? subtitle, bool includeKey = true}) {
+      final json = <String, Object?>{
+        'channel_id': 1,
+        'title': 'Show Title',
+        'start_time': '2026-01-01T00:00:00Z',
+        'end_time': '2026-01-01T01:00:00Z',
+      };
+      if (includeKey) json['subtitle'] = subtitle;
+      return json;
+    }
+
+    test('subtitle present is parsed verbatim', () {
+      final ep = EpgShowEpisode.fromXtream(baseJson(subtitle: 'Episode Name'));
+      expect(ep.subtitle, 'Episode Name');
+    });
+
+    test('subtitle null maps to null', () {
+      final ep = EpgShowEpisode.fromXtream(baseJson());
+      expect(ep.subtitle, isNull);
+    });
+
+    test('subtitle absent key maps to null', () {
+      final ep = EpgShowEpisode.fromXtream(baseJson(includeKey: false));
+      expect(ep.subtitle, isNull);
+    });
+
+    test(
+      'subtitle empty string maps to null (server "absent" placeholder)',
+      () {
+        final ep = EpgShowEpisode.fromXtream(baseJson(subtitle: ''));
+        expect(ep.subtitle, isNull);
+      },
+    );
+
+    test('subtitle whitespace-only string maps to null', () {
+      final ep = EpgShowEpisode.fromXtream(baseJson(subtitle: '   '));
+      expect(ep.subtitle, isNull);
+    });
+  });
 }

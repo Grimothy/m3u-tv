@@ -795,7 +795,7 @@ class _ChannelRow extends StatelessWidget {
                       if (epg != null) ...[
                         const SizedBox(height: 2),
                         Text(
-                          epg!.current.title,
+                          epg!.current.subtitle ?? epg!.current.title,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: colorScheme.onSurfaceVariant),
                           maxLines: 1,
@@ -845,7 +845,7 @@ class _ChannelRow extends StatelessWidget {
                               ?.copyWith(color: colorScheme.onSurfaceVariant),
                         ),
                         Text(
-                          epg!.next!.title,
+                          epg!.next!.subtitle ?? epg!.next!.title,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: colorScheme.onSurfaceVariant),
                           maxLines: 1,
