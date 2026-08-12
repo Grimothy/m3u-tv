@@ -54,7 +54,9 @@ if (releaseSigningRequired && !releaseSigningAvailable) {
 
 android {
     namespace = "dev.sparkison.tv"
-    compileSdk = flutter.compileSdkVersion
+    // Overridden ahead of flutter.compileSdkVersion (still 36) so we're not
+    // blocked when flutter_secure_storage 11.x (requires compileSdk 37) lands.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
