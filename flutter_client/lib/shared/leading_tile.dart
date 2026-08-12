@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 ///
 /// In normal mode renders [icon] in an alpha-tinted background of [tileColor].
 /// In select mode (DVR rows, when the parent screen enables multi-select)
-/// renders a checkbox instead — episodes use normal mode only and don't need
+/// renders a checkbox instead; episodes use normal mode only and don't need
 /// the select-mode behavior. Both [selected] and [selectMode] default to false
 /// so non-DVR callers can pass just [icon] and [tileColor].
 class LeadingTile extends StatelessWidget {

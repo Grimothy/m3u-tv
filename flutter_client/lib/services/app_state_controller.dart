@@ -1735,7 +1735,7 @@ class AppStateController extends ChangeNotifier {
   /// Refreshes the cached DVR recordings list from `get_dvr_recordings`.
   ///
   /// Series rules can produce a matching `DvrRecording` synchronously (see
-  /// [scheduleDvr]'s doc comment for the same server-side behaviour on
+  /// [scheduleDvrAiring]'s doc comment for the same server-side behaviour on
   /// one-shot recordings), so the UI agent should call this after a
   /// successful `createDvrSeriesRule` / `updateDvrSeriesRule` round-trip, not
   /// just after [refreshDvrSeriesRules]. Otherwise, a newly matched recording
@@ -1836,18 +1836,6 @@ class AppStateController extends ChangeNotifier {
       _progressList = await resumeService.all(viewer.ulid);
     }
     notifyListeners();
-  }
-
-  /// Schedules a one-shot DVR recording for a single EPG program and
-  /// refreshes the local list. Thin wrapper over [scheduleDvrAiring] — see
-  /// there for the full behavior contract.
-  Future<DvrRecording?> scheduleDvr(Channel channel, EpgProgram program) {
-    return scheduleDvrAiring(
-      channelId: channel.id,
-      title: program.title,
-      startTime: program.start,
-      endTime: program.end,
-    );
   }
 
   /// Schedules a one-shot DVR recording and refreshes the local list.

@@ -143,7 +143,7 @@ void main() {
       await tester.pump();
       expect(invocations, 1);
 
-      // The request is still in flight — the button is disabled, so a second
+      // The request is still in flight; the button is disabled, so a second
       // tap (or fast double-tap) must not reach the callback again.
       await tester.tap(recordIcon(tester), warnIfMissed: false);
       await tester.pump();

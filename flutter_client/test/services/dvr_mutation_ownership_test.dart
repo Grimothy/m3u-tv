@@ -46,7 +46,12 @@ void main() {
     addTearDown(controller.dispose);
 
     expect(await controller.connectXtream(_accountA), isTrue);
-    final staleSchedule = controller.scheduleDvr(_channel, _program);
+    final staleSchedule = controller.scheduleDvrAiring(
+      channelId: _channel.id,
+      title: _program.title,
+      startTime: _program.start,
+      endTime: _program.end,
+    );
     await transport.scheduleStarted.future;
 
     expect(await controller.connectXtream(_accountB), isTrue);
