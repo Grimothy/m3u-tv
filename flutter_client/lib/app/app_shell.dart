@@ -634,7 +634,7 @@ class AppShellState extends ConsumerState<AppShell>
         context,
         PlayerArgs(
           streamUrl: streamUrl,
-          title: '${channel.name} - ${program.title}',
+          title: '${channel.name} - ${program.displayTitle}',
           type: 'catchup',
           streamId: channel.id,
           startPosition: 0,
@@ -642,7 +642,7 @@ class AppShellState extends ConsumerState<AppShell>
           headers: channel.headers,
           metadata: <String, Object?>{
             'catchup': true,
-            'program_title': program.title,
+            'program_title': program.displayTitle,
             'program_start': program.start.toIso8601String(),
             'program_end': program.end.toIso8601String(),
           },
@@ -660,11 +660,11 @@ class AppShellState extends ConsumerState<AppShell>
       context,
       schedule: () => _appState.scheduleDvrAiring(
         channelId: channel.id,
-        title: program.title,
+        title: program.displayTitle,
         startTime: program.start,
         endTime: program.end,
       ),
-      title: program.title,
+      title: program.displayTitle,
     );
   }
 
@@ -674,7 +674,7 @@ class AppShellState extends ConsumerState<AppShell>
   Future<DvrRecording?> _scheduleDvrAiring(EpgShowEpisode episode) {
     return _appState.scheduleDvrAiring(
       channelId: episode.channelId,
-      title: episode.title,
+      title: episode.displayTitle,
       startTime: episode.startTime,
       endTime: episode.endTime,
     );
@@ -2015,7 +2015,7 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
       title: channel.name,
       imageUrl: channel.logoUrl,
       subtitle:
-          epgService.lookupForChannel(channel)?.current.title ??
+          epgService.lookupForChannel(channel)?.current.displayTitle ??
           channel.groupTitle ??
           l.homeLiveChannel,
       fallbackIcon: Icons.live_tv,

@@ -1119,6 +1119,50 @@ void main() {
         expect(programs[3].subtitle, 'Real Episode');
       },
     );
+
+    test(
+      'plain-text subtitle that coincidentally looks like base64 is not '
+      'corrupted by the base64 decode heuristic',
+      () async {
+        final now = DateTime.utc(2026, 1, 1, 12);
+        final service = XtreamService(
+          transport: FakeXtreamTransport({
+            'auth': xtreamAuth(auth: 1),
+            'get_epg_batch': <String, Object?>{
+              '300': <Map<String, Object?>>[
+                <String, Object?>{
+                  'stream_id': 300,
+                  'channel_id': 'channel-key',
+                  'title': 'Plain Title',
+                  'subtitle': 'GAME',
+                  'description': 'Plain desc',
+                  'start': now.toIso8601String(),
+                  'end': now.add(const Duration(minutes: 30)).toIso8601String(),
+                },
+              ],
+            },
+          }).call,
+        );
+        await service.authenticate(
+          const UserCredentials(
+            server: 'https://xtream.example',
+            username: 'demo',
+            password: 'secret',
+          ),
+        );
+
+        final programs = await service.getEpgBatch(const <Channel>[
+          Channel(
+            id: 300,
+            name: 'Channel',
+            streamUrl: 'https://example/live/300.m3u8',
+            epgChannelId: 'channel-key',
+          ),
+        ]);
+
+        expect(programs.single.subtitle, 'GAME');
+      },
+    );
   });
 
   group('Local state services', () {

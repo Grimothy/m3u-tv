@@ -111,7 +111,7 @@ class _CatchupShowsListState extends State<_CatchupShowsList> {
                 final program = programs[index];
                 return _CatchupShowRow(
                   icon: Icons.play_circle_outline,
-                  label: program.title,
+                  label: program.displayTitle,
                   subtitle:
                       '${startFormat.format(program.start.toLocal())} '
                       '– ${endFormat.format(program.end.toLocal())}',

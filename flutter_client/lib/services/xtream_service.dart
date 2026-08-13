@@ -1481,9 +1481,7 @@ EpgProgram? _epgProgramFromMap(
     ),
     start: start,
     end: end,
-    subtitle: _nullIfBlank(
-      _decodeBase64WhenApplicable(_stringOrNull(json['subtitle']) ?? ''),
-    ),
+    subtitle: _decodedSubtitle(json['subtitle']),
   );
 }
 
@@ -1516,11 +1514,21 @@ DateTime _fromEpoch(int value) {
   return DateTime.fromMillisecondsSinceEpoch(milliseconds, isUtc: true);
 }
 
+final _base64LikeText = RegExp(r'^[A-Za-z0-9+/]+={0,2}$');
+
+/// True if [text] contains a control character other than tab/LF/CR. Real
+/// programme text never contains these, but short all-letter plain-text
+/// values (e.g. a one-word episode subtitle like "GAME") can coincidentally
+/// satisfy the base64 shape check and "decode" into byte garbage, so this
+/// gate rejects that outcome and falls back to the original plain text.
+bool _hasControlCharacters(String text) => text.codeUnits.any(
+  (unit) => unit < 0x20 && unit != 0x09 && unit != 0x0A && unit != 0x0D,
+);
+
 String _decodeBase64WhenApplicable(String value) {
   if (value.isEmpty) return value;
   final text = value.trim();
-  if (text.length % 4 != 0 ||
-      !RegExp(r'^[A-Za-z0-9+/]+={0,2}$').hasMatch(text)) {
+  if (text.length % 4 != 0 || !_base64LikeText.hasMatch(text)) {
     return value;
   }
   try {
@@ -1529,7 +1537,8 @@ String _decodeBase64WhenApplicable(String value) {
       base64.decode(normalized),
       allowMalformed: false,
     );
-    return decoded.isEmpty ? value : decoded;
+    if (decoded.isEmpty || _hasControlCharacters(decoded)) return value;
+    return decoded;
   } on FormatException {
     return value;
   }
@@ -1556,8 +1565,7 @@ String? _stringOrNull(Object? value) {
   return text.isEmpty ? null : text;
 }
 
-/// Treats `null` and blank/whitespace-only strings as "absent" so optional
-/// fields fall back cleanly at the display site without leaking the upstream
-/// `''` placeholder.
-String? _nullIfBlank(String? value) =>
-    (value == null || value.trim().isEmpty) ? null : value;
+String? _decodedSubtitle(Object? value) {
+  final raw = _stringOrNull(value);
+  return raw == null ? null : nullIfBlank(_decodeBase64WhenApplicable(raw));
+}

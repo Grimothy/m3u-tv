@@ -235,5 +235,14 @@ void main() {
       final ep = EpgShowEpisode.fromXtream(baseJson(subtitle: '   '));
       expect(ep.subtitle, isNull);
     });
+
+    test(
+      'subtitle with an unexpected non-string JSON type is coerced instead '
+      'of throwing',
+      () {
+        final ep = EpgShowEpisode.fromXtream(baseJson(subtitle: 42));
+        expect(ep.subtitle, '42');
+      },
+    );
   });
 }

@@ -327,7 +327,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
                         : AppLocalizations.of(dialogContext).liveTvRecord,
                     subtitle: activeRecording != null
                         ? null
-                        : recordableProgram?.title,
+                        : recordableProgram?.displayTitle,
                     autofocus: true,
                     onTap: () => Navigator.of(
                       dialogContext,
@@ -795,7 +795,7 @@ class _ChannelRow extends StatelessWidget {
                       if (epg != null) ...[
                         const SizedBox(height: 2),
                         Text(
-                          epg!.current.subtitle ?? epg!.current.title,
+                          epg!.current.displayTitle,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: colorScheme.onSurfaceVariant),
                           maxLines: 1,
@@ -845,7 +845,7 @@ class _ChannelRow extends StatelessWidget {
                               ?.copyWith(color: colorScheme.onSurfaceVariant),
                         ),
                         Text(
-                          epg!.next!.subtitle ?? epg!.next!.title,
+                          epg!.next!.displayTitle,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: colorScheme.onSurfaceVariant),
                           maxLines: 1,

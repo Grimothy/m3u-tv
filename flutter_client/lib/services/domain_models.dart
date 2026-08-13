@@ -785,6 +785,10 @@ class EpgProgram {
   /// exposes one (see m3u-editor #1410). Distinct from [title]; null when
   /// absent so display sites can fall back to [title].
   final String? subtitle;
+
+  /// The episode name when available, otherwise the show title. Prefer this
+  /// over reading [title] directly at any display or persistence site.
+  String get displayTitle => subtitle ?? title;
 }
 
 class EpgCurrentNext {
@@ -1210,6 +1214,10 @@ class EpgShowEpisode {
   /// from [title]; null when absent so display sites can fall back to [title].
   final String? subtitle;
 
+  /// The episode name when available, otherwise the show title. Prefer this
+  /// over reading [title] directly at any display or persistence site.
+  String get displayTitle => subtitle ?? title;
+
   factory EpgShowEpisode.fromXtream(Map<String, Object?> json) {
     int? asIntOrNull(Object? v) {
       if (v == null) return null;
@@ -1231,7 +1239,7 @@ class EpgShowEpisode {
       season: asIntOrNull(json['season']),
       episode: asIntOrNull(json['episode']),
       description: json['description'] as String?,
-      subtitle: _nullIfBlank(json['subtitle'] as String?),
+      subtitle: nullIfBlank(_asNullableString(json['subtitle'])),
     );
   }
 }
@@ -1403,5 +1411,5 @@ String? _yearFromDate(String? value) {
 /// Treats `null` and blank/whitespace-only strings as "absent" so optional
 /// fields fall back cleanly at the display site without leaking the upstream
 /// `''` placeholder.
-String? _nullIfBlank(String? value) =>
+String? nullIfBlank(String? value) =>
     (value == null || value.trim().isEmpty) ? null : value;
