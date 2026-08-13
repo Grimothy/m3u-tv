@@ -254,6 +254,24 @@ abstract class AppLocalizations {
   /// **'Search...'**
   String get liveTvSearchHint;
 
+  /// No description provided for @liveTvUpcomingAirings.
+  ///
+  /// In en, this message translates to:
+  /// **'Upcoming'**
+  String get liveTvUpcomingAirings;
+
+  /// No description provided for @liveTvMoviesAndSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'Movies & Series'**
+  String get liveTvMoviesAndSeries;
+
+  /// No description provided for @liveTvShowResultsLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching shows…'**
+  String get liveTvShowResultsLoading;
+
   /// No description provided for @liveTvNoChannels.
   ///
   /// In en, this message translates to:

@@ -16,6 +16,18 @@ import 'package:m3u_tv/services/persistent_store.dart';
 import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
+/// #217 made the Live TV search field `activateOnSelect: true` — on TV it
+/// renders as a non-editing button facade until activated, so there is no
+/// `TextField` in the tree to type into. Activate first, then type.
+Future<void> enterQuery(WidgetTester tester, String query) async {
+  final field = find.byType(InlineMediaSearchField);
+  if (find.byType(TextField).evaluate().isEmpty) {
+    await tester.tap(field);
+    await tester.pumpAndSettle();
+  }
+  await tester.enterText(field, query);
+}
+
 void main() {
   group('LiveTvScreen', () {
     late List<Channel> testChannels;
@@ -678,6 +690,748 @@ void main() {
       });
     });
   });
+
+  group('LiveTvScreen show search', () {
+    late List<Channel> channels;
+    late List<Category> categories;
+    late DateTime futureTime;
+
+    setUp(() {
+      futureTime = DateTime.now().toUtc().add(const Duration(hours: 1));
+      channels = [
+        const Channel(
+          id: 1,
+          name: 'BBC One',
+          streamUrl: 'http://example.com/1.m3u8',
+          categoryId: '10',
+        ),
+        const Channel(
+          id: 2,
+          name: 'CNN',
+          streamUrl: 'http://example.com/2.m3u8',
+          categoryId: '11',
+        ),
+        const Channel(
+          id: 3,
+          name: 'ESPN',
+          streamUrl: 'http://example.com/3.m3u8',
+          categoryId: '12',
+        ),
+      ];
+      categories = [
+        const Category(id: '10', name: 'News'),
+        const Category(id: '11', name: 'Entertainment'),
+        const Category(id: '12', name: 'Sports'),
+      ];
+    });
+
+    final railTitle = find.text('Upcoming');
+
+    Future<List<EpgShow>> Function(String) staticResults(
+      List<EpgShow> results,
+    ) {
+      return (query) async => results;
+    }
+
+    testWidgets('null onSearchShows renders no Upcoming rail', (tester) async {
+      await tester.pumpWidget(
+        _TestApp(channels: channels, categories: categories),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'bbc');
+      await tester.pumpAndSettle();
+
+      expect(railTitle, findsNothing);
+    });
+
+    testWidgets('Upcoming rail renders one card per future airing', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          onSearchShows: staticResults([
+            EpgShow(
+              normalizedTitle: 'news',
+              displayTitle: 'News',
+              channelCount: 1,
+              channels: [],
+              episodeCount: 0,
+              recentEpisodes: [
+                EpgShowEpisode(
+                  channelId: 1,
+                  channelName: 'BBC One',
+                  title: 'World News',
+                  startTime: futureTime,
+                  endTime: futureTime.add(const Duration(hours: 1)),
+                ),
+                EpgShowEpisode(
+                  channelId: 1,
+                  channelName: 'CNN',
+                  title: 'Breaking News',
+                  startTime: futureTime.add(const Duration(hours: 1)),
+                  endTime: futureTime.add(const Duration(hours: 2)),
+                ),
+              ],
+            ),
+          ]),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'ne');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      expect(railTitle, findsOneWidget);
+      expect(find.text('World News'), findsOneWidget);
+      expect(find.text('Breaking News'), findsOneWidget);
+    });
+
+    testWidgets(
+      'channel-name filter narrows immediately while show search is in flight',
+      (tester) async {
+        final pending = Completer<List<EpgShow>>();
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: (query) => pending.future,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'cn');
+        // Pump just past the 350ms debounce but stop before the in-flight
+        // future ever completes — the channel list must already be filtered.
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump();
+
+        expect(find.text('BBC One'), findsNothing);
+        expect(find.text('CNN'), findsOneWidget);
+        expect(find.text('ESPN'), findsNothing);
+
+        // Finish the search; the rail renders once the future resolves.
+        pending.complete(const <EpgShow>[]);
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets('clearing the query drops the rail', (tester) async {
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          onSearchShows: staticResults(const [
+            EpgShow(
+              normalizedTitle: 'x',
+              displayTitle: 'Hit',
+              channelCount: 1,
+              channels: [],
+              episodeCount: 0,
+              recentEpisodes: [],
+            ),
+          ]),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'hi');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      expect(railTitle, findsOneWidget);
+
+      await enterQuery(tester, '');
+      await tester.pumpAndSettle();
+      expect(railTitle, findsNothing);
+
+      // Under 2 chars must also hide the rail — the service's 2-char
+      // short-circuit means no network call should be triggered and no
+      // results should linger.
+      await enterQuery(tester, 'h');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      expect(railTitle, findsNothing);
+    });
+
+    testWidgets(
+      'stale slow result does not overwrite a fresher fast result',
+      (tester) async {
+        final slow = Completer<List<EpgShow>>();
+        final fast = Completer<List<EpgShow>>();
+        var useSlow = true;
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: (query) => useSlow ? slow.future : fast.future,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // First query: slow.
+        await enterQuery(tester, 'ab');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump();
+        useSlow = false;
+
+        // Second query (overrides the first): fast. The generation counter
+        // must cause the slow result to be ignored when it eventually lands.
+        await enterQuery(tester, 'abc');
+        await tester.pump(const Duration(milliseconds: 400));
+        fast.complete([
+          EpgShow(
+            normalizedTitle: 'abc',
+            displayTitle: 'Fresh',
+            channelCount: 1,
+            channels: [],
+            episodeCount: 0,
+            recentEpisodes: [
+              EpgShowEpisode(
+                channelId: 1,
+                channelName: 'Channel',
+                title: 'Fresh Episode',
+                startTime: futureTime,
+                endTime: futureTime.add(const Duration(hours: 1)),
+              ),
+            ],
+          ),
+        ]);
+        await tester.pumpAndSettle();
+        expect(find.text('Fresh Episode'), findsOneWidget);
+
+        // Now resolve the original slow Promise — it must NOT overwrite.
+        slow.complete([
+          EpgShow(
+            normalizedTitle: 'ab',
+            displayTitle: 'Stale',
+            channelCount: 1,
+            channels: [],
+            episodeCount: 0,
+            recentEpisodes: [
+              EpgShowEpisode(
+                channelId: 2,
+                channelName: 'Channel',
+                title: 'Stale Episode',
+                startTime: futureTime,
+                endTime: futureTime.add(const Duration(hours: 1)),
+              ),
+            ],
+          ),
+        ]);
+        await tester.pumpAndSettle();
+        expect(find.text('Stale Episode'), findsNothing);
+        expect(find.text('Fresh Episode'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'throwing onSearchShows renders search-failed, not no-matches',
+      (tester) async {
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: (query) async => throw StateError('boom'),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'bbc');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        // Error state — distinct from "no matches".
+        expect(find.text('Search failed'), findsOneWidget);
+        expect(find.text('No shows match your search'), findsNothing);
+
+        // Channel list still rendered.
+        expect(find.text('BBC One'), findsOneWidget);
+      },
+    );
+
+    testWidgets('blank episode title is filtered out', (tester) async {
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          onSearchShows: staticResults([
+            EpgShow(
+              normalizedTitle: 'good',
+              displayTitle: 'Good Show',
+              channelCount: 1,
+              channels: [],
+              episodeCount: 0,
+              recentEpisodes: [
+                EpgShowEpisode(
+                  channelId: 1,
+                  channelName: 'BBC One',
+                  title: 'Good Episode',
+                  startTime: futureTime,
+                  endTime: futureTime.add(const Duration(hours: 1)),
+                ),
+              ],
+            ),
+            EpgShow(
+              normalizedTitle: 'bad',
+              displayTitle: 'Bad Show',
+              channelCount: 1,
+              channels: [],
+              episodeCount: 0,
+              recentEpisodes: [
+                EpgShowEpisode(
+                  channelId: 2,
+                  channelName: 'BBC Two',
+                  title: '',
+                  startTime: futureTime,
+                  endTime: futureTime.add(const Duration(hours: 1)),
+                ),
+              ],
+            ),
+          ]),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'good');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Good Episode'), findsOneWidget);
+      // The blank-title episode must not render an empty card; the rail
+      // contains exactly one item, found as a MediaPreviewSection ancestor.
+      final rail = find.ancestor(
+        of: find.text('Good Episode'),
+        matching: find.byType(MediaPreviewSection),
+      );
+      expect(rail, findsOneWidget);
+    });
+
+    testWidgets(
+      'Upcoming rail subtitle uses episode startTime via .toLocal()',
+      (
+        tester,
+      ) async {
+        // Derive the airing instant from now (UTC + 30 days) so the test
+        // doesn't rot with the calendar. The .toLocal() invocation is
+        // exercised by the widget building without throwing on a UTC
+        // input; we also check that the subtitle Text widget carries the
+        // channel name (the formatted local time is asserted via the
+        // surrounding text rather than a hardcoded wall-clock string).
+        final utc = DateTime.now().toUtc().add(const Duration(days: 30));
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: (_) async => [
+              EpgShow(
+                normalizedTitle: 'local-time',
+                displayTitle: 'Local Time Check',
+                channelCount: 1,
+                channels: const [
+                  EpgShowChannel(channelId: 1, channelName: 'BBC One'),
+                ],
+                episodeCount: 0,
+                recentEpisodes: [
+                  EpgShowEpisode(
+                    channelId: 1,
+                    channelName: 'BBC One',
+                    title: 'Episode Slot',
+                    startTime: utc,
+                    endTime: utc.add(const Duration(hours: 1)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'loc');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Episode Slot'), findsOneWidget);
+        expect(find.textContaining('BBC One'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'synchronously shows loading on first qualifying keystroke',
+      (tester) async {
+        final pending = Completer<List<EpgShow>>();
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: (query) => pending.future,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'bb');
+        // Pump exactly one frame — the debounce hasn't fired yet (350ms),
+        // but the rail should already render "Searching shows…" instead
+        // of "No shows match your search". Without the R2.1 fix the rail
+        // would flash the empty-matches label for a frame before flipping
+        // to loading.
+        await tester.pump();
+        expect(find.text('Searching shows…'), findsOneWidget);
+        expect(find.text('No shows match your search'), findsNothing);
+
+        pending.complete(const <EpgShow>[]);
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets('Upcoming rail drops past airings', (tester) async {
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          onSearchShows: staticResults([
+            EpgShow(
+              normalizedTitle: 'show',
+              displayTitle: 'Show',
+              channelCount: 1,
+              channels: [],
+              episodeCount: 0,
+              recentEpisodes: [
+                EpgShowEpisode(
+                  channelId: 1,
+                  channelName: 'Channel',
+                  title: 'Past Episode',
+                  startTime: futureTime.subtract(const Duration(hours: 2)),
+                  endTime: futureTime.subtract(const Duration(hours: 1)),
+                ),
+                EpgShowEpisode(
+                  channelId: 1,
+                  channelName: 'Channel',
+                  title: 'Future Episode',
+                  startTime: futureTime.add(const Duration(hours: 1)),
+                  endTime: futureTime.add(const Duration(hours: 2)),
+                ),
+              ],
+            ),
+          ]),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'sh');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Future Episode'), findsOneWidget);
+      expect(find.text('Past Episode'), findsNothing);
+    });
+
+    testWidgets('Upcoming rail caps at 12 airings soonest first', (
+      tester,
+    ) async {
+      // Default test surface (800x600) only renders ~5-6 cards in the
+      // horizontal ListView; size up so all 12 are findable without
+      // scrolling the rail mid-test.
+      tester.view.physicalSize = const Size(4000, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final episodes = <EpgShowEpisode>[];
+      for (var i = 0; i < 15; i++) {
+        episodes.add(
+          EpgShowEpisode(
+            channelId: 1,
+            channelName: 'Channel',
+            title: 'Episode $i',
+            startTime: futureTime.add(Duration(hours: i)),
+            endTime: futureTime.add(Duration(hours: i + 1)),
+          ),
+        );
+      }
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          onSearchShows: staticResults([
+            EpgShow(
+              normalizedTitle: 'show',
+              displayTitle: 'Show',
+              channelCount: 1,
+              channels: [],
+              episodeCount: 0,
+              recentEpisodes: episodes,
+            ),
+          ]),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'sh');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      // Episodes 0-11 are visible (soonest first), 12-14 are not.
+      for (var i = 0; i < 12; i++) {
+        expect(find.text('Episode $i'), findsOneWidget);
+      }
+      for (var i = 12; i < 15; i++) {
+        expect(find.text('Episode $i'), findsNothing);
+      }
+    });
+
+    testWidgets('Movies & Series rail filters local VOD and Series by query', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          vodItems: const [
+            VodItem(
+              id: 1,
+              name: 'The Matrix',
+              streamUrl: 'http://example.com/m.m3u8',
+              containerExtension: 'mp4',
+            ),
+            VodItem(
+              id: 2,
+              name: 'Inception',
+              streamUrl: 'http://example.com/i.m3u8',
+              containerExtension: 'mp4',
+            ),
+          ],
+          seriesList: const [Series(id: 10, name: 'Breaking Bad')],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'mat');
+      // No debounce on the local filter — should be visible on the same
+      // frame the keystroke lands, without waiting for the 350ms debounce
+      // the network-driven Upcoming rail uses.
+      await tester.pump();
+      expect(find.text('Movies & Series'), findsOneWidget);
+      expect(find.text('The Matrix'), findsOneWidget);
+      expect(find.text('Inception'), findsNothing);
+      expect(find.text('Breaking Bad'), findsNothing);
+    });
+
+    testWidgets(
+      'Movies & Series rail updates same frame as channel list',
+      (tester) async {
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            vodItems: const [
+              VodItem(
+                id: 1,
+                name: 'Action Movie',
+                streamUrl: 'http://example.com/a.m3u8',
+                containerExtension: 'mp4',
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'act');
+        // Both the channel list and the Movies & Series rail update on
+        // the same frame — neither has a debounce. The Movies & Series
+        // rail filters vodItems by `name.contains(query)` synchronously
+        // alongside the channel-name filter narrowing the channels list.
+        await tester.pump();
+        expect(find.text('Action Movie'), findsOneWidget);
+        // No channel name contains "act" — channel list is empty.
+        expect(find.text('BBC One'), findsNothing);
+        expect(find.text('CNN'), findsNothing);
+        expect(find.text('ESPN'), findsNothing);
+      },
+    );
+
+    testWidgets('Movies & Series rail suppressed when no local matches', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          vodItems: const [
+            VodItem(
+              id: 1,
+              name: 'Inception',
+              streamUrl: 'http://example.com/i.m3u8',
+              containerExtension: 'mp4',
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'xy');
+      await tester.pump();
+      // No matches in VOD/Series for "xy" — rail should not render.
+      expect(find.text('Movies & Series'), findsNothing);
+    });
+
+    testWidgets(
+      'tapping Upcoming card invokes onShowSelect with parent show',
+      (tester) async {
+        EpgShow? tapped;
+        final parent = EpgShow(
+          normalizedTitle: 'news',
+          displayTitle: 'News',
+          channelCount: 1,
+          channels: [],
+          episodeCount: 0,
+          recentEpisodes: [
+            EpgShowEpisode(
+              channelId: 1,
+              channelName: 'BBC One',
+              title: 'News Episode',
+              startTime: futureTime,
+              endTime: futureTime.add(const Duration(hours: 1)),
+            ),
+          ],
+        );
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: (_) async => [parent],
+            onShowSelect: (show) => tapped = show,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'ne');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('News Episode'));
+        await tester.pumpAndSettle();
+
+        // The tap routes the *parent* EpgShow, not the episode — same
+        // shape AppShell._openShow expects.
+        expect(tapped, isNotNull);
+        expect(tapped!.normalizedTitle, 'news');
+      },
+    );
+
+    testWidgets('tapping VOD item invokes onVodSelect', (tester) async {
+      VodItem? tapped;
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          vodItems: const [
+            VodItem(
+              id: 1,
+              name: 'The Matrix',
+              streamUrl: 'http://example.com/m.m3u8',
+              containerExtension: 'mp4',
+            ),
+          ],
+          onVodSelect: (item) => tapped = item,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'mat');
+      await tester.pump();
+      expect(find.text('The Matrix'), findsOneWidget);
+
+      await tester.tap(find.text('The Matrix'));
+      await tester.pumpAndSettle();
+
+      expect(tapped, isNotNull);
+      expect(tapped!.id, 1);
+    });
+
+    testWidgets('tapping Series item invokes onSeriesSelect', (tester) async {
+      Series? tapped;
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          seriesList: const [Series(id: 10, name: 'Breaking Bad')],
+          onSeriesSelect: (series) => tapped = series,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'bre');
+      await tester.pump();
+      expect(find.text('Breaking Bad'), findsOneWidget);
+
+      await tester.tap(find.text('Breaking Bad'));
+      await tester.pumpAndSettle();
+
+      expect(tapped, isNotNull);
+      expect(tapped!.id, 10);
+    });
+
+    testWidgets('null tap callbacks are no-ops', (tester) async {
+      // The M&S rail sits below the 600px viewport fold once the search
+      // field, category bar, and Upcoming rail are stacked above it. Bump
+      // the viewport so both target widgets are in the render tree.
+      tester.view.physicalSize = const Size(4000, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final parent = EpgShow(
+        normalizedTitle: 'news',
+        displayTitle: 'News',
+        channelCount: 1,
+        channels: [],
+        episodeCount: 0,
+        recentEpisodes: [
+          EpgShowEpisode(
+            channelId: 1,
+            channelName: 'Channel',
+            title: 'News Episode',
+            startTime: futureTime,
+            endTime: futureTime.add(const Duration(hours: 1)),
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          onSearchShows: (_) async => [parent],
+          vodItems: const [
+            VodItem(
+              id: 1,
+              name: 'Money Movie',
+              streamUrl: 'http://example.com/m.m3u8',
+              containerExtension: 'mp4',
+            ),
+          ],
+          // No onShowSelect, onVodSelect, onSeriesSelect callbacks.
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'ne');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      // Tapping each rail must not throw — null callbacks are no-ops so
+      // unwired LiveTvScreen instances still render and respond.
+      await tester.tap(find.text('News Episode'));
+      await tester.pumpAndSettle();
+      // Target the VOD title ('Money Movie'), not the card's subtitle
+      // which is rendered from the `homeMovie` ARB key ("Movie") and
+      // would match the wrong Text widget.
+      await tester.tap(find.text('Money Movie'));
+      await tester.pumpAndSettle();
+    });
+  });
 }
 
 class _SlowPersistentJsonStore extends PersistentJsonStore {
@@ -745,6 +1499,12 @@ class _TestApp extends StatelessWidget {
     this.onScheduleProgram,
     this.dvrRecordings = const [],
     this.useSidebarLayout = true,
+    this.onSearchShows,
+    this.onShowSelect,
+    this.onVodSelect,
+    this.onSeriesSelect,
+    this.vodItems = const [],
+    this.seriesList = const [],
   });
 
   final List<Channel> channels;
@@ -759,6 +1519,12 @@ class _TestApp extends StatelessWidget {
   final void Function(Channel, EpgProgram)? onScheduleProgram;
   final List<DvrRecording> dvrRecordings;
   final bool useSidebarLayout;
+  final Future<List<EpgShow>> Function(String query)? onSearchShows;
+  final void Function(EpgShow)? onShowSelect;
+  final void Function(VodItem)? onVodSelect;
+  final void Function(Series)? onSeriesSelect;
+  final List<VodItem> vodItems;
+  final List<Series> seriesList;
 
   @override
   Widget build(BuildContext context) {
@@ -770,6 +1536,8 @@ class _TestApp extends StatelessWidget {
         isLoadingContentProvider.overrideWith((_) => isLoading),
         liveChannelsProvider.overrideWith((_) => channels),
         liveCategoriesProvider.overrideWith((_) => categories),
+        vodItemsProvider.overrideWith((_) => vodItems),
+        seriesListProvider.overrideWith((_) => seriesList),
         epgServiceProvider.overrideWith((_) => epg),
         dvrRecordingsProvider.overrideWith((_) => dvrRecordings),
         recordingChannelIdsProvider.overrideWith(
@@ -790,6 +1558,10 @@ class _TestApp extends StatelessWidget {
           useSidebarLayout: useSidebarLayout,
           onChannelContextChanged: onChannelContextChanged,
           onScheduleProgram: onScheduleProgram,
+          onSearchShows: onSearchShows,
+          onShowSelect: onShowSelect,
+          onVodSelect: onVodSelect,
+          onSeriesSelect: onSeriesSelect,
         ),
       ),
     );
