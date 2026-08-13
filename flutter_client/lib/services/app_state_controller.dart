@@ -1669,7 +1669,7 @@ class AppStateController extends ChangeNotifier {
     if (_sourceOperationGeneration.isStale(sourceGeneration)) return;
     await cacheService.clear();
     if (_sourceOperationGeneration.isStale(sourceGeneration)) return;
-    await MediaImageCacheManager().emptyCache();
+    await _bestEffort(emptyMediaImageCacheIfAvailable);
     if (_sourceOperationGeneration.isStale(sourceGeneration)) return;
     await secureStorage.delete(_sourceKey);
     if (_sourceOperationGeneration.isStale(sourceGeneration)) return;
@@ -1773,7 +1773,7 @@ class AppStateController extends ChangeNotifier {
     _error = null;
     notifyListeners();
     aiostreamsApiService.clearCache();
-    unawaited(MediaImageCacheManager().emptyCache());
+    unawaited(_bestEffort(emptyMediaImageCacheIfAvailable));
     if (_sourceType == AppSourceType.xtream && !authNotifier.isConfigured) {
       _isLoadingContent = false;
       await boot();

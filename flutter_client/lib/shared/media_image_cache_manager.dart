@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart' show ServicesBinding;
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 /// Disk cache for media poster/thumbnail images.
@@ -19,4 +20,19 @@ class MediaImageCacheManager extends CacheManager with ImageCacheManager {
 
   static const _key = 'm3uMediaImages';
   static final MediaImageCacheManager _instance = MediaImageCacheManager._();
+}
+
+/// Empties the media image cache, skipping if Flutter's platform bindings
+/// aren't initialized (plain `flutter test` VM unit tests never call
+/// `runApp()`/`ensureInitialized()`). Constructing [MediaImageCacheManager]
+/// without a binding trips an unhandled platform-channel error deep inside
+/// `flutter_cache_manager`'s file system setup, so this check must happen
+/// before the singleton is ever touched.
+Future<void> emptyMediaImageCacheIfAvailable() async {
+  try {
+    ServicesBinding.instance;
+  } on Object {
+    return;
+  }
+  await MediaImageCacheManager().emptyCache();
 }
