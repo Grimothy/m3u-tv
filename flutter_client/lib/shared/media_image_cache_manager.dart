@@ -1,4 +1,5 @@
-import 'package:flutter/services.dart' show ServicesBinding;
+import 'dart:io';
+
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 /// Disk cache for media poster/thumbnail images.
@@ -22,17 +23,13 @@ class MediaImageCacheManager extends CacheManager with ImageCacheManager {
   static final MediaImageCacheManager _instance = MediaImageCacheManager._();
 }
 
-/// Empties the media image cache, skipping if Flutter's platform bindings
-/// aren't initialized (plain `flutter test` VM unit tests never call
-/// `runApp()`/`ensureInitialized()`). Constructing [MediaImageCacheManager]
-/// without a binding trips an unhandled platform-channel error deep inside
-/// `flutter_cache_manager`'s file system setup, so this check must happen
-/// before the singleton is ever touched.
+/// Empties the media image cache, skipping under `flutter test` (which sets
+/// the `FLUTTER_TEST` environment variable). Constructing
+/// [MediaImageCacheManager] there hits `path_provider`'s platform channel,
+/// which test suites don't mock; `TestWidgetsFlutterBinding.ensureInitialized()`
+/// alone isn't a reliable signal since some tests call it for unrelated
+/// reasons, so this checks the environment variable directly instead.
 Future<void> emptyMediaImageCacheIfAvailable() async {
-  try {
-    ServicesBinding.instance;
-  } on Object {
-    return;
-  }
+  if (Platform.environment['FLUTTER_TEST'] == 'true') return;
   await MediaImageCacheManager().emptyCache();
 }
