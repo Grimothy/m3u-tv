@@ -772,6 +772,7 @@ class EpgProgram {
     required this.description,
     required this.start,
     required this.end,
+    this.subtitle,
   });
 
   final String channelId;
@@ -779,6 +780,15 @@ class EpgProgram {
   final String description;
   final DateTime start;
   final DateTime end;
+
+  /// Episode-name / programme-episode subtitle, when the upstream source
+  /// exposes one (see m3u-editor #1410). Distinct from [title]; null when
+  /// absent so display sites can fall back to [title].
+  final String? subtitle;
+
+  /// The episode name when available, otherwise the show title. Prefer this
+  /// over reading [title] directly at any display or persistence site.
+  String get displayTitle => subtitle ?? title;
 }
 
 class EpgCurrentNext {
@@ -1188,6 +1198,7 @@ class EpgShowEpisode {
     this.season,
     this.episode,
     this.description,
+    this.subtitle,
   });
 
   final int channelId;
@@ -1198,6 +1209,14 @@ class EpgShowEpisode {
   final int? season;
   final int? episode;
   final String? description;
+
+  /// Episode name from `search_epg_shows.recent_episodes[].subtitle`. Distinct
+  /// from [title]; null when absent so display sites can fall back to [title].
+  final String? subtitle;
+
+  /// The episode name when available, otherwise the show title. Prefer this
+  /// over reading [title] directly at any display or persistence site.
+  String get displayTitle => subtitle ?? title;
 
   factory EpgShowEpisode.fromXtream(Map<String, Object?> json) {
     int? asIntOrNull(Object? v) {
@@ -1220,6 +1239,7 @@ class EpgShowEpisode {
       season: asIntOrNull(json['season']),
       episode: asIntOrNull(json['episode']),
       description: json['description'] as String?,
+      subtitle: nullIfBlank(_asNullableString(json['subtitle'])),
     );
   }
 }
@@ -1387,3 +1407,9 @@ String? _yearFromDate(String? value) {
   final match = RegExp(r'\d{4}').firstMatch(value);
   return match?.group(0);
 }
+
+/// Treats `null` and blank/whitespace-only strings as "absent" so optional
+/// fields fall back cleanly at the display site without leaking the upstream
+/// `''` placeholder.
+String? nullIfBlank(String? value) =>
+    (value == null || value.trim().isEmpty) ? null : value;

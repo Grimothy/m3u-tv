@@ -834,6 +834,7 @@ void main() {
               {
                 'stream_id': 101,
                 'title': base64Encode(utf8.encode('Midday News')),
+                'subtitle': base64Encode(utf8.encode('Midday News Episode')),
                 'description': base64Encode(utf8.encode('Fixture bulletin')),
                 'start_timestamp':
                     now
@@ -883,7 +884,9 @@ void main() {
       expect(programs, hasLength(2));
       expect(midday.channelId, 'bbc.one');
       expect(midday.description, 'Fixture bulletin');
+      expect(midday.subtitle, 'Midday News Episode');
       expect(afternoon.channelId, 'bbc.one');
+      expect(afternoon.subtitle, isNull);
     });
 
     test('EPG batch chunks requests to at most 100 stream ids', () async {
@@ -1006,6 +1009,7 @@ void main() {
                   'stream_id': 101,
                   'channel_id': 'm3u-editor-channel-key',
                   'title': 'Plain Short EPG Title',
+                  'subtitle': 'Plain Short EPG Subtitle',
                   'description': 'Plain short EPG description',
                   'start': now.toIso8601String(),
                   'end': now.add(const Duration(minutes: 30)).toIso8601String(),
@@ -1033,7 +1037,130 @@ void main() {
 
         expect(programs.single.channelId, 'stale-channel-key');
         expect(programs.single.title, 'Plain Short EPG Title');
+        expect(programs.single.subtitle, 'Plain Short EPG Subtitle');
         expect(programs.single.description, 'Plain short EPG description');
+      },
+    );
+
+    test(
+      'EPG programs with absent or blank subtitle parse as null',
+      () async {
+        final now = DateTime.utc(2026, 1, 1, 12);
+        final service = XtreamService(
+          transport: FakeXtreamTransport({
+            'auth': xtreamAuth(auth: 1),
+            'get_epg_batch': <String, Object?>{
+              '200': <Map<String, Object?>>[
+                <String, Object?>{
+                  'stream_id': 200,
+                  'channel_id': 'channel-key',
+                  'title': 'Plain Title 1',
+                  'subtitle': null,
+                  'description': 'Plain desc',
+                  'start': now.toIso8601String(),
+                  'end': now.add(const Duration(minutes: 30)).toIso8601String(),
+                },
+                <String, Object?>{
+                  'stream_id': 201,
+                  'channel_id': 'channel-key',
+                  'title': 'Plain Title 2',
+                  'subtitle': '',
+                  'description': 'Plain desc',
+                  'start': now.toIso8601String(),
+                  'end': now.add(const Duration(minutes: 30)).toIso8601String(),
+                },
+                <String, Object?>{
+                  'stream_id': 202,
+                  'channel_id': 'channel-key',
+                  'title': 'Plain Title 3',
+                  'subtitle': '   ',
+                  'description': 'Plain desc',
+                  'start': now.toIso8601String(),
+                  'end': now.add(const Duration(minutes: 30)).toIso8601String(),
+                },
+                <String, Object?>{
+                  'stream_id': 203,
+                  'channel_id': 'channel-key',
+                  'title': 'Plain Title 4',
+                  'subtitle': 'Real Episode',
+                  'description': 'Plain desc',
+                  'start': now.toIso8601String(),
+                  'end': now.add(const Duration(minutes: 30)).toIso8601String(),
+                },
+              ],
+            },
+          }).call,
+        );
+        await service.authenticate(
+          const UserCredentials(
+            server: 'https://xtream.example',
+            username: 'demo',
+            password: 'secret',
+          ),
+        );
+
+        final programs = await service.getEpgBatch(const <Channel>[
+          Channel(
+            id: 200,
+            name: 'Channel',
+            streamUrl: 'https://example/live/200.m3u8',
+            epgChannelId: 'channel-key',
+          ),
+        ]);
+
+        expect(programs, hasLength(4));
+        expect(programs[0].subtitle, isNull, reason: 'null value');
+        expect(
+          programs[1].subtitle,
+          isNull,
+          reason: 'empty string placeholder',
+        );
+        expect(programs[2].subtitle, isNull, reason: 'whitespace-only');
+        expect(programs[3].subtitle, 'Real Episode');
+      },
+    );
+
+    test(
+      'plain-text subtitle that coincidentally looks like base64 is not '
+      'corrupted by the base64 decode heuristic',
+      () async {
+        final now = DateTime.utc(2026, 1, 1, 12);
+        final service = XtreamService(
+          transport: FakeXtreamTransport({
+            'auth': xtreamAuth(auth: 1),
+            'get_epg_batch': <String, Object?>{
+              '300': <Map<String, Object?>>[
+                <String, Object?>{
+                  'stream_id': 300,
+                  'channel_id': 'channel-key',
+                  'title': 'Plain Title',
+                  'subtitle': 'GAME',
+                  'description': 'Plain desc',
+                  'start': now.toIso8601String(),
+                  'end': now.add(const Duration(minutes: 30)).toIso8601String(),
+                },
+              ],
+            },
+          }).call,
+        );
+        await service.authenticate(
+          const UserCredentials(
+            server: 'https://xtream.example',
+            username: 'demo',
+            password: 'secret',
+          ),
+        );
+
+        final programs = await service.getEpgBatch(const <Channel>[
+          Channel(
+            id: 300,
+            name: 'Channel',
+            streamUrl: 'https://example/live/300.m3u8',
+            epgChannelId: 'channel-key',
+          ),
+        ]);
+
+        expect(programs.single.subtitle, 'GAME');
       },
     );
   });

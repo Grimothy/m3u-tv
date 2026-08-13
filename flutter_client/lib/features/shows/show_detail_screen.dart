@@ -87,7 +87,7 @@ class _ShowDetailScreenState extends ConsumerState<ShowDetailScreen> {
       await scheduleDvrWithFeedback(
         context,
         schedule: () => handler(episode),
-        title: episode.title,
+        title: episode.displayTitle,
       );
     } finally {
       if (mounted) {
@@ -541,7 +541,7 @@ class _EpisodeRowState extends State<_EpisodeRow> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    episode.title,
+                    episode.displayTitle,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),

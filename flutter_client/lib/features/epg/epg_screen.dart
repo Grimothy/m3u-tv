@@ -146,7 +146,7 @@ class _EpgScreenState extends State<EpgScreen> {
                       if (epg != null) ...[
                         const SizedBox(height: 2),
                         Text(
-                          epg.current.title,
+                          epg.current.displayTitle,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: colorScheme.onSurfaceVariant),
                           maxLines: 1,
@@ -185,7 +185,7 @@ class _EpgScreenState extends State<EpgScreen> {
                               ?.copyWith(color: colorScheme.onSurfaceVariant),
                         ),
                         Text(
-                          epg!.next!.title,
+                          epg!.next!.displayTitle,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: colorScheme.onSurfaceVariant),
                           maxLines: 1,
@@ -251,7 +251,7 @@ class _EpgScreenState extends State<EpgScreen> {
                     if (epg != null) ...[
                       const SizedBox(height: 4),
                       Text(
-                        epg.current.title,
+                        epg.current.displayTitle,
                         style: Theme.of(context).textTheme.labelSmall,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

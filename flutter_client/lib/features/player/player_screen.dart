@@ -1079,9 +1079,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         left: overlayLeft,
                         width: overlayWidth,
                         child: EpgOverlay(
-                          currentTitle: _epgData!.current.title,
+                          currentTitle: _epgData!.current.displayTitle,
                           currentProgress: _epgData!.progress,
-                          nextTitle: _epgData?.next?.title,
+                          nextTitle: _epgData?.next?.displayTitle,
                         ),
                       ),
 
