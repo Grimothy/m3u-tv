@@ -27,6 +27,7 @@ import 'package:m3u_tv/services/tv_notification_store.dart';
 import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/services/viewer_service.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
+import 'package:m3u_tv/shared/media_image_cache_manager.dart';
 
 enum AppSourceType { none, xtream }
 
@@ -1668,6 +1669,8 @@ class AppStateController extends ChangeNotifier {
     if (_sourceOperationGeneration.isStale(sourceGeneration)) return;
     await cacheService.clear();
     if (_sourceOperationGeneration.isStale(sourceGeneration)) return;
+    await MediaImageCacheManager().emptyCache();
+    if (_sourceOperationGeneration.isStale(sourceGeneration)) return;
     await secureStorage.delete(_sourceKey);
     if (_sourceOperationGeneration.isStale(sourceGeneration)) return;
     _resetEpgSession();
@@ -1770,6 +1773,7 @@ class AppStateController extends ChangeNotifier {
     _error = null;
     notifyListeners();
     aiostreamsApiService.clearCache();
+    unawaited(MediaImageCacheManager().emptyCache());
     if (_sourceType == AppSourceType.xtream && !authNotifier.isConfigured) {
       _isLoadingContent = false;
       await boot();
