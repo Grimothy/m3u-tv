@@ -737,6 +737,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     );
     final searchResults = <Widget>[
       if (_query.trim().length >= 2) ...[
+        if (widget.onSearchShows != null) _buildOnNowRail(),
         if (widget.onSearchShows != null) _buildUpcomingRail(),
         _buildMoviesAndSeriesRail(),
       ],
@@ -786,6 +787,79 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
           ? Row(children: [nav, content])
           : Column(children: [nav, content]),
     );
+  }
+
+  /// R3.2/R3.3: flatten `airingNow` across all shows, drop entries whose
+  /// `channelId` matches no channel at all, and render one card per
+  /// currently-airing programme. The server already answered "is this
+  /// airing?" — no client-side timestamp re-filter.
+  ///
+  /// The channel lookup is built from the **full** channel list, not
+  /// the search-filtered list. Searching for a show name (the entire
+  /// reason this rail exists) does not filter channels by name, so the
+  /// lookup must include every channel a programme could be airing on.
+  /// Filtering against the name-matched channel list would suppress
+  /// every card on the rail — see the R3 review for the defect this
+  /// comment exists to prevent.
+  ///
+  /// The "context" passed to `onChannelContextChanged` is the list of
+  /// distinct channels represented in this rail (deduped, in the
+  /// order the user sees them), not the channel list filtered by the
+  /// current query. The user is looking at and tapping from the On Now
+  /// rail, so skip-previous/next should step between other things
+  /// airing now — those are the only candidates reliably on screen.
+  ///
+  /// Whole section suppressed when empty so On Now doesn't repeat
+  /// Upcoming's loading/error/empty states — Upcoming owns those for
+  /// the shared search.
+  Widget _buildOnNowRail() {
+    final l10n = AppLocalizations.of(context);
+    final localized = Localizations.localeOf(context).toLanguageTag();
+    final allChannels = ref.watch(liveChannelsProvider);
+    final channelsById = {for (final c in allChannels) c.id: c};
+    final entries = _showResults.expand(
+      (show) => show.airingNow.map((ep) => (show: show, episode: ep)),
+    );
+    final cards = <MediaPreviewItem>[];
+    final onNowChannelIds = <int>{};
+    final onNowChannels = <Channel>[];
+    for (final entry in entries) {
+      final channel = channelsById[entry.episode.channelId];
+      if (channel == null) continue;
+      cards.add(
+        MediaPreviewItem(
+          title: entry.episode.displayTitle,
+          subtitle: _formatOnNowSubtitle(
+            entry.episode.channelName,
+            entry.episode.endTime,
+            localized,
+          ),
+          fallbackIcon: Icons.live_tv,
+          onTap: () {
+            widget.onChannelContextChanged?.call(onNowChannels);
+            widget.onChannelSelect(channel);
+          },
+        ),
+      );
+      if (onNowChannelIds.add(channel.id)) onNowChannels.add(channel);
+    }
+    if (cards.isEmpty) return const SizedBox.shrink();
+    return MediaPreviewSection(
+      title: l10n.liveTvOnNow,
+      items: cards,
+      emptyLabel: '',
+      onSidebarActivate: widget.onSidebarActivate,
+    );
+  }
+
+  String _formatOnNowSubtitle(
+    String? channelName,
+    DateTime endTime,
+    String languageTag,
+  ) {
+    final formatted = DateFormat.jm(languageTag).format(endTime.toLocal());
+    if (channelName == null || channelName.isEmpty) return formatted;
+    return '$channelName · $formatted';
   }
 
   /// R2.3: flatten `recentEpisodes` across all shows, drop past + blank-

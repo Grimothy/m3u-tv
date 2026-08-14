@@ -97,6 +97,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get liveTvShowResultsLoading => '正在搜索节目…';
 
   @override
+  String get liveTvOnNow => '正在播出';
+
+  @override
   String get liveTvNoChannels => '暂无可用频道';
 
   @override

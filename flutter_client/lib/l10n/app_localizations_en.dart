@@ -97,6 +97,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get liveTvShowResultsLoading => 'Searching shows…';
 
   @override
+  String get liveTvOnNow => 'On Now';
+
+  @override
   String get liveTvNoChannels => 'No channels available';
 
   @override

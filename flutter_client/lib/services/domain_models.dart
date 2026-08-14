@@ -1253,6 +1253,7 @@ class EpgShow {
     required this.episodeCount,
     this.nextAiringAt,
     required this.recentEpisodes,
+    this.airingNow = const <EpgShowEpisode>[],
     this.hasSeriesRule = false,
     this.seriesRuleId,
   });
@@ -1264,6 +1265,12 @@ class EpgShow {
   final int episodeCount;
   final DateTime? nextAiringAt;
   final List<EpgShowEpisode> recentEpisodes;
+
+  /// Programmes currently in progress, from `search_epg_shows.airing_now`.
+  /// Same entry shape as [recentEpisodes] — the server shares one payload
+  /// builder for both. Empty (never null) when nothing is airing, and empty
+  /// against servers predating m3u-editor #1414.
+  final List<EpgShowEpisode> airingNow;
 
   /// True when a persistent DVR series rule already exists for this show
   /// (mirrors `search_epg_shows.has_series_rule`). Surfaces the
@@ -1306,6 +1313,12 @@ class EpgShow {
             .map((m) => EpgShowEpisode.fromXtream(m.cast<String, Object?>()))
             .toList() ??
         const <EpgShowEpisode>[];
+    final airingNow =
+        (json['airing_now'] as List?)
+            ?.whereType<Map<dynamic, dynamic>>()
+            .map((m) => EpgShowEpisode.fromXtream(m.cast<String, Object?>()))
+            .toList() ??
+        const <EpgShowEpisode>[];
     return EpgShow(
       normalizedTitle: (json['normalized_title'] as String?) ?? '',
       displayTitle: (json['display_title'] as String?) ?? '',
@@ -1314,6 +1327,7 @@ class EpgShow {
       episodeCount: asInt(json['episode_count']),
       nextAiringAt: asDate(json['next_airing_at']),
       recentEpisodes: episodes,
+      airingNow: airingNow,
       hasSeriesRule: json['has_series_rule'] == true,
       seriesRuleId: asIntOrNull(json['series_rule_id']),
     );

@@ -272,6 +272,12 @@ abstract class AppLocalizations {
   /// **'Searching shows…'**
   String get liveTvShowResultsLoading;
 
+  /// No description provided for @liveTvOnNow.
+  ///
+  /// In en, this message translates to:
+  /// **'On Now'**
+  String get liveTvOnNow;
+
   /// No description provided for @liveTvNoChannels.
   ///
   /// In en, this message translates to:

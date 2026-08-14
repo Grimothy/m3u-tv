@@ -98,6 +98,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get liveTvShowResultsLoading => 'Sendungen werden gesucht …';
 
   @override
+  String get liveTvOnNow => 'Jetzt live';
+
+  @override
   String get liveTvNoChannels => 'Keine Sender verfügbar';
 
   @override
