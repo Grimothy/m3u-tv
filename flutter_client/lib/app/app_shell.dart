@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:ui' show ImageFilter;
 
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
@@ -1454,15 +1455,20 @@ class AppShellState extends ConsumerState<AppShell>
                 content,
                 sidebar,
                 if (_isMacDesktopWindow)
-                  const Positioned(
+                  Positioned(
                     top: 0,
                     left: 0,
                     right: 0,
                     height: _kMacTitlebarInset,
                     child: DragToMoveArea(
-                      // App background color (matches _slidePage/app_background.dart)
-                      // rather than pure black.
-                      child: ColoredBox(color: Color(0xFF09090b)),
+                      child: ClipRect(
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                          child: const ColoredBox(
+                            color: Color(0x8009090b),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
               ],
