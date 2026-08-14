@@ -22,6 +22,14 @@ abstract class VideoTextureProvider {
   int? get textureId;
 }
 
+/// A [PlayerAdapter] that Multiview can drive: one concurrently playable,
+/// texture-backed instance per grid tile. [setVolume] mutes/unmutes a tile
+/// by audio focus without touching its playback state, which none of the
+/// other [PlayerAdapter] methods express.
+abstract class MultiviewBackend implements PlayerAdapter, VideoTextureProvider {
+  Future<void> setVolume(double volume);
+}
+
 class FallbackPlayerAdapter implements PlayerAdapter {
   FallbackPlayerAdapter({required this.primary, required this.fallback})
     : _active = primary;

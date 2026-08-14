@@ -163,6 +163,62 @@ PlaybackOrchestrator buildPlaybackOrchestrator() {
   );
 }
 
+/// Builds one Multiview grid tile's player: an isolated [MultiviewBackend]
+/// instance wrapped in its own orchestrator, so each tile gets independent
+/// retry/error handling for free. Only offered on platforms whose native
+/// backend can host several concurrent players (see `_multiviewSupported`
+/// in `live_tv_screen.dart`): tvOS and Android key native player state by
+/// [playerId] to multiplex over their one channel pair; macOS (media_kit)
+/// and Linux/Windows (the in-process libmpv backend) are multi-instance by
+/// design already, so `playerId` is unused there.
+({PlaybackOrchestrator orchestrator, MultiviewBackend backend})
+buildMultiviewTilePlayer(String playerId) {
+  final platform = _playbackPlatformForCurrentTarget();
+  final MultiviewBackend backend;
+  final PlaybackBackend backendKind;
+  switch (platform) {
+    case PlaybackPlatform.apple:
+      backend = AppleAvKitBackend(playerId: playerId);
+      backendKind = PlaybackBackend.appleAvKit;
+    case PlaybackPlatform.android:
+      backend = AndroidPlaybackAdapter(
+        playerId: playerId,
+        // Multiview runs several concurrent ExoPlayer instances and manages
+        // per-tile audio itself via setVolume; Media3's default audio-focus
+        // handling would otherwise auto-pause every tile except whichever one
+        // most recently called play() and won system audio focus.
+        handleAudioFocus: false,
+        probe: const AndroidPlaybackProbe(
+          hardwareCodecs: <VideoCodec>{VideoCodec.h264},
+          passthroughAudioCodecs: <AudioCodec>{
+            AudioCodec.aac,
+            AudioCodec.mp3,
+          },
+          mpvAvailable: false,
+          serverTranscodeAvailable: false,
+        ),
+      );
+      backendKind = PlaybackBackend.androidExoPlayer;
+    case PlaybackPlatform.desktop:
+      if (Platform.isMacOS) {
+        backend = MediaKitDesktopAdapter();
+        backendKind = PlaybackBackend.desktopMediaKit;
+      } else {
+        backend = DesktopLibmpvBackend();
+        backendKind = PlaybackBackend.desktopLibmpv;
+      }
+    case PlaybackPlatform.server:
+      throw UnsupportedError('Multiview is not supported on this platform');
+  }
+  final orchestrator = PlaybackOrchestrator(
+    platform: platform,
+    adapters: <PlaybackBackend, PlayerAdapter>{backendKind: backend},
+    transcodeGateway: const _UnavailableTranscodeGateway(),
+    retryDelay: Duration.zero,
+  );
+  return (orchestrator: orchestrator, backend: backend);
+}
+
 PlaybackPlatform _playbackPlatformForCurrentTarget() {
   if (kIsWeb) return PlaybackPlatform.server;
   return switch (defaultTargetPlatform) {
