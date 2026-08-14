@@ -17,6 +17,7 @@ import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/persistent_store.dart';
 import 'package:m3u_tv/services/production_storage.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
+import 'package:m3u_tv/shared/media_image_cache_manager.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
@@ -111,6 +112,16 @@ Future<PersistentJsonStore> _createAppStateStore(
     // Library/Caches and tmp are writable there. See path_provider_tvos's
     // PathProviderPlugin.swift for the on-device sandbox measurements.
     final dir = await getApplicationCacheDirectory();
+    // MediaImageCacheManager's flutter_cache_manager Config has no explicit
+    // `repo`, so on tvOS (not Android/iOS/macOS by flutter_cache_manager's
+    // own platform check) it defaults to JsonCacheInfoRepository, which
+    // lazily resolves its storage directory via getApplicationSupportDirectory
+    // - a directory that cannot be created on a physical Apple TV. That threw
+    // on every image cache write, so posters/logos silently failed to load on
+    // device while working fine in the simulator. Resolving Caches here,
+    // before any image widget builds, lets the manager use a writable
+    // directory instead.
+    MediaImageCacheManager.tvosCacheDirectory = dir;
     return PersistentJsonStore(file: File('${dir.path}/app_state.json'));
   }
   if (operatingSystem == 'android' || operatingSystem == 'ios') {
