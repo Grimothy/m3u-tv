@@ -543,18 +543,34 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
                                     recordingStateFor: (program) => widget
                                         .recordingStateFor(channel, program),
                                     onTap: (program) {
+                                      final tapNow = widget.clock();
                                       final canReplay = EpgService.canReplay(
                                         catchupRetentionDays,
                                         program,
-                                        widget.clock(),
+                                        tapNow,
                                       );
-                                      if (canReplay &&
-                                          widget.onCatchupProgramSelect !=
-                                              null) {
-                                        widget.onCatchupProgramSelect!(
+                                      if (canReplay) {
+                                        widget.onCatchupProgramSelect?.call(
                                           channel,
                                           program,
                                         );
+                                        return;
+                                      }
+                                      if (program.start.isAfter(tapNow)) {
+                                        // Future programme: offer the
+                                        // context menu (record, etc.)
+                                        // instead of starting playback.
+                                        widget.onChannelLongPress?.call(
+                                          channel,
+                                          program,
+                                        );
+                                        return;
+                                      }
+                                      if (program.end.isBefore(tapNow) ||
+                                          program.end.isAtSameMomentAs(
+                                            tapNow,
+                                          )) {
+                                        // Past, non-catchup programme: no-op.
                                         return;
                                       }
                                       widget.onChannelSelect(channel);
