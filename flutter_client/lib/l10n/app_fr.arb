@@ -42,6 +42,30 @@
   "liveTvUpcomingAirings": "Prochainement",
   "liveTvMoviesAndSeries": "Films et séries",
   "liveTvOnNow": "En direct",
+  "liveTvAiringUntil": "Jusqu'à {time}",
+  "@liveTvAiringUntil": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "liveTvAiringTomorrow": "Demain {time}",
+  "@liveTvAiringTomorrow": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "liveTvMoreAirings": "{count, plural, =1{+1 autre} other{+{count} autres}}",
+  "@liveTvMoreAirings": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "liveTvShowResultsLoading": "Recherche d'émissions…",
   "liveTvNoChannels": "Aucune chaîne disponible",
   "liveTvAllChannels": "Toutes les chaînes",

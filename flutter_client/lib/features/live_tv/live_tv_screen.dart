@@ -712,6 +712,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     }
 
     final filtered = _filteredChannels(channels);
+    final channelsById = {for (final c in channels) c.id: c};
     _loadEpgForChannels(filtered, epgService);
     final l = AppLocalizations.of(context);
     final nav = MediaCategoryNav(
@@ -736,11 +737,34 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
       onEntryFocusScopeReady: widget.onEntryFocusScopeReady,
     );
     final searchResults = <Widget>[
-      if (_query.trim().length >= 2) ...[
-        if (widget.onSearchShows != null) _buildOnNowRail(),
-        if (widget.onSearchShows != null) _buildUpcomingRail(),
-        _buildMoviesAndSeriesRail(),
-      ],
+      if (_query.trim().length >= 2)
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.55,
+          ),
+          child: DpadRegion(
+            memoryKey: 'live-tv/search-results',
+            horizontalEdge: DpadEdgeBehavior.stop,
+            onEdge: (direction) {
+              if (direction == TraversalDirection.left) {
+                widget.onSidebarActivate?.call();
+              }
+            },
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (widget.onSearchShows != null)
+                    _buildOnNowRail(channelsById),
+                  if (widget.onSearchShows != null)
+                    _buildUpcomingSection(channelsById),
+                  _buildMoviesAndSeriesRail(),
+                ],
+              ),
+            ),
+          ),
+        ),
     ];
     final content = Expanded(
       child: Column(
@@ -812,11 +836,9 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   /// Whole section suppressed when empty so On Now doesn't repeat
   /// Upcoming's loading/error/empty states — Upcoming owns those for
   /// the shared search.
-  Widget _buildOnNowRail() {
+  Widget _buildOnNowRail(Map<int, Channel> channelsById) {
     final l10n = AppLocalizations.of(context);
     final localized = Localizations.localeOf(context).toLanguageTag();
-    final allChannels = ref.watch(liveChannelsProvider);
-    final channelsById = {for (final c in allChannels) c.id: c};
     final entries = _showResults.expand(
       (show) => show.airingNow.map((ep) => (show: show, episode: ep)),
     );
@@ -826,13 +848,28 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     for (final entry in entries) {
       final channel = channelsById[entry.episode.channelId];
       if (channel == null) continue;
+      final channelName = entry.episode.channelName;
       cards.add(
         MediaPreviewItem(
-          title: entry.episode.displayTitle,
-          subtitle: _formatOnNowSubtitle(
-            entry.episode.channelName,
-            entry.episode.endTime,
-            localized,
+          // The card title is the SHOW name, not the episode name. The
+          // On Now rail surfaces a *search* result — its job is to
+          // confirm which show matched the query, so the user knows
+          // they're tuning to the right thing. `EpgShowEpisode.displayTitle`
+          // is `subtitle ?? title` (domain_models.dart:1219), so using
+          // it here would render the episode name (e.g. "A Picture of
+          // Innocence" for a "Midsomer Murders" search) — see the bug
+          // entry in AGENT_HANDOFF.md at the end of round 5. The
+          // episode name moves to the subtitle via [_formatOnNowSubtitle]
+          // so both names reach the user. The airing time lives in
+          // [emphasisLabel] and is structurally un-truncatable.
+          title: entry.show.displayTitle,
+          imageUrl: channel.logoUrl,
+          imageFit: BoxFit.contain,
+          imagePadding: const EdgeInsets.all(10),
+          imageBackgroundColor: Colors.transparent,
+          subtitle: _formatOnNowSubtitle(entry.episode, channelName),
+          emphasisLabel: l10n.liveTvAiringUntil(
+            DateFormat.jm(localized).format(entry.episode.endTime.toLocal()),
           ),
           fallbackIcon: Icons.live_tv,
           onTap: () {
@@ -852,60 +889,217 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     );
   }
 
-  String _formatOnNowSubtitle(
-    String? channelName,
-    DateTime endTime,
-    String languageTag,
-  ) {
-    final formatted = DateFormat.jm(languageTag).format(endTime.toLocal());
-    if (channelName == null || channelName.isEmpty) return formatted;
-    return '$channelName · $formatted';
+  /// R6: episode name first (the higher-value token), channel second. Both
+  /// are optional and either may be absent.
+  ///
+  /// Deliberately allowed to ellipsise. Round 4 moved the airing time out
+  /// of the subtitle line precisely so a long value here costs nothing
+  /// important — the time now lives in `emphasisLabel` and is immune, and
+  /// channel identity is carried redundantly by the station logo. Do NOT
+  /// re-add the time here.
+  ///
+  /// Returns null (not empty string) when both are absent — empty string
+  /// would render a phantom 11px row in `_buildDefaultContent`.
+  String? _formatOnNowSubtitle(EpgShowEpisode episode, String? channelName) {
+    final ep = episode.subtitle;
+    final hasEp = ep != null && ep.trim().isNotEmpty;
+    final hasCh = channelName != null && channelName.isNotEmpty;
+    if (hasEp && hasCh) return '$ep · $channelName';
+    if (hasEp) return ep;
+    if (hasCh) return channelName;
+    return null;
   }
 
-  /// R2.3: flatten `recentEpisodes` across all shows, drop past + blank-
-  /// title episodes, sort soonest-first, take 12. The Upcoming rail
-  /// surfaces one card per airing rather than one per show — a single
-  /// show with 5 future airings shows 5 cards, the most useful metadata
-  /// the server gives us about what's on TV next.
-  Widget _buildUpcomingRail() {
+  /// R5.2: vertical Upcoming section, grouped by `(show.normalizedTitle,
+  /// episode.channelId)`. A single show repeating on one network used to
+  /// render a wall of identical horizontal cards (40 future airings of
+  /// `"Grace and Frankie"` on one channel produced 12 identical tiles);
+  /// grouping collapses duplicates into one row that shows up to 3 airing
+  /// times plus a `"+N more"` affordance that points at the show detail
+  /// screen, which already lists every airing.
+  ///
+  /// Filtering rules inherited from the R2.3 rail and unchanged here:
+  /// future-only (`startTime.isAfter(now)` with `now` in UTC), blank
+  /// titles dropped, null-tolerant on unmatched `channelId` (the rail
+  /// navigates to the show, not the channel, so an unmatched channel is
+  /// still a valid card — do not "fix" this to match On Now's `continue`
+  /// on null lookup).
+  ///
+  /// Height is bounded by the cap at 4 groups; the surrounding
+  /// `ConstrainedBox` + `SingleChildScrollView` (R5.1) handles overflow
+  /// for the full results area on 1080p/DPR 1.6 panels.
+  Widget _buildUpcomingSection(Map<int, Channel> channelsById) {
     final l10n = AppLocalizations.of(context);
     final localized = Localizations.localeOf(context).toLanguageTag();
     final now = DateTime.now().toUtc();
-    final entries =
-        _showResults
-            .expand(
-              (show) =>
-                  show.recentEpisodes.map((ep) => (show: show, episode: ep)),
-            )
-            .where((entry) => entry.episode.title.isNotEmpty)
-            .where((entry) => entry.episode.startTime.isAfter(now))
-            .toList()
-          ..sort((a, b) => a.episode.startTime.compareTo(b.episode.startTime));
-    final cards = entries
-        .take(12)
-        .map(
-          (entry) => MediaPreviewItem(
-            title: entry.episode.title,
-            subtitle: _formatUpcomingSubtitle(
-              entry.episode.channelName,
-              entry.episode.startTime,
-              localized,
-            ),
-            fallbackIcon: Icons.tv,
-            onTap: () => widget.onShowSelect?.call(entry.show),
-          ),
+    final entries = _showResults
+        .expand(
+          (show) => show.recentEpisodes.map((ep) => (show: show, episode: ep)),
         )
-        .toList(growable: false);
-    final emptyLabel = _showIsLoading
-        ? l10n.liveTvShowResultsLoading
-        : _showError != null
-        ? l10n.showsSearchError
-        : l10n.showsNoResults;
-    return MediaPreviewSection(
-      title: l10n.liveTvUpcomingAirings,
-      items: cards,
-      emptyLabel: emptyLabel,
-      onSidebarActivate: widget.onSidebarActivate,
+        .where((entry) => entry.episode.title.isNotEmpty)
+        .where((entry) => entry.episode.startTime.isAfter(now))
+        .toList();
+
+    // Group by (show.normalizedTitle, episode.channelId). Using a private
+    // helper instead of a Dart record-as-key to keep `$1`/`$2` access out
+    // of the rendering code below.
+    final groups = <_UpcomingGroupKey, _UpcomingGroup>{};
+    for (final entry in entries) {
+      final key = _UpcomingGroupKey(
+        normalizedTitle: entry.show.normalizedTitle,
+        channelId: entry.episode.channelId,
+      );
+      groups
+          .putIfAbsent(
+            key,
+            () => _UpcomingGroup(show: entry.show, channelId: key.channelId),
+          )
+          .episodes
+          .add(entry.episode);
+    }
+    // Within each group, soonest first.
+    for (final g in groups.values) {
+      g.episodes.sort((a, b) => a.startTime.compareTo(b.startTime));
+    }
+    // Order groups by each group's earliest airing, soonest overall first.
+    final ordered = groups.values.toList()
+      ..sort(
+        (a, b) =>
+            a.episodes.first.startTime.compareTo(b.episodes.first.startTime),
+      );
+    final visible = ordered.take(4).toList(growable: false);
+
+    if (visible.isEmpty) {
+      // No future airings to show. Preserve the R2.1 loading UX: when the
+      // user types a qualifying query and the search is still in flight,
+      // show the loading label instead of the no-matches label, so the
+      // latter doesn't flash before the request resolves.
+      final emptyText = _showIsLoading
+          ? l10n.liveTvShowResultsLoading
+          : _showError != null
+          ? l10n.showsSearchError
+          : l10n.showsNoResults;
+      return Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: MediaBrowsingMetrics.contentPadding,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              l10n.liveTvUpcomingAirings,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              emptyText,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: MediaBrowsingMetrics.contentPadding,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.liveTvUpcomingAirings,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          ...visible.map(
+            (g) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: _buildUpcomingGroupRow(g, channelsById, l10n, localized),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUpcomingGroupRow(
+    _UpcomingGroup group,
+    Map<int, Channel> channelsById,
+    AppLocalizations l10n,
+    String languageTag,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final channel = channelsById[group.channelId];
+    final channelName = group.episodes.first.channelName;
+    final times = <String>[];
+    for (final ep in group.episodes.take(3)) {
+      times.add(_formatUpcomingTime(ep.startTime, languageTag, l10n));
+    }
+    final remainder = group.episodes.length - times.length;
+    if (remainder > 0) {
+      times.add(l10n.liveTvMoreAirings(remainder));
+    }
+    final timesText = times.join(' · ');
+
+    return DpadInkWell(
+      borderRadius: BorderRadius.circular(8),
+      color: colorScheme.surfaceContainerHigh,
+      onTap: () => widget.onShowSelect?.call(group.show),
+      child: Padding(
+        padding: const EdgeInsets.all(MediaBrowsingMetrics.contentPadding),
+        child: Row(
+          children: [
+            ResilientMediaImage(
+              imageUrl: channel?.logoUrl,
+              fallbackIcon: Icons.tv,
+              width: MediaBrowsingMetrics.logoSize,
+              height: MediaBrowsingMetrics.logoSize,
+              fit: BoxFit.contain,
+              backgroundColor: Colors.transparent,
+            ),
+            const SizedBox(width: MediaBrowsingMetrics.itemGap),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    group.show.displayTitle,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (channelName != null && channelName.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      channelName,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: MediaBrowsingMetrics.itemGap),
+            Text(
+              timesText,
+              textAlign: TextAlign.end,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -967,16 +1161,20 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     );
   }
 
-  String _formatUpcomingSubtitle(
-    String? channelName,
+  String _formatUpcomingTime(
     DateTime startTime,
     String languageTag,
+    AppLocalizations l10n,
   ) {
-    final formatted = DateFormat.MMMd(
-      languageTag,
-    ).add_jm().format(startTime.toLocal());
-    if (channelName == null || channelName.isEmpty) return formatted;
-    return '$channelName · $formatted';
+    final local = startTime.toLocal();
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+    bool sameDay(DateTime a, DateTime b) =>
+        a.year == b.year && a.month == b.month && a.day == b.day;
+    final time = DateFormat.jm(languageTag).format(local);
+    if (sameDay(local, now)) return time;
+    if (sameDay(local, tomorrow)) return l10n.liveTvAiringTomorrow(time);
+    return DateFormat.MMMd(languageTag).add_jm().format(local);
   }
 
   void _handleGridLeftEdge(TraversalDirection direction) {
@@ -1462,4 +1660,35 @@ class _ChannelGridItem extends StatelessWidget {
       ),
     );
   }
+}
+
+/// R5.2 grouping key: `(show.normalizedTitle, episode.channelId)`. Two
+/// airings of the same show on different channels belong to separate rows;
+/// two airings of the same show on the same channel collapse into one row
+/// whose airing list grows.
+class _UpcomingGroupKey {
+  const _UpcomingGroupKey({
+    required this.normalizedTitle,
+    required this.channelId,
+  });
+
+  final String normalizedTitle;
+  final int channelId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _UpcomingGroupKey &&
+      other.normalizedTitle == normalizedTitle &&
+      other.channelId == channelId;
+
+  @override
+  int get hashCode => Object.hash(normalizedTitle, channelId);
+}
+
+class _UpcomingGroup {
+  _UpcomingGroup({required this.show, required this.channelId});
+
+  final EpgShow show;
+  final int channelId;
+  final List<EpgShowEpisode> episodes = [];
 }

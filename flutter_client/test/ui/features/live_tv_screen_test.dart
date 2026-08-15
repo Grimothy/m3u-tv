@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 import 'package:m3u_tv/features/epg/timeline_epg_view.dart';
 import 'package:m3u_tv/features/live_tv/live_tv_screen.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
@@ -14,6 +15,7 @@ import 'package:m3u_tv/services/epg_service.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/services/persistent_store.dart';
 import 'package:m3u_tv/services/view_settings_service.dart';
+import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
 /// #217 made the Live TV search field `activateOnSelect: true` — on TV it
@@ -745,17 +747,22 @@ void main() {
       expect(railTitle, findsNothing);
     });
 
-    testWidgets('Upcoming rail renders one card per future airing', (
+    testWidgets('Upcoming section groups airings by show and channel', (
       tester,
     ) async {
+      // The Upcoming section renders one row per (show.normalizedTitle,
+      // episode.channelId). Two airings of the same show on the same
+      // channel collapse into one row with both airing times shown.
+      // Use a unique show name that doesn't collide with any fixture
+      // category name to keep the finder unambiguous.
       await tester.pumpWidget(
         _TestApp(
           channels: channels,
           categories: categories,
           onSearchShows: staticResults([
             EpgShow(
-              normalizedTitle: 'news',
-              displayTitle: 'News',
+              normalizedTitle: 'worldreport',
+              displayTitle: 'World Report',
               channelCount: 1,
               channels: [],
               episodeCount: 0,
@@ -769,7 +776,7 @@ void main() {
                 ),
                 EpgShowEpisode(
                   channelId: 1,
-                  channelName: 'CNN',
+                  channelName: 'BBC One',
                   title: 'Breaking News',
                   startTime: futureTime.add(const Duration(hours: 1)),
                   endTime: futureTime.add(const Duration(hours: 2)),
@@ -786,8 +793,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(railTitle, findsOneWidget);
-      expect(find.text('World News'), findsOneWidget);
-      expect(find.text('Breaking News'), findsOneWidget);
+      // One row for World Report, not two — the show display title
+      // renders once even though there are two episodes.
+      expect(find.text('World Report'), findsOneWidget);
     });
 
     testWidgets(
@@ -900,7 +908,7 @@ void main() {
           ),
         ]);
         await tester.pumpAndSettle();
-        expect(find.text('Fresh Episode'), findsOneWidget);
+        expect(find.text('Fresh'), findsOneWidget);
 
         // Now resolve the original slow Promise — it must NOT overwrite.
         slow.complete([
@@ -922,8 +930,8 @@ void main() {
           ),
         ]);
         await tester.pumpAndSettle();
-        expect(find.text('Stale Episode'), findsNothing);
-        expect(find.text('Fresh Episode'), findsOneWidget);
+        expect(find.text('Stale'), findsNothing);
+        expect(find.text('Fresh'), findsOneWidget);
       },
     );
 
@@ -953,6 +961,9 @@ void main() {
     );
 
     testWidgets('blank episode title is filtered out', (tester) async {
+      // Build two shows. "Bad Show" has only a blank-title episode, so it
+      // contributes zero non-blank episodes to the rail and its row must
+      // not render. "Good Show" has one valid episode and renders once.
       await tester.pumpWidget(
         _TestApp(
           channels: channels,
@@ -999,27 +1010,22 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
 
-      expect(find.text('Good Episode'), findsOneWidget);
-      // The blank-title episode must not render an empty card; the rail
-      // contains exactly one item, found as a MediaPreviewSection ancestor.
-      final rail = find.ancestor(
-        of: find.text('Good Episode'),
-        matching: find.byType(MediaPreviewSection),
-      );
-      expect(rail, findsOneWidget);
+      expect(find.text('Good Show'), findsOneWidget);
+      expect(find.text('Bad Show'), findsNothing);
     });
 
     testWidgets(
-      'Upcoming rail subtitle uses episode startTime via .toLocal()',
+      'Upcoming section renders day-relative .toLocal() time on the row',
       (
         tester,
       ) async {
         // Derive the airing instant from now (UTC + 30 days) so the test
-        // doesn't rot with the calendar. The .toLocal() invocation is
-        // exercised by the widget building without throwing on a UTC
-        // input; we also check that the subtitle Text widget carries the
-        // channel name (the formatted local time is asserted via the
-        // surrounding text rather than a hardcoded wall-clock string).
+        // doesn't rot with the calendar. _formatUpcomingTime renders
+        // 30-days-out airings as `MMMd jm` of the local instant, which
+        // is what the trailing times Text now carries. Asserting the
+        // formatted string proves both the .toLocal() conversion (the
+        // formatted string depends on the device's wall clock) and that
+        // the day-relative branch of the formatter is reached.
         final utc = DateTime.now().toUtc().add(const Duration(days: 30));
         await tester.pumpWidget(
           _TestApp(
@@ -1053,8 +1059,14 @@ void main() {
         await tester.pump(const Duration(milliseconds: 400));
         await tester.pumpAndSettle();
 
-        expect(find.text('Episode Slot'), findsOneWidget);
-        expect(find.textContaining('BBC One'), findsOneWidget);
+        expect(find.text('Local Time Check'), findsOneWidget);
+        expect(find.text('BBC One'), findsOneWidget);
+        expect(
+          find.textContaining(
+            DateFormat.MMMd('en').add_jm().format(utc.toLocal()),
+          ),
+          findsOneWidget,
+        );
       },
     );
 
@@ -1086,15 +1098,20 @@ void main() {
       },
     );
 
-    testWidgets('Upcoming rail drops past airings', (tester) async {
+    testWidgets('Upcoming section drops past airings', (tester) async {
+      // Two shows: Past Show has only past airings (filtered out entirely,
+      // so its row never renders); Future Show has only future airings
+      // (one row renders). The time filter is applied per-airing before
+      // grouping, so a show with mixed past + future airings would still
+      // render — covered by an explicit mixed-case test elsewhere.
       await tester.pumpWidget(
         _TestApp(
           channels: channels,
           categories: categories,
           onSearchShows: staticResults([
             EpgShow(
-              normalizedTitle: 'show',
-              displayTitle: 'Show',
+              normalizedTitle: 'past',
+              displayTitle: 'Past Show',
               channelCount: 1,
               channels: [],
               episodeCount: 0,
@@ -1106,8 +1123,17 @@ void main() {
                   startTime: futureTime.subtract(const Duration(hours: 2)),
                   endTime: futureTime.subtract(const Duration(hours: 1)),
                 ),
+              ],
+            ),
+            EpgShow(
+              normalizedTitle: 'future',
+              displayTitle: 'Future Show',
+              channelCount: 1,
+              channels: [],
+              episodeCount: 0,
+              recentEpisodes: [
                 EpgShowEpisode(
-                  channelId: 1,
+                  channelId: 2,
                   channelName: 'Channel',
                   title: 'Future Episode',
                   startTime: futureTime.add(const Duration(hours: 1)),
@@ -1124,30 +1150,40 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
 
-      expect(find.text('Future Episode'), findsOneWidget);
-      expect(find.text('Past Episode'), findsNothing);
+      expect(find.text('Future Show'), findsOneWidget);
+      expect(find.text('Past Show'), findsNothing);
     });
 
-    testWidgets('Upcoming rail caps at 12 airings soonest first', (
-      tester,
-    ) async {
+    testWidgets('Upcoming section caps at 4 groups', (tester) async {
       // Default test surface (800x600) only renders ~5-6 cards in the
-      // horizontal ListView; size up so all 12 are findable without
-      // scrolling the rail mid-test.
+      // horizontal ListView; size up so all rows are findable without
+      // scrolling mid-test.
       tester.view.physicalSize = const Size(4000, 1200);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      final episodes = <EpgShowEpisode>[];
-      for (var i = 0; i < 15; i++) {
-        episodes.add(
-          EpgShowEpisode(
-            channelId: 1,
-            channelName: 'Channel',
-            title: 'Episode $i',
-            startTime: futureTime.add(Duration(hours: i)),
-            endTime: futureTime.add(Duration(hours: i + 1)),
+      // 6 distinct shows on the same channel — each is its own group
+      // (different normalizedTitle). The cap at 4 must keep the first 4
+      // ordered by earliest airing.
+      final shows = <EpgShow>[];
+      for (var i = 0; i < 6; i++) {
+        shows.add(
+          EpgShow(
+            normalizedTitle: 'show-$i',
+            displayTitle: 'Show $i',
+            channelCount: 1,
+            channels: const [],
+            episodeCount: 0,
+            recentEpisodes: [
+              EpgShowEpisode(
+                channelId: 1,
+                channelName: 'Channel',
+                title: 'Episode $i',
+                startTime: futureTime.add(Duration(hours: i)),
+                endTime: futureTime.add(Duration(hours: i + 1)),
+              ),
+            ],
           ),
         );
       }
@@ -1155,31 +1191,21 @@ void main() {
         _TestApp(
           channels: channels,
           categories: categories,
-          onSearchShows: staticResults([
-            EpgShow(
-              normalizedTitle: 'show',
-              displayTitle: 'Show',
-              channelCount: 1,
-              channels: [],
-              episodeCount: 0,
-              recentEpisodes: episodes,
-            ),
-          ]),
+          onSearchShows: staticResults(shows),
         ),
       );
       await tester.pumpAndSettle();
 
-      await enterQuery(tester, 'sh');
+      await enterQuery(tester, 'show');
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
 
-      // Episodes 0-11 are visible (soonest first), 12-14 are not.
-      for (var i = 0; i < 12; i++) {
-        expect(find.text('Episode $i'), findsOneWidget);
+      // First 4 (soonest) render; the last 2 do not.
+      for (var i = 0; i < 4; i++) {
+        expect(find.text('Show $i'), findsOneWidget);
       }
-      for (var i = 12; i < 15; i++) {
-        expect(find.text('Episode $i'), findsNothing);
-      }
+      expect(find.text('Show 4'), findsNothing);
+      expect(find.text('Show 5'), findsNothing);
     });
 
     testWidgets('Movies & Series rail filters local VOD and Series by query', (
@@ -1278,12 +1304,12 @@ void main() {
     });
 
     testWidgets(
-      'tapping Upcoming card invokes onShowSelect with parent show',
+      'tapping Upcoming row invokes onShowSelect with parent show',
       (tester) async {
         EpgShow? tapped;
         final parent = EpgShow(
-          normalizedTitle: 'news',
-          displayTitle: 'News',
+          normalizedTitle: 'worldreport',
+          displayTitle: 'World Report',
           channelCount: 1,
           channels: [],
           episodeCount: 0,
@@ -1311,13 +1337,13 @@ void main() {
         await tester.pump(const Duration(milliseconds: 400));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('News Episode'));
+        await tester.tap(find.text('World Report'));
         await tester.pumpAndSettle();
 
         // The tap routes the *parent* EpgShow, not the episode — same
         // shape AppShell._openShow expects.
         expect(tapped, isNotNull);
-        expect(tapped!.normalizedTitle, 'news');
+        expect(tapped!.normalizedTitle, 'worldreport');
       },
     );
 
@@ -1384,8 +1410,8 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
 
       final parent = EpgShow(
-        normalizedTitle: 'news',
-        displayTitle: 'News',
+        normalizedTitle: 'worldreport',
+        displayTitle: 'World Report',
         channelCount: 1,
         channels: [],
         episodeCount: 0,
@@ -1423,7 +1449,10 @@ void main() {
 
       // Tapping each rail must not throw — null callbacks are no-ops so
       // unwired LiveTvScreen instances still render and respond.
-      await tester.tap(find.text('News Episode'));
+      // Upcoming row uses the show's displayTitle (the row's title
+      // text); tapping anywhere inside the DpadInkWell row triggers the
+      // onTap, so target the show title to avoid hitting any other widget.
+      await tester.tap(find.text('World Report'));
       await tester.pumpAndSettle();
       // Target the VOD title ('Money Movie'), not the card's subtitle
       // which is rendered from the `homeMovie` ARB key ("Movie") and
@@ -1431,6 +1460,679 @@ void main() {
       await tester.tap(find.text('Money Movie'));
       await tester.pumpAndSettle();
     });
+
+    testWidgets('Upcoming row receives the station logo URL', (
+      tester,
+    ) async {
+      final channelsWithLogos = [
+        const Channel(
+          id: 1,
+          name: 'BBC One',
+          streamUrl: 'http://example.com/1.m3u8',
+          categoryId: '10',
+          logoUrl: 'http://example.com/bbc.png',
+        ),
+      ];
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channelsWithLogos,
+          categories: categories,
+          onSearchShows: (_) async => [
+            EpgShow(
+              normalizedTitle: 'local-time',
+              displayTitle: 'Local Time Check',
+              channelCount: 1,
+              channels: const [
+                EpgShowChannel(channelId: 1, channelName: 'BBC One'),
+              ],
+              episodeCount: 0,
+              recentEpisodes: [
+                EpgShowEpisode(
+                  channelId: 1,
+                  channelName: 'BBC One',
+                  title: 'Tonight Show',
+                  startTime: futureTime,
+                  endTime: futureTime.add(const Duration(hours: 1)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'loca');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      // The row's leading ResilientMediaImage carries the channel's
+      // logoUrl. Walk the widget tree from the show title up to the
+      // DpadInkWell row, then find the ResilientMediaImage descendant.
+      final row = find.ancestor(
+        of: find.text('Local Time Check'),
+        matching: find.byType(DpadInkWell),
+      );
+      final image = tester.widget<ResilientMediaImage>(
+        find.descendant(of: row, matching: find.byType(ResilientMediaImage)),
+      );
+      expect(image.imageUrl, 'http://example.com/bbc.png');
+      expect(image.fit, BoxFit.contain);
+    });
+
+    testWidgets('Upcoming keeps rows for unmatched channels', (tester) async {
+      // Unlike On Now which drops unmatched-channelId entries (no channel
+      // to tune), Upcoming must NOT drop them — the row opens show
+      // detail, not a channel, so an unmatched channel is still a valid
+      // row. Contrast with the On Now `omits airingNow entries whose
+      // channelId matches no Channel` test. The row's logo image falls
+      // back to the channel-name icon since logoUrl is null.
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          onSearchShows: (_) async => [
+            EpgShow(
+              normalizedTitle: 'orphan',
+              displayTitle: 'Orphan Show',
+              channelCount: 1,
+              channels: const [
+                EpgShowChannel(channelId: 999, channelName: 'Ghost Channel'),
+              ],
+              episodeCount: 0,
+              recentEpisodes: [
+                EpgShowEpisode(
+                  channelId: 999,
+                  channelName: 'Ghost Channel',
+                  title: 'Lost Episode',
+                  startTime: futureTime,
+                  endTime: futureTime.add(const Duration(hours: 1)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'orphan');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Orphan Show'), findsOneWidget);
+      final row = find.ancestor(
+        of: find.text('Orphan Show'),
+        matching: find.byType(DpadInkWell),
+      );
+      final image = tester.widget<ResilientMediaImage>(
+        find.descendant(of: row, matching: find.byType(ResilientMediaImage)),
+      );
+      expect(image.imageUrl, isNull);
+    });
+
+    testWidgets(
+      'Upcoming emphasis: airing later today renders time-only label',
+      (tester) async {
+        final now = DateTime.now();
+        final todayLaterLocal = DateTime(now.year, now.month, now.day, 23);
+        final caseALocal = todayLaterLocal.isAfter(now)
+            ? todayLaterLocal
+            : DateTime(
+                now.year,
+                now.month,
+                now.day,
+                now.hour,
+              ).add(const Duration(hours: 1));
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: (_) async => [
+              EpgShow(
+                normalizedTitle: 'day-relative',
+                displayTitle: 'Day Relative',
+                channelCount: 1,
+                channels: const [
+                  EpgShowChannel(channelId: 1, channelName: 'BBC One'),
+                ],
+                episodeCount: 0,
+                recentEpisodes: [
+                  EpgShowEpisode(
+                    channelId: 1,
+                    channelName: 'BBC One',
+                    title: 'Today Episode',
+                    startTime: caseALocal.toUtc(),
+                    endTime: caseALocal.toUtc().add(const Duration(hours: 1)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        await enterQuery(tester, 'day');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(DateFormat.jm('en').format(caseALocal)),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'Upcoming emphasis: airing tomorrow renders Tomorrow-prefix label',
+      (tester) async {
+        final now = DateTime.now();
+        final tomorrowLocal = DateTime(
+          now.year,
+          now.month,
+          now.day + 1,
+          14,
+        );
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: (_) async => [
+              EpgShow(
+                normalizedTitle: 'day-relative',
+                displayTitle: 'Day Relative',
+                channelCount: 1,
+                channels: const [
+                  EpgShowChannel(channelId: 1, channelName: 'BBC One'),
+                ],
+                episodeCount: 0,
+                recentEpisodes: [
+                  EpgShowEpisode(
+                    channelId: 1,
+                    channelName: 'BBC One',
+                    title: 'Tomorrow Episode',
+                    startTime: tomorrowLocal.toUtc(),
+                    endTime: tomorrowLocal.toUtc().add(
+                      const Duration(hours: 1),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        await enterQuery(tester, 'day');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+        expect(
+          find.text(
+            l10n.liveTvAiringTomorrow(
+              DateFormat.jm('en').format(tomorrowLocal),
+            ),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'Upcoming emphasis: airing in 3 days renders date-prefixed label',
+      (tester) async {
+        final now = DateTime.now();
+        final threeDaysLocal = DateTime(
+          now.year,
+          now.month,
+          now.day + 3,
+          14,
+        );
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: (_) async => [
+              EpgShow(
+                normalizedTitle: 'day-relative',
+                displayTitle: 'Day Relative',
+                channelCount: 1,
+                channels: const [
+                  EpgShowChannel(channelId: 1, channelName: 'BBC One'),
+                ],
+                episodeCount: 0,
+                recentEpisodes: [
+                  EpgShowEpisode(
+                    channelId: 1,
+                    channelName: 'BBC One',
+                    title: 'Days Out Episode',
+                    startTime: threeDaysLocal.toUtc(),
+                    endTime: threeDaysLocal.toUtc().add(
+                      const Duration(hours: 1),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        await enterQuery(tester, 'day');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.textContaining(
+            DateFormat.MMMd('en').add_jm().format(threeDaysLocal),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('Upcoming keeps unmatched-channel entries (guard vs On Now)', (
+      tester,
+    ) async {
+      // Mirrors the Upcoming row test above but framed as the explicit
+      // guard against copying On Now's `if (channel == null) continue;`
+      // into _buildUpcomingSection — that would silently delete airings
+      // from the section.
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          onSearchShows: (_) async => [
+            EpgShow(
+              normalizedTitle: 'orphan-2',
+              displayTitle: 'Orphan Show 2',
+              channelCount: 1,
+              channels: const [
+                EpgShowChannel(channelId: 9999, channelName: 'Phantom'),
+              ],
+              episodeCount: 0,
+              recentEpisodes: [
+                EpgShowEpisode(
+                  channelId: 9999,
+                  channelName: 'Phantom',
+                  title: 'Phantom Episode',
+                  startTime: futureTime,
+                  endTime: futureTime.add(const Duration(hours: 1)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'orphan');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Orphan Show 2'), findsOneWidget);
+    });
+
+    testWidgets(
+      'Movies & Series rail does not render an emphasis label',
+      (tester) async {
+        // Existing rails set no emphasisLabel. Adding the field to the
+        // shared MediaPreviewItem must not surface an emphasis row on
+        // rails that don't opt in.
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            vodItems: const [
+              VodItem(
+                id: 1,
+                name: 'Test Movie',
+                streamUrl: 'http://example.com/m.m3u8',
+                containerExtension: 'mp4',
+              ),
+            ],
+            onSearchShows: (_) async => const [],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'test');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        final card = find.ancestor(
+          of: find.text('Test Movie'),
+          matching: find.byType(MediaPreviewCard),
+        );
+        final cardTexts = tester
+            .widgetList<Text>(
+              find.descendant(of: card, matching: find.byType(Text)),
+            )
+            .where((t) => t.data != null && t.data!.isNotEmpty)
+            .toList();
+        // Title + subtitle (rating-derived) — both small text, neither at
+        // titleMedium fontSize. If an emphasis label slipped in, its
+        // fontSize would be titleMedium (>= 14 logical px) — assert no
+        // such row exists.
+        for (final t in cardTexts) {
+          expect(
+            t.style?.fontSize != null && t.style!.fontSize! >= 14,
+            isFalse,
+            reason:
+                'No emphasis row expected on Movies & Series rail, '
+                'but found text "${t.data}" at fontSize ${t.style?.fontSize}.',
+          );
+        }
+      },
+    );
+
+    // ── R5 tests ─────────────────────────────────────────────────────────
+    // Round 5: vertical grouped Upcoming + bounded scrolling results area
+    // (the R5.1 overflow fix). Tests below cover the grouping invariants
+    // (collapse duplicates, multi-network split, ordering, 4-group cap,
+    // unmatched-channel tolerance) and the overflow regression itself.
+
+    testWidgets('search results area does not overflow on 1080p @ DPR 1.6', (
+      tester,
+    ) async {
+      // Reproduces the R5.1 bug: without the bounded `ConstrainedBox +
+      // SingleChildScrollView` wrapper, all three sections plus chrome
+      // (~944 px) overflow the ~675 logical px available on a 1080p panel
+      // at `_TvZoom._scale = 1.6`, throwing "A RenderFlex overflowed by
+      // 297 pixels on the bottom". With the fix, the results area scrolls
+      // internally and the channel list stays usable.
+      tester.view.physicalSize = const Size(1920, 1080);
+      tester.view.devicePixelRatio = 1.6;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          onSearchShows: (_) async => [
+            EpgShow(
+              normalizedTitle: 'on-now-show',
+              displayTitle: 'On Now Show',
+              channelCount: 1,
+              channels: const [
+                EpgShowChannel(channelId: 1, channelName: 'BBC One'),
+              ],
+              episodeCount: 1,
+              recentEpisodes: [
+                EpgShowEpisode(
+                  channelId: 1,
+                  channelName: 'BBC One',
+                  title: 'Upcoming Slot',
+                  startTime: futureTime,
+                  endTime: futureTime.add(const Duration(hours: 1)),
+                ),
+              ],
+              airingNow: [
+                EpgShowEpisode(
+                  channelId: 1,
+                  channelName: 'BBC One',
+                  title: 'On Now Slot',
+                  startTime: DateTime.now().toUtc().subtract(
+                    const Duration(minutes: 30),
+                  ),
+                  endTime: futureTime.add(const Duration(hours: 1)),
+                ),
+              ],
+            ),
+          ],
+          vodItems: const [
+            VodItem(
+              id: 1,
+              name: 'Test Movie',
+              streamUrl: 'http://example.com/m.m3u8',
+              containerExtension: 'mp4',
+            ),
+          ],
+          seriesList: const [Series(id: 10, name: 'Test Series')],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'te');
+      await tester.pumpAndSettle();
+
+      // The R5.1 bug surfaces as a RenderFlex overflowed exception. The
+      // fix wraps the three sections in a bounded scrolling region so
+      // nothing throws. Take any exception that built up during the
+      // pump cycle and assert it is null.
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('groups 40 same-channel airings into one row with +37 more', (
+      tester,
+    ) async {
+      // 40 future airings of the same show on the same channel must
+      // render exactly ONE row — not 40 cards, not 12. The row shows the
+      // first 3 airing times plus a "+37 more" affordance that points
+      // at the show detail screen (which already lists every airing).
+      tester.view.physicalSize = const Size(4000, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final episodes = <EpgShowEpisode>[];
+      for (var i = 0; i < 40; i++) {
+        episodes.add(
+          EpgShowEpisode(
+            channelId: 1,
+            channelName: 'BBC One',
+            title: 'Episode $i',
+            startTime: futureTime.add(Duration(hours: i)),
+            endTime: futureTime.add(Duration(hours: i + 1)),
+          ),
+        );
+      }
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          onSearchShows: staticResults([
+            EpgShow(
+              normalizedTitle: 'repeatshow',
+              displayTitle: 'Repeat Show',
+              channelCount: 1,
+              channels: const [],
+              episodeCount: 0,
+              recentEpisodes: episodes,
+            ),
+          ]),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'rep');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      // Show display title renders once.
+      expect(find.text('Repeat Show'), findsOneWidget);
+      // The "+37 more" affordance wraps the 40-airing count after the
+      // first 3 are shown. It is joined into the row's trailing times
+      // Text with " · " separators, so the affordance is reached via
+      // textContaining rather than exact text.
+      expect(find.textContaining('+37 more'), findsOneWidget);
+      // Episode titles are deliberately not rendered — only the show
+      // title (once) and the airing times (3) + the more-affordance.
+      expect(find.text('Episode 0'), findsNothing);
+      expect(find.text('Episode 39'), findsNothing);
+    });
+
+    testWidgets('same show on two channels renders two rows', (tester) async {
+      // Same show (normalizedTitle) on two different channels → two rows,
+      // each with its own logo and channel name. Groups are keyed by
+      // (normalizedTitle, channelId), not normalizedTitle alone.
+      tester.view.physicalSize = const Size(4000, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          onSearchShows: staticResults([
+            EpgShow(
+              normalizedTitle: 'crossnetshow',
+              displayTitle: 'Cross-Net Show',
+              channelCount: 2,
+              channels: const [
+                EpgShowChannel(channelId: 1, channelName: 'BBC One'),
+                EpgShowChannel(channelId: 2, channelName: 'CNN'),
+              ],
+              episodeCount: 0,
+              recentEpisodes: [
+                EpgShowEpisode(
+                  channelId: 1,
+                  channelName: 'BBC One',
+                  title: 'Episode BBC',
+                  startTime: futureTime,
+                  endTime: futureTime.add(const Duration(hours: 1)),
+                ),
+                EpgShowEpisode(
+                  channelId: 2,
+                  channelName: 'CNN',
+                  title: 'Episode CNN',
+                  startTime: futureTime.add(const Duration(hours: 1)),
+                  endTime: futureTime.add(const Duration(hours: 2)),
+                ),
+              ],
+            ),
+          ]),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'cro');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      // Show title renders once per row (so twice total).
+      expect(find.text('Cross-Net Show'), findsNWidgets(2));
+      // Both channel names appear.
+      expect(find.text('BBC One'), findsOneWidget);
+      expect(find.text('CNN'), findsOneWidget);
+    });
+
+    testWidgets('groups order by earliest airing across shows', (tester) async {
+      // Two shows, each with one airing. The later-airing show is
+      // returned first by the search; the rail must reorder so the
+      // sooner-airing show renders first.
+      tester.view.physicalSize = const Size(4000, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          onSearchShows: staticResults([
+            EpgShow(
+              normalizedTitle: 'late',
+              displayTitle: 'Late Show',
+              channelCount: 1,
+              channels: const [],
+              episodeCount: 0,
+              recentEpisodes: [
+                EpgShowEpisode(
+                  channelId: 1,
+                  channelName: 'BBC One',
+                  title: 'Late Episode',
+                  startTime: futureTime.add(const Duration(hours: 4)),
+                  endTime: futureTime.add(const Duration(hours: 5)),
+                ),
+              ],
+            ),
+            EpgShow(
+              normalizedTitle: 'soon',
+              displayTitle: 'Soon Show',
+              channelCount: 1,
+              channels: const [],
+              episodeCount: 0,
+              recentEpisodes: [
+                EpgShowEpisode(
+                  channelId: 1,
+                  channelName: 'BBC One',
+                  title: 'Soon Episode',
+                  startTime: futureTime,
+                  endTime: futureTime.add(const Duration(hours: 1)),
+                ),
+              ],
+            ),
+          ]),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'show');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      final soonY = tester.getTopLeft(find.text('Soon Show')).dy;
+      final lateY = tester.getTopLeft(find.text('Late Show')).dy;
+      expect(soonY, lessThan(lateY));
+    });
+
+    testWidgets(
+      'On Now and Movies & Series still render as MediaPreviewSection',
+      (
+        tester,
+      ) async {
+        // R5.2 only restructures the Upcoming rail. On Now and Movies &
+        // Series must remain MediaPreviewSection instances — the shared
+        // rail widget, not the new vertical Column. Pinning this guards
+        // against a future "let's also rewrite On Now" drift.
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: (_) async => [
+              EpgShow(
+                normalizedTitle: 'on-now-show',
+                displayTitle: 'On Now Show',
+                channelCount: 1,
+                channels: const [
+                  EpgShowChannel(channelId: 1, channelName: 'BBC One'),
+                ],
+                episodeCount: 1,
+                recentEpisodes: const [],
+                airingNow: [
+                  EpgShowEpisode(
+                    channelId: 1,
+                    channelName: 'BBC One',
+                    title: 'On Now Slot',
+                    startTime: DateTime.now().toUtc().subtract(
+                      const Duration(minutes: 30),
+                    ),
+                    endTime: DateTime.now().toUtc().add(
+                      const Duration(hours: 1),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            vodItems: const [
+              VodItem(
+                id: 1,
+                name: 'Test Movie',
+                streamUrl: 'http://example.com/m.m3u8',
+                containerExtension: 'mp4',
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'te');
+        await tester.pumpAndSettle();
+
+        // Two MediaPreviewSections: one for On Now, one for Movies & Series.
+        // The Upcoming section is a Column, not a MediaPreviewSection.
+        expect(find.byType(MediaPreviewSection), findsNWidgets(2));
+      },
+    );
   });
 
   group('LiveTvScreen On Now rail', () {
@@ -1468,10 +2170,11 @@ void main() {
     EpgShow showWithAiringNow({
       required String showKey,
       required List<EpgShowEpisode> airingNow,
+      String? displayTitle,
     }) {
       return EpgShow(
         normalizedTitle: showKey,
-        displayTitle: showKey,
+        displayTitle: displayTitle ?? showKey,
         channelCount: airingNow.length,
         channels: [],
         episodeCount: 0,
@@ -1495,8 +2198,12 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
+      // Show displayTitle is the card title (R6: fixed the wrong-field
+      // bug). Use a name that doesn't collide with the 'News' category
+      // tab in this group's setUp.
       final show = showWithAiringNow(
-        showKey: 'News',
+        showKey: 'tonightnews',
+        displayTitle: 'Tonight News',
         airingNow: [
           EpgShowEpisode(
             channelId: 1,
@@ -1519,50 +2226,64 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await enterQueryAndSettle(tester, 'ne');
+      await enterQueryAndSettle(tester, 'ton');
 
       expect(onNowRailTitle, findsOneWidget);
-      // Title pulls `subtitle ?? title` — with subtitle present, it's
-      // the episode name "Tonight".
-      expect(find.text('Tonight'), findsOneWidget);
+      // Card title is the SHOW name (R6).
+      expect(find.text('Tonight News'), findsOneWidget);
+      // Subtitle joins the episode subtitle with the channel.
+      expect(find.text('Tonight · BBC One'), findsOneWidget);
+      // Episode title no longer renders as a card title.
       expect(find.text('World News'), findsNothing);
     });
 
-    testWidgets('falls back to episode title when subtitle is absent', (
-      tester,
-    ) async {
-      tester.view.physicalSize = const Size(4000, 1200);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets(
+      'subtitle falls back to channel name when episode has no subtitle',
+      (
+        tester,
+      ) async {
+        // Renamed from 'falls back to episode title when subtitle is
+        // absent': the show name is now the card title, and an episode
+        // without a subtitle produces a channel-only subtitle row.
+        tester.view.physicalSize = const Size(4000, 1200);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
 
-      final show = showWithAiringNow(
-        showKey: 'News',
-        airingNow: [
-          EpgShowEpisode(
-            channelId: 1,
-            channelName: 'BBC One',
-            title: 'World News',
-            startTime: DateTime.now().toUtc().subtract(
-              const Duration(minutes: 30),
+        final show = showWithAiringNow(
+          showKey: 'tonightnews',
+          displayTitle: 'Tonight News',
+          airingNow: [
+            EpgShowEpisode(
+              channelId: 1,
+              channelName: 'BBC One',
+              title: 'World News',
+              // subtitle: null — falls through to channel-only.
+              startTime: DateTime.now().toUtc().subtract(
+                const Duration(minutes: 30),
+              ),
+              endTime: endTime,
             ),
-            endTime: endTime,
+          ],
+        );
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: (_) async => [show],
           ),
-        ],
-      );
-      await tester.pumpWidget(
-        _TestApp(
-          channels: channels,
-          categories: categories,
-          onSearchShows: (_) async => [show],
-        ),
-      );
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpAndSettle();
 
-      await enterQueryAndSettle(tester, 'ne');
+        await enterQueryAndSettle(tester, 'ton');
 
-      expect(find.text('World News'), findsOneWidget);
-    });
+        // Card title is the SHOW name.
+        expect(find.text('Tonight News'), findsOneWidget);
+        // Subtitle is the channel alone — no stray " · " separator.
+        expect(find.text('BBC One'), findsOneWidget);
+        expect(find.text('World News'), findsNothing);
+      },
+    );
 
     testWidgets(
       'renders nothing when airing_now is absent from the payload',
@@ -1604,9 +2325,12 @@ void main() {
 
         // channelId 999 doesn't appear in `channels` above — the
         // episode has nowhere to tune to. The rail should skip it
-        // rather than render a card that can't do anything.
+        // rather than render a card that can't do anything. Use a
+        // show displayTitle that doesn't collide with the 'News'
+        // category tab.
         final show = showWithAiringNow(
-          showKey: 'News',
+          showKey: 'ghostshow',
+          displayTitle: 'Ghost Show',
           airingNow: [
             EpgShowEpisode(
               channelId: 1,
@@ -1637,10 +2361,15 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await enterQueryAndSettle(tester, 'ne');
+        await enterQueryAndSettle(tester, 'ghost');
 
-        expect(find.text('On BBC'), findsOneWidget);
-        expect(find.text('On Ghost'), findsNothing);
+        // Card title is the SHOW name (one card rendered for the
+        // matched channel); the dropped episode has no card at all.
+        expect(find.text('Ghost Show'), findsOneWidget);
+        // Channel 'BBC One' survives as the subtitle; the dropped
+        // 'Ghost Channel' rendering never reaches the tree.
+        expect(find.text('BBC One'), findsOneWidget);
+        expect(find.text('Ghost Channel'), findsNothing);
       },
     );
 
@@ -1695,7 +2424,16 @@ void main() {
 
       await enterQueryAndSettle(tester, 'Grace and Frankie');
 
-      await tester.tap(find.text('Live Coverage'));
+      // R6: card title is the SHOW name, not the episode name. Both
+      // cards render the same title (same show on two channels);
+      // tap the second one — find by channel subtitle. The fixture
+      // episodes have no `subtitle` field set, so the subtitle is
+      // just the channel name (no `Live Coverage · CNN` joined form).
+      final cnnCard = find.ancestor(
+        of: find.text('CNN'),
+        matching: find.byType(DpadInkWell),
+      );
+      await tester.tap(cnnCard);
       await tester.pumpAndSettle();
 
       expect(selected, isNotNull);
@@ -1717,7 +2455,11 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      final startTime = endTime.subtract(const Duration(hours: 2));
+      // Upcoming startTime must be strictly in the future (the R5.2 time
+      // filter is `startTime.isAfter(now)`). endTime is set in setUp as
+      // `now + 2h`; back off 1h so the upcoming airing lands an hour
+      // from now, comfortably future across any test-render latency.
+      final startTime = endTime.subtract(const Duration(hours: 1));
       final show = EpgShow(
         normalizedTitle: 'news',
         displayTitle: 'News',
@@ -1756,7 +2498,7 @@ void main() {
 
       await enterQueryAndSettle(tester, 'ne');
 
-      // Both rail titles render…
+      // Both section titles render…
       expect(find.text('On Now'), findsOneWidget);
       expect(find.text('Upcoming'), findsOneWidget);
       // …and "On Now" appears higher in the column than "Upcoming".
@@ -1771,66 +2513,65 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      // Three On Now entries in a specific order — the plan says we
-      // preserve server order, so a rebuild must not reshuffle them.
-      // Mixed channelIds exercise the lookup against the full channel
-      // list (the R3 review fix), and the query deliberately matches
+      // R6: card title is the SHOW name, not the episode name — three
+      // airings of the same show would now share a title (and the
+      // x/y test couldn't disambiguate them). Restructure as three
+      // distinct shows with one airing each; the invariant under test
+      // (server order preserved across rebuild) is unchanged. Mixed
+      // channelIds exercise the lookup against the full channel list
+      // (the R3 review fix), and the query deliberately matches
       // neither channel name so neither card can be dropped by the
       // search-name filter.
-      final show = showWithAiringNow(
-        showKey: 'Grace and Frankie',
-        airingNow: [
-          EpgShowEpisode(
-            channelId: 1,
-            channelName: 'BBC One',
-            title: 'Alpha',
-            startTime: DateTime.now().toUtc().subtract(
-              const Duration(minutes: 30),
+      EpgShow mkShow(String key, int channelId, String channelName) {
+        return EpgShow(
+          normalizedTitle: key,
+          displayTitle: key,
+          channelCount: 1,
+          channels: const [],
+          episodeCount: 0,
+          recentEpisodes: const [],
+          airingNow: [
+            EpgShowEpisode(
+              channelId: channelId,
+              channelName: channelName,
+              title: '$key episode',
+              startTime: DateTime.now().toUtc().subtract(
+                const Duration(minutes: 30),
+              ),
+              endTime: endTime,
             ),
-            endTime: endTime,
-          ),
-          EpgShowEpisode(
-            channelId: 2,
-            channelName: 'CNN',
-            title: 'Beta',
-            startTime: DateTime.now().toUtc().subtract(
-              const Duration(minutes: 30),
-            ),
-            endTime: endTime,
-          ),
-          EpgShowEpisode(
-            channelId: 1,
-            channelName: 'BBC One',
-            title: 'Gamma',
-            startTime: DateTime.now().toUtc().subtract(
-              const Duration(minutes: 30),
-            ),
-            endTime: endTime,
-          ),
-        ],
-      );
+          ],
+        );
+      }
+
+      final shows = [
+        mkShow('Grace and Frankie', 1, 'BBC One'),
+        mkShow('King of Queens', 2, 'CNN'),
+        mkShow('Downright Delicious', 1, 'BBC One'),
+      ];
       await tester.pumpWidget(
         _TestApp(
           channels: channels,
           categories: categories,
-          onSearchShows: (_) async => [show],
+          onSearchShows: (_) async => shows,
         ),
       );
       await tester.pumpAndSettle();
 
-      await enterQueryAndSettle(tester, 'Grace and Frankie');
+      // "ne" matches all three shows (each contains 'n').
+      await enterQueryAndSettle(tester, 'ne');
 
       final orderBefore = [
-        tester.getTopLeft(find.text('Alpha')).dx,
-        tester.getTopLeft(find.text('Beta')).dx,
-        tester.getTopLeft(find.text('Gamma')).dx,
+        tester.getTopLeft(find.text('Grace and Frankie')).dy,
+        tester.getTopLeft(find.text('King of Queens')).dy,
+        tester.getTopLeft(find.text('Downright Delicious')).dy,
       ];
       // Force one extra frame to exercise the rebuild path.
       await tester.pump();
       final orderAfter = [
-        tester.getTopLeft(find.text('Alpha')).dx,
-        tester.getTopLeft(find.text('Beta')).dx,
-        tester.getTopLeft(find.text('Gamma')).dx,
+        tester.getTopLeft(find.text('Grace and Frankie')).dy,
+        tester.getTopLeft(find.text('King of Queens')).dy,
+        tester.getTopLeft(find.text('Downright Delicious')).dy,
       ];
       expect(orderAfter, equals(orderBefore));
     });
@@ -1884,8 +2625,319 @@ void main() {
         await enterQueryAndSettle(tester, 'Grace and Frankie');
 
         expect(find.text('On Now'), findsOneWidget);
-        expect(find.text('Grace on BBC'), findsOneWidget);
-        expect(find.text('Grace on CNN'), findsOneWidget);
+        // R6: card title is the SHOW name (one widget per card), not
+        // the episode name (which no longer renders). The search field
+        // also renders the query 'Grace and Frankie' as a Text widget,
+        // so we scope to descendants of MediaPreviewCard to count only
+        // the two cards.
+        final showTitleCount = tester
+            .widgetList<Text>(
+              find.descendant(
+                of: find.byType(MediaPreviewCard),
+                matching: find.text('Grace and Frankie'),
+              ),
+            )
+            .length;
+        expect(showTitleCount, 2);
+        // Each card's subtitle carries its channel.
+        expect(find.text('BBC One'), findsOneWidget);
+        expect(find.text('CNN'), findsOneWidget);
+        // The episode titles never render as Text widgets — they're
+        // now in the title slot's old position and that slot is the
+        // show's displayTitle.
+        expect(find.text('Grace on BBC'), findsNothing);
+        expect(find.text('Grace on CNN'), findsNothing);
+      },
+    );
+
+    testWidgets('On Now card receives the station logo URL', (tester) async {
+      tester.view.physicalSize = const Size(4000, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final channelsWithLogos = [
+        const Channel(
+          id: 1,
+          name: 'BBC One',
+          streamUrl: 'http://example.com/1.m3u8',
+          categoryId: '10',
+          logoUrl: 'http://example.com/bbc.png',
+        ),
+      ];
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channelsWithLogos,
+          categories: categories,
+          onSearchShows: (_) async => [
+            showWithAiringNow(
+              showKey: 'news',
+              airingNow: [
+                EpgShowEpisode(
+                  channelId: 1,
+                  channelName: 'BBC One',
+                  title: 'Now Playing',
+                  startTime: DateTime.now().toUtc().subtract(
+                    const Duration(minutes: 30),
+                  ),
+                  endTime: endTime,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQueryAndSettle(tester, 'news');
+
+      // R6: card title is the show's displayTitle (lowercase 'news' from
+      // the helper), not the episode's title ('Now Playing'). The card
+      // ancestor is found by the show title.
+      final card = find.ancestor(
+        of: find.text('news'),
+        matching: find.byType(MediaPreviewCard),
+      );
+      final image = tester.widget<ResilientMediaImage>(
+        find.descendant(of: card, matching: find.byType(ResilientMediaImage)),
+      );
+      expect(image.imageUrl, 'http://example.com/bbc.png');
+      expect(image.fit, BoxFit.contain);
+    });
+
+    testWidgets('On Now emphasis label is rendered at title-scale weight', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(4000, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          onSearchShows: (_) async => [
+            showWithAiringNow(
+              showKey: 'news',
+              airingNow: [
+                EpgShowEpisode(
+                  channelId: 1,
+                  channelName: 'BBC One',
+                  title: 'Now Playing',
+                  startTime: DateTime.now().toUtc().subtract(
+                    const Duration(minutes: 30),
+                  ),
+                  endTime: endTime,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQueryAndSettle(tester, 'news');
+
+      // Find the card containing the show title (R6). Card title is
+      // `displayTitle: 'news'` from the helper, not the episode's
+      // title ('Now Playing') which no longer renders.
+      final card = find.ancestor(
+        of: find.text('news'),
+        matching: find.byType(MediaPreviewCard),
+      );
+      // The emphasis label renders as a Text wrapped in FittedBox, with
+      // the channel name as the subtitle Text. Both are descendants of
+      // the card. Distinguish by fontSize: emphasis > subtitle.
+      final cardTexts = tester
+          .widgetList<Text>(
+            find.descendant(of: card, matching: find.byType(Text)),
+          )
+          .where((t) => t.data != null && t.data!.isNotEmpty)
+          .toList();
+      final emphasisText = cardTexts.firstWhere(
+        (t) =>
+            t.data == 'Until ${DateFormat.jm('en').format(endTime.toLocal())}',
+      );
+      final subtitleText = cardTexts.firstWhere((t) => t.data == 'BBC One');
+
+      expect(
+        emphasisText.style?.fontWeight,
+        FontWeight.w700,
+        reason:
+            'Emphasis label must be at title-scale weight to be '
+            'readable from the couch.',
+      );
+      expect(
+        emphasisText.style!.fontSize! > subtitleText.style!.fontSize!,
+        isTrue,
+        reason:
+            'Emphasis fontSize must exceed subtitle fontSize so the '
+            'airing time is the most prominent datum on the card.',
+      );
+    });
+
+    // ── R6: On Now card title is the SHOW name, subtitle carries the
+    // episode name + channel with graceful degradation. Regression guard
+    // for the wrong-field bug CJ found in manual testing — see
+    // AGENT_HANDOFF.md entries at the end of round 5. The previous code
+    // rendered `entry.episode.displayTitle` (a getter `subtitle ?? title`),
+    // so a "Midsomer Murders" search whose only airing had `subtitle:
+    // "A Picture of Innocence"` rendered the card titled "A Picture of
+    // Innocence" — wrong field, looked like drift. None of the existing
+    // On Now tests caught it because every fixture left `subtitle: null`.
+
+    Future<void> setupOnNowCard(
+      WidgetTester tester,
+      EpgShowEpisode episode,
+    ) async {
+      tester.view.physicalSize = const Size(4000, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      // Construct EpgShow directly so we control displayTitle verbatim.
+      // The group's `showWithAiringNow` helper hard-codes `displayTitle:
+      // showKey` which would give us 'midsomer-murders' instead of the
+      // human-readable 'Midsomer Murders' the spec asks for.
+      final show = EpgShow(
+        normalizedTitle: 'midsomer-murders',
+        displayTitle: 'Midsomer Murders',
+        channelCount: 1,
+        channels: const [],
+        episodeCount: 0,
+        recentEpisodes: const [],
+        airingNow: [episode],
+      );
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          onSearchShows: (_) async => [show],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await enterQueryAndSettle(tester, 'mid');
+    }
+
+    testWidgets(
+      'On Now card title is show name + subtitle joins ep · channel',
+      (
+        tester,
+      ) async {
+        // Both present — title is the SHOW name, subtitle is
+        // "{episode subtitle} · {channel name}". The previous code rendered
+        // the episode name as the title (a getter returning subtitle ?? title),
+        // so this test fails against the buggy impl and passes against the
+        // fixed one — the mutation check relies on this asymmetry.
+        await setupOnNowCard(
+          tester,
+          EpgShowEpisode(
+            channelId: 1,
+            channelName: 'US: OVATION',
+            title: 'Midsomer Murders',
+            subtitle: 'A Picture of Innocence',
+            startTime: DateTime.now().toUtc().subtract(
+              const Duration(minutes: 30),
+            ),
+            endTime: endTime,
+          ),
+        );
+
+        // Title is the show name (displayTitle on EpgShow).
+        expect(find.text('Midsomer Murders'), findsOneWidget);
+        // Episode name appears in the subtitle, joined with the channel.
+        expect(
+          find.text('A Picture of Innocence · US: OVATION'),
+          findsOneWidget,
+        );
+        // No stray separator or duplicate rendering of either token.
+        expect(find.text('A Picture of Innocence'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'On Now card subtitle falls back to channel name when episode has no subtitle',
+      (tester) async {
+        await setupOnNowCard(
+          tester,
+          EpgShowEpisode(
+            channelId: 1,
+            channelName: 'US: OVATION',
+            title: 'Midsomer Murders',
+            // subtitle: null — falls through to channel-only.
+            startTime: DateTime.now().toUtc().subtract(
+              const Duration(minutes: 30),
+            ),
+            endTime: endTime,
+          ),
+        );
+
+        // Title is the show name (R4 unchanged).
+        expect(find.text('Midsomer Murders'), findsOneWidget);
+        // Subtitle is the channel alone — no stray " · " separator.
+        expect(find.text('US: OVATION'), findsOneWidget);
+        expect(find.textContaining(' · '), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'On Now card subtitle falls back to episode subtitle when channel name is null',
+      (tester) async {
+        await setupOnNowCard(
+          tester,
+          EpgShowEpisode(
+            channelId: 1,
+            title: 'Midsomer Murders',
+            subtitle: 'A Picture of Innocence',
+            startTime: DateTime.now().toUtc().subtract(
+              const Duration(minutes: 30),
+            ),
+            endTime: endTime,
+          ),
+        );
+
+        // Title is the show name.
+        expect(find.text('Midsomer Murders'), findsOneWidget);
+        // Subtitle is the episode subtitle alone — no trailing " · ".
+        expect(find.text('A Picture of Innocence'), findsOneWidget);
+        expect(find.textContaining(' · '), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'On Now card subtitle is null when both episode subtitle and channel name are absent',
+      (tester) async {
+        await setupOnNowCard(
+          tester,
+          EpgShowEpisode(
+            channelId: 1,
+            title: 'Midsomer Murders',
+            // subtitle: null and channelName: null — no subtitle row.
+            startTime: DateTime.now().toUtc().subtract(
+              const Duration(minutes: 30),
+            ),
+            endTime: endTime,
+          ),
+        );
+
+        // Title is the show name.
+        expect(find.text('Midsomer Murders'), findsOneWidget);
+        // No subtitle Text widget renders — confirmed by walking the
+        // card's Text descendants and asserting none has empty data
+        // (the phantom-row regression: an empty-string subtitle would
+        // render an 11px empty Text below the title).
+        final card = find.ancestor(
+          of: find.text('Midsomer Murders'),
+          matching: find.byType(MediaPreviewCard),
+        );
+        final cardTexts = tester
+            .widgetList<Text>(
+              find.descendant(of: card, matching: find.byType(Text)),
+            )
+            .where((t) => t.data != null && t.data!.isEmpty)
+            .toList();
+        expect(cardTexts, isEmpty);
       },
     );
   });

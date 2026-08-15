@@ -101,6 +101,27 @@ class AppLocalizationsDe extends AppLocalizations {
   String get liveTvOnNow => 'Jetzt live';
 
   @override
+  String liveTvAiringUntil(String time) {
+    return 'Bis $time';
+  }
+
+  @override
+  String liveTvAiringTomorrow(String time) {
+    return 'Morgen $time';
+  }
+
+  @override
+  String liveTvMoreAirings(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '+$count weitere',
+      one: '+1 weitere',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get liveTvNoChannels => 'Keine Sender verfügbar';
 
   @override

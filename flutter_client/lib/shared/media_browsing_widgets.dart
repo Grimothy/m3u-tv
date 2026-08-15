@@ -672,6 +672,7 @@ class MediaPreviewItem {
     this.progressFraction,
     this.overlayBadges = const <String>[],
     this.overlayLabel,
+    this.emphasisLabel,
   });
 
   final String title;
@@ -695,6 +696,18 @@ class MediaPreviewItem {
 
   /// Optional label shown left-aligned opposite the overlay badges.
   final String? overlayLabel;
+
+  /// A short, high-value string rendered between the title and subtitle on
+  /// default/poster cards at title-scale weight — for a 10-foot UI, the one
+  /// datum that must survive a glance from the couch (here: when a programme
+  /// airs). Null on every existing rail, which renders exactly today's tree.
+  ///
+  /// Rendered ONLY by `_buildDefaultContent`. Landscape cards have no room and
+  /// deliberately ignore it — see the assert in `build`. Note the precedent:
+  /// `overlayLabel`, `overlayBadges` and `progressFraction` are declared here
+  /// but read only by `_buildLandscapeContent` (L745-878), so they silently do
+  /// nothing on default cards. Do not add to that trap.
+  final String? emphasisLabel;
 }
 
 class MediaPreviewSection extends StatefulWidget {
@@ -844,6 +857,10 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
     super.build(context);
     final colorScheme = Theme.of(context).colorScheme;
     final item = widget.item;
+    assert(
+      !widget.landscapeStyle || item.emphasisLabel == null,
+      'MediaPreviewItem.emphasisLabel is not rendered by landscape cards.',
+    );
     final isRating = item.subtitle?.startsWith('★') ?? false;
     final width =
         widget.cardWidth ??
@@ -1110,6 +1127,22 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
                 maxLines: posterStyle ? 2 : 1,
                 overflow: TextOverflow.ellipsis,
               ),
+              if (item.emphasisLabel != null) ...[
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    item.emphasisLabel!,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              ],
               if (item.subtitle != null) ...[
                 const SizedBox(height: 2),
                 Text(
