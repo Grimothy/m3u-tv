@@ -130,11 +130,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get liveTvMultiviewFull => '多画面已满（最多 9 路）';
 
   @override
-  String liveTvMultiviewCount(int count) {
-    return '多画面 · $count';
-  }
-
-  @override
   String get multiviewTitle => '多画面';
 
   @override

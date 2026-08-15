@@ -131,11 +131,6 @@ class AppLocalizationsEs extends AppLocalizations {
       'Multivista está lleno (máx. 9 transmisiones)';
 
   @override
-  String liveTvMultiviewCount(int count) {
-    return 'Multivista · $count';
-  }
-
-  @override
   String get multiviewTitle => 'Multivista';
 
   @override

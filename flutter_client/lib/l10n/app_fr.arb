@@ -53,14 +53,6 @@
   "liveTvAddMultiview": "Ajouter à Multivue",
   "liveTvRemoveMultiview": "Retirer de Multivue",
   "liveTvMultiviewFull": "Multivue est complet (9 flux max)",
-  "liveTvMultiviewCount": "Multivue · {count}",
-  "@liveTvMultiviewCount": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
   "multiviewTitle": "Multivue",
   "multiviewEmpty": "Aucun flux - appuyez longuement sur une chaîne dans Live TV et choisissez Ajouter à Multivue",
   "multiviewMove": "Déplacer",

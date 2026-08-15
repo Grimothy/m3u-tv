@@ -338,12 +338,6 @@ abstract class AppLocalizations {
   /// **'Multiview is full (9 streams max)'**
   String get liveTvMultiviewFull;
 
-  /// No description provided for @liveTvMultiviewCount.
-  ///
-  /// In en, this message translates to:
-  /// **'Multiview · {count}'**
-  String liveTvMultiviewCount(int count);
-
   /// No description provided for @multiviewTitle.
   ///
   /// In en, this message translates to:

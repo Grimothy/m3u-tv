@@ -53,14 +53,6 @@
   "liveTvAddMultiview": "Zu Multiview hinzufügen",
   "liveTvRemoveMultiview": "Aus Multiview entfernen",
   "liveTvMultiviewFull": "Multiview ist voll (max. 9 Streams)",
-  "liveTvMultiviewCount": "Multiview · {count}",
-  "@liveTvMultiviewCount": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
   "multiviewTitle": "Multiview",
   "multiviewEmpty": "Keine Streams - Kanal in Live TV lange drücken und „Zu Multiview hinzufügen“ wählen",
   "multiviewMove": "Verschieben",

@@ -183,6 +183,7 @@ class AppButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.icon,
+    this.badgeCount,
     this.variant = AppButtonVariant.tonal,
     this.autofocus = false,
     this.focusNode,
@@ -192,6 +193,10 @@ class AppButton extends StatelessWidget {
 
   final String label;
   final IconData? icon;
+
+  /// Small count badge overlaid on the button's corner (e.g. active
+  /// Multiview tile count) instead of appending the count to [label].
+  final int? badgeCount;
   final VoidCallback? onPressed;
   final AppButtonVariant variant;
   final bool autofocus;
@@ -278,12 +283,54 @@ class AppButton extends StatelessWidget {
             );
     }
 
-    return _HoverFocusable(
+    final result = _HoverFocusable(
       autofocus: autofocus,
       focusNode: focusNode,
       autoScroll: autoScroll,
       onSelect: effectiveOnPressed,
       child: button,
+    );
+    final count = badgeCount;
+    if (count == null) return result;
+    // Material's [Badge] wraps its child in a loose-fit Stack, which
+    // loosens whatever tight width the surrounding layout (e.g. a stretched
+    // Column or an Expanded Row slot) was enforcing on the button, so it
+    // shrinks back to its intrinsic content width instead of filling the
+    // full-width slot the other buttons in the same row/column get.
+    // StackFit.passthrough forwards those constraints unchanged instead.
+    return Stack(
+      clipBehavior: Clip.none,
+      fit: StackFit.passthrough,
+      children: [
+        result,
+        Positioned(top: -6, right: -6, child: _CountBadge(count: count)),
+      ],
+    );
+  }
+}
+
+class _CountBadge extends StatelessWidget {
+  const _CountBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: ShapeDecoration(
+        color: scheme.error,
+        shape: const StadiumBorder(),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        '$count',
+        style: Theme.of(
+          context,
+        ).textTheme.labelSmall?.copyWith(color: scheme.onError),
+      ),
     );
   }
 }

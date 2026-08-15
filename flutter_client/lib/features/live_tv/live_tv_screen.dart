@@ -737,9 +737,8 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     if (!_multiviewSupported || multiviewCount == 0) return null;
     return AppButton(
       icon: Icons.grid_view,
-      label: AppLocalizations.of(context).liveTvMultiviewCount(
-        multiviewCount,
-      ),
+      badgeCount: multiviewCount,
+      label: AppLocalizations.of(context).multiviewTitle,
       onPressed: () => unawaited(_openMultiview(context)),
     );
   }

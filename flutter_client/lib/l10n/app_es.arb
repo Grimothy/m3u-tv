@@ -53,14 +53,6 @@
   "liveTvAddMultiview": "Añadir a Multivista",
   "liveTvRemoveMultiview": "Quitar de Multivista",
   "liveTvMultiviewFull": "Multivista está lleno (máx. 9 transmisiones)",
-  "liveTvMultiviewCount": "Multivista · {count}",
-  "@liveTvMultiviewCount": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
   "multiviewTitle": "Multivista",
   "multiviewEmpty": "Sin transmisiones - mantén pulsado un canal en Live TV y elige Añadir a Multivista",
   "multiviewMove": "Mover",

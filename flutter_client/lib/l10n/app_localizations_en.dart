@@ -130,11 +130,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get liveTvMultiviewFull => 'Multiview is full (9 streams max)';
 
   @override
-  String liveTvMultiviewCount(int count) {
-    return 'Multiview · $count';
-  }
-
-  @override
   String get multiviewTitle => 'Multiview';
 
   @override
