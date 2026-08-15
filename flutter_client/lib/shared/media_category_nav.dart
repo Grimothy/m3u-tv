@@ -185,10 +185,16 @@ class MediaCategoryNavState extends State<MediaCategoryNav> {
   }
 
   Widget _buildStackedLayout(BuildContext context) {
-    final hasControls =
-        widget.leading != null ||
-        widget.trailing != null ||
-        widget.tabs.isNotEmpty;
+    final actionButtons = [
+      if (widget.leading != null) widget.leading!,
+      if (widget.tabs.isNotEmpty)
+        AppButton(
+          label: widget.filterButtonLabel,
+          icon: Icons.filter_list,
+          onPressed: () => _openFilterScreen(context),
+        ),
+      if (widget.trailing != null) widget.trailing!,
+    ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         MediaBrowsingMetrics.contentPadding,
@@ -205,32 +211,43 @@ class MediaCategoryNavState extends State<MediaCategoryNav> {
             onChanged: widget.onQueryChanged,
             autofocus: widget.searchAutofocus,
           ),
-          if (hasControls) ...[
+          if (actionButtons.isNotEmpty) ...[
             const SizedBox(height: MediaBrowsingMetrics.chipGap),
-            Row(
-              children: [
-                if (widget.leading != null) ...[
-                  Expanded(child: widget.leading!),
-                  const SizedBox(width: MediaBrowsingMetrics.chipGap),
-                ],
-                if (widget.tabs.isNotEmpty)
-                  Expanded(
-                    child: AppButton(
-                      label: widget.filterButtonLabel,
-                      icon: Icons.filter_list,
-                      onPressed: () => _openFilterScreen(context),
-                    ),
-                  ),
-                if (widget.trailing != null) ...[
-                  const SizedBox(width: MediaBrowsingMetrics.chipGap),
-                  Expanded(child: widget.trailing!),
-                ],
-              ],
-            ),
+            _buildActionButtonsRow(actionButtons),
             const SizedBox(height: MediaBrowsingMetrics.chipGap),
           ],
         ],
       ),
+    );
+  }
+
+  /// Two buttons keep the equal-width, full-bleed look. Three+ (currently
+  /// only Live TV's view toggle + Filter + Multiview) no longer fit at equal
+  /// width without wrapping button labels onto two lines, so they fall back
+  /// to natural-width buttons in a horizontally scrollable row instead of
+  /// shrinking further.
+  Widget _buildActionButtonsRow(List<Widget> actionButtons) {
+    if (actionButtons.length > 2) {
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final (index, button) in actionButtons.indexed) ...[
+              if (index > 0)
+                const SizedBox(width: MediaBrowsingMetrics.chipGap),
+              button,
+            ],
+          ],
+        ),
+      );
+    }
+    return Row(
+      children: [
+        for (final (index, button) in actionButtons.indexed) ...[
+          if (index > 0) const SizedBox(width: MediaBrowsingMetrics.chipGap),
+          Expanded(child: button),
+        ],
+      ],
     );
   }
 
