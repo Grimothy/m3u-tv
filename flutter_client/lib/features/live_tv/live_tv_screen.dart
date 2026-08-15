@@ -112,14 +112,14 @@ class LiveTvScreen extends ConsumerStatefulWidget {
 }
 
 class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
-  // Multiview drives several concurrent player instances. tvOS and Android
-  // multiplex them over their one native channel pair by playerId (see
-  // AvKitPlaybackPlugin.swift / Media3PlaybackPlugin.kt); macOS (media_kit)
-  // and Linux/Windows (the in-process libmpv backend) are multi-instance by
-  // design already. iOS phones/tablets are excluded: Multiview is a TV/
-  // desktop grid feature, not a phone one.
+  // Multiview drives several concurrent player instances. tvOS, iOS, and
+  // Android multiplex them over their one native channel pair by playerId
+  // (see AvKitPlaybackPlugin.swift / Media3PlaybackPlugin.kt); macOS
+  // (media_kit) and Linux/Windows (the in-process libmpv backend) are
+  // multi-instance by design already.
   static const Set<String> _multiviewSupportedOperatingSystems = {
     'tvos',
+    'ios',
     'android',
     'macos',
     'linux',

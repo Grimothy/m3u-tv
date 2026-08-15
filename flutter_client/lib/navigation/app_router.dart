@@ -167,8 +167,8 @@ PlaybackOrchestrator buildPlaybackOrchestrator() {
 /// instance wrapped in its own orchestrator, so each tile gets independent
 /// retry/error handling for free. Only offered on platforms whose native
 /// backend can host several concurrent players (see `_multiviewSupported`
-/// in `live_tv_screen.dart`): tvOS and Android key native player state by
-/// [playerId] to multiplex over their one channel pair; macOS (media_kit)
+/// in `live_tv_screen.dart`): tvOS, iOS, and Android key native player state
+/// by [playerId] to multiplex over their one channel pair; macOS (media_kit)
 /// and Linux/Windows (the in-process libmpv backend) are multi-instance by
 /// design already, so `playerId` is unused there.
 ({PlaybackOrchestrator orchestrator, MultiviewBackend backend})
