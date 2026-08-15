@@ -1,3 +1,19 @@
+m3u-tv
+Copyright (C) 2026 Shaun Parkison and contributors
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version, subject to the additional
+permission at the end of this file.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+=======================================================================
+
                     GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
 
@@ -672,3 +688,43 @@ may consider it more useful to permit linking proprietary applications with
 the library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.  But first, please read
 <https://www.gnu.org/licenses/why-not-lgpl.html>.
+
+=======================================================================
+
+              ADDITIONAL PERMISSION UNDER GNU GPL VERSION 3
+                            SECTION 7
+
+  This additional permission is granted under GNU GPLv3 section 7,
+which permits the copyright holders of a covered work to supplement
+its terms with additional permissions.
+
+  App store operators such as Apple and Google impose their own
+distribution terms on software offered through their stores (for
+example, restrictions on further redistribution by end users). Those
+terms can be read as "further restrictions" within the meaning of
+GPLv3 section 10, which would otherwise make it impossible to convey
+this program, or a modified version of it, through such a store while
+remaining in compliance with the GPL.
+
+  As a special exception, the copyright holders of m3u-tv give you
+permission to combine, convey, and distribute this program (or a
+modified version of it) through the Apple App Store, the Apple TV
+App Store, and the Google Play Store, notwithstanding any additional
+restrictions those stores' terms of service impose on the resulting
+distribution, provided that you also make the complete corresponding
+source code of the conveyed work available under the terms of this
+License through a channel that is not subject to those additional
+restrictions (for example, a public source code repository).
+
+  This exception does not affect any other rights granted to you
+under the GNU General Public License, and it does not permit
+incorporating this program into a proprietary work, nor does it
+waive any other requirement of the GPL, including the obligation to
+keep the whole of the combined or modified work licensed under the
+GPL and to make its corresponding source available.
+
+  If you distribute a modified version of this program, you are not
+obligated to offer this same exception for your modified version; you
+may remove this exception, in which case your modified version may
+no longer be distributed through app stores whose terms conflict
+with the GPL, or you may retain it under these same terms.
