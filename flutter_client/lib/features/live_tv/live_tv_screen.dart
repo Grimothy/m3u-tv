@@ -356,6 +356,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     final trimmed = value.trim();
     if (trimmed.length < 2) {
       _showSearchDebounce?.cancel();
+      _showSearchGeneration++;
       if (_showResults.isNotEmpty || _showIsLoading || _showError != null) {
         setState(() {
           _showResults = const <EpgShow>[];
@@ -803,7 +804,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
               (show) =>
                   show.recentEpisodes.map((ep) => (show: show, episode: ep)),
             )
-            .where((entry) => entry.episode.title.isNotEmpty)
+            .where((entry) => entry.episode.displayTitle.isNotEmpty)
             .where((entry) => entry.episode.startTime.isAfter(now))
             .toList()
           ..sort((a, b) => a.episode.startTime.compareTo(b.episode.startTime));
@@ -811,7 +812,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
         .take(12)
         .map(
           (entry) => MediaPreviewItem(
-            title: entry.episode.title,
+            title: entry.episode.displayTitle,
             subtitle: _formatUpcomingSubtitle(
               entry.episode.channelName,
               entry.episode.startTime,
@@ -845,45 +846,52 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     final vodItems = ref.watch(vodItemsProvider);
     final seriesList = ref.watch(seriesListProvider);
     final normalizedQuery = _query.trim().toLowerCase();
-    final vodMatches = normalizedQuery.isEmpty
-        ? vodItems
-        : vodItems
-              .where(
-                (item) => item.name.toLowerCase().contains(normalizedQuery),
-              )
-              .toList(growable: false);
-    final seriesMatches = normalizedQuery.isEmpty
-        ? seriesList
-        : seriesList
-              .where(
-                (series) => series.name.toLowerCase().contains(normalizedQuery),
-              )
-              .toList(growable: false);
+    final vodMatches = vodItems
+        .where((item) => item.name.toLowerCase().contains(normalizedQuery))
+        .toList(growable: false);
+    final seriesMatches = seriesList
+        .where(
+          (series) => series.name.toLowerCase().contains(normalizedQuery),
+        )
+        .toList(growable: false);
     if (vodMatches.isEmpty && seriesMatches.isEmpty) {
       return const SizedBox.shrink();
     }
-    final items = <MediaPreviewItem>[
-      ...vodMatches.map(
-        (item) => MediaPreviewItem(
-          title: item.name,
-          imageUrl: item.logoUrl,
-          subtitle: item.rating == null ? l10n.homeMovie : '★ ${item.rating}',
-          fallbackIcon: Icons.movie,
-          onTap: () => widget.onVodSelect?.call(item),
-        ),
+    final vodCards = vodMatches.map(
+      (item) => MediaPreviewItem(
+        title: item.name,
+        imageUrl: item.logoUrl,
+        subtitle: item.rating == null ? l10n.homeMovie : '★ ${item.rating}',
+        fallbackIcon: Icons.movie,
+        onTap: () => widget.onVodSelect?.call(item),
       ),
-      ...seriesMatches.map(
-        (series) => MediaPreviewItem(
-          title: series.name,
-          imageUrl: series.coverUrl,
-          subtitle: series.rating == null
-              ? l10n.navSeries
-              : '★ ${series.rating}',
-          fallbackIcon: Icons.tv,
-          onTap: () => widget.onSeriesSelect?.call(series),
-        ),
+    );
+    final seriesCards = seriesMatches.map(
+      (series) => MediaPreviewItem(
+        title: series.name,
+        imageUrl: series.coverUrl,
+        subtitle: series.rating == null ? l10n.navSeries : '★ ${series.rating}',
+        fallbackIcon: Icons.tv,
+        onTap: () => widget.onSeriesSelect?.call(series),
       ),
-    ];
+    );
+    // Interleave rather than concatenate so a 12-item cap doesn't let one
+    // kind of match starve the other out entirely.
+    final items = <MediaPreviewItem>[];
+    final vodIterator = vodCards.iterator;
+    final seriesIterator = seriesCards.iterator;
+    var vodHasNext = vodIterator.moveNext();
+    var seriesHasNext = seriesIterator.moveNext();
+    while (vodHasNext || seriesHasNext) {
+      if (vodHasNext) {
+        items.add(vodIterator.current);
+        vodHasNext = vodIterator.moveNext();
+      }
+      if (seriesHasNext) {
+        items.add(seriesIterator.current);
+        seriesHasNext = seriesIterator.moveNext();
+      }
+    }
     return MediaPreviewSection(
       title: l10n.liveTvMoviesAndSeries,
       items: items,
