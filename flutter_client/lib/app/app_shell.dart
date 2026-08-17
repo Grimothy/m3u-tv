@@ -1088,6 +1088,10 @@ class AppShellState extends ConsumerState<AppShell>
             _registerContentEntryFocus(RouteNames.liveTv, node),
         onBackHandlerReady: (handler) =>
             _registerContentBackHandler(RouteNames.liveTv, handler),
+        onSearchShows: _searchEpgShows,
+        onShowSelect: _openShow,
+        onVodSelect: _openVod,
+        onSeriesSelect: _openSeries,
       ),
       RouteNames.vod => VodScreen(
         onVodSelect: _openVod,

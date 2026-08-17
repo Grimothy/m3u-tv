@@ -5,6 +5,7 @@ import 'package:dpad/dpad.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:m3u_tv/features/epg/epg_recording_index.dart';
 import 'package:m3u_tv/features/epg/timeline_epg_view.dart';
 import 'package:m3u_tv/features/live_tv/catchup_shows_dialog.dart';
@@ -52,6 +53,10 @@ class LiveTvScreen extends ConsumerStatefulWidget {
     this.onExitFullScreenDetail,
     this.onEntryFocusScopeReady,
     this.onBackHandlerReady,
+    this.onSearchShows,
+    this.onShowSelect,
+    this.onVodSelect,
+    this.onSeriesSelect,
   });
 
   final FavoritesService favoritesService;
@@ -106,6 +111,24 @@ class LiveTvScreen extends ConsumerStatefulWidget {
   /// these to hide the sidebar/bottom nav itself.
   final VoidCallback? onEnterFullScreenDetail;
   final VoidCallback? onExitFullScreenDetail;
+
+  /// Wired by AppShell against `XtreamService.searchEpgShows`. Returns
+  /// EPG shows whose titles match the query for the rail above the channel
+  /// list. Null hides the Upcoming rail entirely (the screen works
+  /// unwired, same convention as [onEnsureEpg]).
+  final Future<List<EpgShow>> Function(String query)? onSearchShows;
+
+  /// R2.2: tap handlers for the Upcoming rail (whose items are EpgShow
+  /// instances) and the Movies & Series rail (whose items are local
+  /// VOD items or Series). Wired by AppShell against `_openShow` /
+  /// `_openVod` / `_openSeries` so the rail uses the same immersive
+  /// full-screen push as Home's previews instead of the bare
+  /// `context.push` fallback that loses the sidebar-hide chrome and
+  /// focus restoration. All three are nullable so the screen works
+  /// unwired — a tap is a no-op when the callback is null.
+  final void Function(EpgShow)? onShowSelect;
+  final void Function(VodItem)? onVodSelect;
+  final void Function(Series)? onSeriesSelect;
 
   @override
   ConsumerState<LiveTvScreen> createState() => _LiveTvScreenState();
@@ -177,6 +200,11 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   final FocusScopeNode _dayControlsFocusNode = FocusScopeNode(
     skipTraversal: true,
   );
+  Timer? _showSearchDebounce;
+  int _showSearchGeneration = 0;
+  List<EpgShow> _showResults = const <EpgShow>[];
+  bool _showIsLoading = false;
+  String? _showError;
 
   @override
   void initState() {
@@ -212,6 +240,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     _gridFocusNode.dispose();
     _channelColumnFocusNode.dispose();
     _dayControlsFocusNode.dispose();
+    _showSearchDebounce?.cancel();
     super.dispose();
   }
 
@@ -315,6 +344,65 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     if (mounted) {
       setState(() {
         _favoriteIds = ids;
+      });
+    }
+  }
+
+  /// Mirrors `ShowsScreen._onQueryChanged`. Kept independent of the
+  /// synchronous `_query` setState that drives [_filteredChannels] so the
+  /// channel list narrows on every keystroke while the show rail waits
+  /// out the debounce + network roundtrip.
+  void _onShowQueryChanged(String value) {
+    final trimmed = value.trim();
+    if (trimmed.length < 2) {
+      _showSearchDebounce?.cancel();
+      _showSearchGeneration++;
+      if (_showResults.isNotEmpty || _showIsLoading || _showError != null) {
+        setState(() {
+          _showResults = const <EpgShow>[];
+          _showIsLoading = false;
+          _showError = null;
+        });
+      }
+      return;
+    }
+    _showSearchDebounce?.cancel();
+    // R2.1: flip to loading synchronously so the Upcoming rail renders
+    // "Searching shows…" the same frame the qualifying query first
+    // arrives. Without this, the empty rail flashes "No shows match your
+    // search" for the 350ms the debounce is waiting before the network
+    // call fires.
+    setState(() {
+      _showIsLoading = true;
+      _showResults = const <EpgShow>[];
+      _showError = null;
+    });
+    _showSearchDebounce = Timer(
+      const Duration(milliseconds: 350),
+      () => _runShowSearch(trimmed),
+    );
+  }
+
+  Future<void> _runShowSearch(String trimmed) async {
+    final search = widget.onSearchShows;
+    if (search == null) return;
+    final generation = ++_showSearchGeneration;
+    setState(() {
+      _showIsLoading = true;
+      _showError = null;
+    });
+    try {
+      final results = await search(trimmed);
+      if (!mounted || generation != _showSearchGeneration) return;
+      setState(() {
+        _showResults = results;
+        _showIsLoading = false;
+      });
+    } on Object catch (error) {
+      if (!mounted || generation != _showSearchGeneration) return;
+      setState(() {
+        _showError = error.toString();
+        _showIsLoading = false;
       });
     }
   }
@@ -631,7 +719,10 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
       key: _navKey,
       useSidebarLayout: widget.useSidebarLayout,
       query: _query,
-      onQueryChanged: (value) => setState(() => _query = value),
+      onQueryChanged: (value) {
+        setState(() => _query = value);
+        _onShowQueryChanged(value);
+      },
       searchHint: l.liveTvSearchHint,
       tabs: _categoryTabs(categories),
       selectedId: _selectedCategory ?? '',
@@ -645,37 +736,50 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
       memoryKeyPrefix: 'live-tv',
       onEntryFocusScopeReady: widget.onEntryFocusScopeReady,
     );
+    final searchResults = <Widget>[
+      if (_query.trim().length >= 2) ...[
+        if (widget.onSearchShows != null) _buildUpcomingRail(),
+        _buildMoviesAndSeriesRail(),
+      ],
+    ];
     final content = Expanded(
-      child: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : filtered.isEmpty
-          ? Center(
-              child: Text(
-                AppLocalizations.of(context).liveTvNoChannels,
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-            )
-          : FocusScope(
-              node: _gridFocusNode,
-              child: switch (_viewMode) {
-                _ViewMode.epgGrid => _buildEpgGrid(
-                  filtered,
-                  epgService,
-                  recordingChannelIds,
-                  EpgRecordingIndex.fromRecordings(
-                    ref.watch(dvrRecordingsProvider),
+      child: Column(
+        children: [
+          ...searchResults,
+          Expanded(
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : filtered.isEmpty
+                ? Center(
+                    child: Text(
+                      AppLocalizations.of(context).liveTvNoChannels,
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
+                  )
+                : FocusScope(
+                    node: _gridFocusNode,
+                    child: switch (_viewMode) {
+                      _ViewMode.epgGrid => _buildEpgGrid(
+                        filtered,
+                        epgService,
+                        recordingChannelIds,
+                        EpgRecordingIndex.fromRecordings(
+                          ref.watch(dvrRecordingsProvider),
+                        ),
+                      ),
+                      _ViewMode.logoGrid => _buildGridView(
+                        filtered,
+                        recordingChannelIds,
+                      ),
+                      _ViewMode.list => _buildListView(
+                        filtered,
+                        recordingChannelIds,
+                      ),
+                    },
                   ),
-                ),
-                _ViewMode.logoGrid => _buildGridView(
-                  filtered,
-                  recordingChannelIds,
-                ),
-                _ViewMode.list => _buildListView(
-                  filtered,
-                  recordingChannelIds,
-                ),
-              },
-            ),
+          ),
+        ],
+      ),
     );
 
     return Scaffold(
@@ -683,6 +787,130 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
           ? Row(children: [nav, content])
           : Column(children: [nav, content]),
     );
+  }
+
+  /// R2.3: flatten `recentEpisodes` across all shows, drop past + blank-
+  /// title episodes, sort soonest-first, take 12. The Upcoming rail
+  /// surfaces one card per airing rather than one per show — a single
+  /// show with 5 future airings shows 5 cards, the most useful metadata
+  /// the server gives us about what's on TV next.
+  Widget _buildUpcomingRail() {
+    final l10n = AppLocalizations.of(context);
+    final localized = Localizations.localeOf(context).toLanguageTag();
+    final now = DateTime.now().toUtc();
+    final entries =
+        _showResults
+            .expand(
+              (show) =>
+                  show.recentEpisodes.map((ep) => (show: show, episode: ep)),
+            )
+            .where((entry) => entry.episode.displayTitle.isNotEmpty)
+            .where((entry) => entry.episode.startTime.isAfter(now))
+            .toList()
+          ..sort((a, b) => a.episode.startTime.compareTo(b.episode.startTime));
+    final cards = entries
+        .take(12)
+        .map(
+          (entry) => MediaPreviewItem(
+            title: entry.episode.displayTitle,
+            subtitle: _formatUpcomingSubtitle(
+              entry.episode.channelName,
+              entry.episode.startTime,
+              localized,
+            ),
+            fallbackIcon: Icons.tv,
+            onTap: () => widget.onShowSelect?.call(entry.show),
+          ),
+        )
+        .toList(growable: false);
+    final emptyLabel = _showIsLoading
+        ? l10n.liveTvShowResultsLoading
+        : _showError != null
+        ? l10n.showsSearchError
+        : l10n.showsNoResults;
+    return MediaPreviewSection(
+      title: l10n.liveTvUpcomingAirings,
+      items: cards,
+      emptyLabel: emptyLabel,
+      onSidebarActivate: widget.onSidebarActivate,
+    );
+  }
+
+  /// R2.4: local, synchronous, no-debounce filter on the already-loaded
+  /// VOD and Series lists. Renders as one combined rail with
+  /// `posterStyle: true` to mirror Home's shape — the search affordance
+  /// is a way to discover existing local content, not a way to fetch new
+  /// content. Suppressed entirely when the filtered lists are both empty.
+  Widget _buildMoviesAndSeriesRail() {
+    final l10n = AppLocalizations.of(context);
+    final vodItems = ref.watch(vodItemsProvider);
+    final seriesList = ref.watch(seriesListProvider);
+    final normalizedQuery = _query.trim().toLowerCase();
+    final vodMatches = vodItems
+        .where((item) => item.name.toLowerCase().contains(normalizedQuery))
+        .toList(growable: false);
+    final seriesMatches = seriesList
+        .where(
+          (series) => series.name.toLowerCase().contains(normalizedQuery),
+        )
+        .toList(growable: false);
+    if (vodMatches.isEmpty && seriesMatches.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final vodCards = vodMatches.map(
+      (item) => MediaPreviewItem(
+        title: item.name,
+        imageUrl: item.logoUrl,
+        subtitle: item.rating == null ? l10n.homeMovie : '★ ${item.rating}',
+        fallbackIcon: Icons.movie,
+        onTap: () => widget.onVodSelect?.call(item),
+      ),
+    );
+    final seriesCards = seriesMatches.map(
+      (series) => MediaPreviewItem(
+        title: series.name,
+        imageUrl: series.coverUrl,
+        subtitle: series.rating == null ? l10n.navSeries : '★ ${series.rating}',
+        fallbackIcon: Icons.tv,
+        onTap: () => widget.onSeriesSelect?.call(series),
+      ),
+    );
+    // Interleave rather than concatenate so a 12-item cap doesn't let one
+    // kind of match starve the other out entirely.
+    final items = <MediaPreviewItem>[];
+    final vodIterator = vodCards.iterator;
+    final seriesIterator = seriesCards.iterator;
+    var vodHasNext = vodIterator.moveNext();
+    var seriesHasNext = seriesIterator.moveNext();
+    while (vodHasNext || seriesHasNext) {
+      if (vodHasNext) {
+        items.add(vodIterator.current);
+        vodHasNext = vodIterator.moveNext();
+      }
+      if (seriesHasNext) {
+        items.add(seriesIterator.current);
+        seriesHasNext = seriesIterator.moveNext();
+      }
+    }
+    return MediaPreviewSection(
+      title: l10n.liveTvMoviesAndSeries,
+      items: items,
+      emptyLabel: '',
+      posterStyle: true,
+      onSidebarActivate: widget.onSidebarActivate,
+    );
+  }
+
+  String _formatUpcomingSubtitle(
+    String? channelName,
+    DateTime startTime,
+    String languageTag,
+  ) {
+    final formatted = DateFormat.MMMd(
+      languageTag,
+    ).add_jm().format(startTime.toLocal());
+    if (channelName == null || channelName.isEmpty) return formatted;
+    return '$channelName · $formatted';
   }
 
   void _handleGridLeftEdge(TraversalDirection direction) {

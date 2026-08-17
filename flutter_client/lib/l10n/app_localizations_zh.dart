@@ -88,6 +88,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get liveTvSearchHint => '搜索…';
 
   @override
+  String get liveTvUpcomingAirings => '即将播出';
+
+  @override
+  String get liveTvMoviesAndSeries => '电影与电视剧';
+
+  @override
+  String get liveTvShowResultsLoading => '正在搜索节目…';
+
+  @override
   String get liveTvNoChannels => '暂无可用频道';
 
   @override

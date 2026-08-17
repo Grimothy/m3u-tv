@@ -88,6 +88,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get liveTvSearchHint => 'Search...';
 
   @override
+  String get liveTvUpcomingAirings => 'Upcoming';
+
+  @override
+  String get liveTvMoviesAndSeries => 'Movies & Series';
+
+  @override
+  String get liveTvShowResultsLoading => 'Searching shows…';
+
+  @override
   String get liveTvNoChannels => 'No channels available';
 
   @override
