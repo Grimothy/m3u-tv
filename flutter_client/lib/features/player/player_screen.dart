@@ -47,6 +47,7 @@ class PlayerScreen extends StatefulWidget {
     this.onNextChannel,
     this.onPreviousChannel,
     this.onRecordProgram,
+    this.onTrackDialogVisibilityChanged,
     this.isRecordingCurrentChannel = false,
     super.key,
   });
@@ -65,6 +66,7 @@ class PlayerScreen extends StatefulWidget {
   final VoidCallback? onNextChannel;
   final VoidCallback? onPreviousChannel;
   final void Function(EpgProgram program)? onRecordProgram;
+  final ValueChanged<bool>? onTrackDialogVisibilityChanged;
   final bool isRecordingCurrentChannel;
 
   @override
@@ -110,6 +112,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Timer? _pendingComskipSeekTimer;
 
   bool _overlayVisible = true;
+  bool _trackDialogVisible = false;
 
   // Owns the outer Focus so we can steal focus from the content area when
   // the player opens, and reclaim it whenever the overlay hides.
@@ -547,6 +550,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
     // hide info the user is deliberately looking at. Playback resuming (or
     // the initial load reaching `playing`) reschedules the timer below.
     if (!_isPlaying) return;
+    // While the audio/subtitle track dialog is open, don't let this timer
+    // unmount PlaybackControls (and steal focus back to the player) out
+    // from under the still-open dialog. Rescheduled once the dialog closes.
+    if (_trackDialogVisible) return;
     _overlayHideTimer = Timer(_overlayTimeout, () {
       if (!_disposed && mounted) {
         setState(() => _overlayVisible = false);
@@ -845,6 +852,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _handleBack() {
+    if (_trackDialogVisible) {
+      unawaited(Navigator.of(context, rootNavigator: true).maybePop());
+      return;
+    }
     if (_errorMessage != null) {
       _goBack();
       return;
@@ -854,6 +865,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
     } else {
       _goBack();
     }
+  }
+
+  void _handleTrackDialogVisibilityChanged(bool visible) {
+    if (mounted) setState(() => _trackDialogVisible = visible);
+    if (visible) {
+      _overlayHideTimer?.cancel();
+    } else if (_overlayVisible) {
+      _scheduleOverlayHide();
+    }
+    widget.onTrackDialogVisibilityChanged?.call(visible);
   }
 
   @override
@@ -1017,37 +1038,44 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
                     // Playback controls overlay
                     if (_overlayVisible && _errorMessage == null)
-                      PlaybackControls(
-                        isPlaying: _isPlaying,
-                        isLive: _isLive,
-                        canSeek: _canSeek,
-                        currentPosition: _currentPosition,
-                        duration: _duration,
-                        onPlayPause: _togglePlayPause,
-                        onSeek: _seekTo,
-                        onBack: _goBack,
-                        audioTracks: _audioTracks,
-                        subtitleTracks: _subtitleTracks,
-                        selectedAudioTrackId: _selectedAudioTrackId,
-                        selectedSubtitleTrackId: _selectedSubtitleTrackId,
-                        isAudioTrackSelectionKnown: _isAudioTrackSelectionKnown,
-                        isSubtitleTrackSelectionKnown:
-                            _isSubtitleTrackSelectionKnown,
-                        onAudioTrackSelected: _handleAudioTrackSelected,
-                        onSubtitleTrackSelected: _handleSubtitleTrackSelected,
-                        fallbackReason: _showPlaybackDiagnostics
-                            ? _fallbackReason
-                            : null,
-                        playPauseFocusNode: _controlsFocusNode,
-                        onNextChannel: widget.onNextChannel,
-                        onPreviousChannel: widget.onPreviousChannel,
-                        onRecordNow:
-                            (_isLive &&
-                                widget.onRecordProgram != null &&
-                                _epgData?.current != null)
-                            ? () => widget.onRecordProgram!(_epgData!.current)
-                            : null,
-                        isRecording: widget.isRecordingCurrentChannel,
+                      GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: _hideOverlay,
+                        child: PlaybackControls(
+                          isPlaying: _isPlaying,
+                          isLive: _isLive,
+                          canSeek: _canSeek,
+                          currentPosition: _currentPosition,
+                          duration: _duration,
+                          onPlayPause: _togglePlayPause,
+                          onSeek: _seekTo,
+                          onBack: _goBack,
+                          audioTracks: _audioTracks,
+                          subtitleTracks: _subtitleTracks,
+                          selectedAudioTrackId: _selectedAudioTrackId,
+                          selectedSubtitleTrackId: _selectedSubtitleTrackId,
+                          isAudioTrackSelectionKnown:
+                              _isAudioTrackSelectionKnown,
+                          isSubtitleTrackSelectionKnown:
+                              _isSubtitleTrackSelectionKnown,
+                          onAudioTrackSelected: _handleAudioTrackSelected,
+                          onSubtitleTrackSelected: _handleSubtitleTrackSelected,
+                          onTrackDialogVisibilityChanged:
+                              _handleTrackDialogVisibilityChanged,
+                          fallbackReason: _showPlaybackDiagnostics
+                              ? _fallbackReason
+                              : null,
+                          playPauseFocusNode: _controlsFocusNode,
+                          onNextChannel: widget.onNextChannel,
+                          onPreviousChannel: widget.onPreviousChannel,
+                          onRecordNow:
+                              (_isLive &&
+                                  widget.onRecordProgram != null &&
+                                  _epgData?.current != null)
+                              ? () => widget.onRecordProgram!(_epgData!.current)
+                              : null,
+                          isRecording: widget.isRecordingCurrentChannel,
+                        ),
                       ),
 
                     if (_showPlaybackDiagnostics &&
@@ -1078,10 +1106,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         top: overlayTop,
                         left: overlayLeft,
                         width: overlayWidth,
-                        child: EpgOverlay(
-                          currentTitle: _epgData!.current.displayTitle,
-                          currentProgress: _epgData!.progress,
-                          nextTitle: _epgData?.next?.displayTitle,
+                        child: GestureDetector(
+                          onTap: _hideOverlay,
+                          child: EpgOverlay(
+                            currentTitle: _epgData!.current.displayTitle,
+                            currentProgress: _epgData!.progress,
+                            nextTitle: _epgData?.next?.displayTitle,
+                          ),
                         ),
                       ),
 
@@ -1093,11 +1124,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         top: overlayTop,
                         left: overlayLeft,
                         width: overlayWidth,
-                        child: NowPlayingOverlay(
-                          badgeLabel: _nowPlayingBadgeLabel(context),
-                          title: _nowPlayingTitle(),
-                          subtitle: _nowPlayingSubtitle(context),
-                          description: _nowPlayingDescription(),
+                        child: GestureDetector(
+                          onTap: _hideOverlay,
+                          child: NowPlayingOverlay(
+                            badgeLabel: _nowPlayingBadgeLabel(context),
+                            title: _nowPlayingTitle(),
+                            subtitle: _nowPlayingSubtitle(context),
+                            description: _nowPlayingDescription(),
+                          ),
                         ),
                       ),
 
