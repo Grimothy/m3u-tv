@@ -38,6 +38,7 @@ class PlayerScreen extends StatefulWidget {
     required this.epgService,
     this.xtreamService,
     this.comskipSettings,
+    this.hasDvrFeature = false,
     this.progressReporter,
     this.traktService,
     this.wakelockController = const PlatformWakelockController(),
@@ -56,6 +57,7 @@ class PlayerScreen extends StatefulWidget {
   final EpgService epgService;
   final XtreamService? xtreamService;
   final ComskipSettings? comskipSettings;
+  final bool hasDvrFeature;
   final void Function(Progress progress)? progressReporter;
   final TraktService? traktService;
   final WakelockController wakelockController;
@@ -296,8 +298,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
   /// any fetch failure just leaves [_comskipSegments] empty, so the rest of
   /// the player behaves exactly as if this recording had no EDL at all.
   Future<void> _initComskip(PlayerArgs args) async {
-    final edlUrl = args.metadata['edl_url'] as String?;
-    if (edlUrl == null || edlUrl.isEmpty) return;
+    var edlUrl = args.metadata['edl_url'] as String?;
+    if (edlUrl == null || edlUrl.isEmpty) {
+      if (!widget.hasDvrFeature || widget.xtreamService == null) return;
+      edlUrl = await _resolveEdlUrlFromService(args);
+      if (!mounted || !identical(args, widget.args)) return;
+      if (edlUrl == null || edlUrl.isEmpty) return;
+    }
 
     final client = HttpClient();
     try {
@@ -328,6 +335,34 @@ class _PlayerScreenState extends State<PlayerScreen> {
     } finally {
       client.close();
     }
+  }
+
+  /// Lazily resolves an `edl_url` for play paths that don't carry the field
+  /// on the originating `PlayerArgs` — notably Continue Watching for series
+  /// episodes, which only holds a `Progress` and a `Series` summary.
+  /// Gated on the `hasDvrFeature` flag to keep non-DVR accounts off the
+  /// extra call (the series branch fetches the full `get_series_info`
+  /// payload).
+  Future<String?> _resolveEdlUrlFromService(PlayerArgs args) async {
+    final service = widget.xtreamService;
+    if (service == null) return null;
+    try {
+      if (args.type == 'vod' && args.streamId != null) {
+        final info = await service.getVodInfo(args.streamId!);
+        return info.edlUrl;
+      }
+      if (args.type == 'series' && args.seriesId != null) {
+        final info = await service.getSeriesInfo(args.seriesId!);
+        final episode = info.episodesBySeason.values
+            .expand((eps) => eps)
+            .where((e) => e.id == '${args.streamId}')
+            .firstOrNull;
+        return episode?.edlUrl;
+      }
+    } on Object catch (error) {
+      debugPrint('Comskip: failed to resolve EDL: $error');
+    }
+    return null;
   }
 
   /// Rewrites a localhost/127.0.0.1 EDL host to the connected Xtream server's
