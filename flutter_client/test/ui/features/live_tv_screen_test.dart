@@ -18,7 +18,7 @@ import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
-/// #217 made the Live TV search field `activateOnSelect: true` — on TV it
+/// #217 made the Live TV search field `activateOnSelect: true` - on TV it
 /// renders as a non-editing button facade until activated, so there is no
 /// `TextField` in the tree to type into. Activate first, then type.
 Future<void> enterQuery(WidgetTester tester, String query) async {
@@ -793,7 +793,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(railTitle, findsOneWidget);
-      // One row for World Report, not two — the show display title
+      // One row for World Report, not two - the show display title
       // renders once even though there are two episodes.
       expect(find.text('World Report'), findsOneWidget);
     });
@@ -813,7 +813,7 @@ void main() {
 
         await enterQuery(tester, 'cn');
         // Pump just past the 350ms debounce but stop before the in-flight
-        // future ever completes — the channel list must already be filtered.
+        // future ever completes - the channel list must already be filtered.
         await tester.pump(const Duration(milliseconds: 400));
         await tester.pump();
 
@@ -855,7 +855,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(railTitle, findsNothing);
 
-      // Under 2 chars must also hide the rail — the service's 2-char
+      // Under 2 chars must also hide the rail - the service's 2-char
       // short-circuit means no network call should be triggered and no
       // results should linger.
       await enterQuery(tester, 'h');
@@ -910,7 +910,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Fresh'), findsOneWidget);
 
-        // Now resolve the original slow Promise — it must NOT overwrite.
+        // Now resolve the original slow Promise - it must NOT overwrite.
         slow.complete([
           EpgShow(
             normalizedTitle: 'ab',
@@ -951,7 +951,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 400));
         await tester.pumpAndSettle();
 
-        // Error state — distinct from "no matches".
+        // Error state - distinct from "no matches".
         expect(find.text('Search failed'), findsOneWidget);
         expect(find.text('No shows match your search'), findsNothing);
 
@@ -1082,7 +1082,7 @@ void main() {
         await tester.pumpAndSettle();
 
         await enterQuery(tester, 'bb');
-        // Pump exactly one frame — the debounce hasn't fired yet (350ms),
+        // Pump exactly one frame - the debounce hasn't fired yet (350ms),
         // but the rail should already render "Searching shows…" instead
         // of "No shows match your search". Without the R2.1 fix the rail
         // would flash the empty-matches label for a frame before flipping
@@ -1101,7 +1101,7 @@ void main() {
       // so its row never renders); Future Show has only future airings
       // (one row renders). The time filter is applied per-airing before
       // grouping, so a show with mixed past + future airings would still
-      // render — covered by an explicit mixed-case test elsewhere.
+      // render - covered by an explicit mixed-case test elsewhere.
       await tester.pumpWidget(
         _TestApp(
           channels: channels,
@@ -1161,7 +1161,7 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      // 6 distinct shows on the same channel — each is its own group
+      // 6 distinct shows on the same channel - each is its own group
       // (different normalizedTitle). The cap at 4 must keep the first 4
       // ordered by earliest airing.
       final shows = <EpgShow>[];
@@ -1233,7 +1233,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await enterQuery(tester, 'mat');
-      // No debounce on the local filter — should be visible on the same
+      // No debounce on the local filter - should be visible on the same
       // frame the keystroke lands, without waiting for the 350ms debounce
       // the network-driven Upcoming rail uses.
       await tester.pump();
@@ -1264,12 +1264,12 @@ void main() {
 
         await enterQuery(tester, 'act');
         // Both the channel list and the Movies & Series rail update on
-        // the same frame — neither has a debounce. The Movies & Series
+        // the same frame - neither has a debounce. The Movies & Series
         // rail filters vodItems by `name.contains(query)` synchronously
         // alongside the channel-name filter narrowing the channels list.
         await tester.pump();
         expect(find.text('Action Movie'), findsOneWidget);
-        // No channel name contains "act" — channel list is empty.
+        // No channel name contains "act" - channel list is empty.
         expect(find.text('BBC One'), findsNothing);
         expect(find.text('CNN'), findsNothing);
         expect(find.text('ESPN'), findsNothing);
@@ -1297,7 +1297,7 @@ void main() {
 
       await enterQuery(tester, 'xy');
       await tester.pump();
-      // No matches in VOD/Series for "xy" — rail should not render.
+      // No matches in VOD/Series for "xy" - rail should not render.
       expect(find.text('Movies & Series'), findsNothing);
     });
 
@@ -1338,7 +1338,7 @@ void main() {
         await tester.tap(find.text('World Report'));
         await tester.pumpAndSettle();
 
-        // The tap routes the *parent* EpgShow, not the episode — same
+        // The tap routes the *parent* EpgShow, not the episode - same
         // shape AppShell._openShow expects.
         expect(tapped, isNotNull);
         expect(tapped!.normalizedTitle, 'worldreport');
@@ -1445,7 +1445,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
 
-      // Tapping each rail must not throw — null callbacks are no-ops so
+      // Tapping each rail must not throw - null callbacks are no-ops so
       // unwired LiveTvScreen instances still render and respond.
       // Upcoming row uses the show's displayTitle (the row's title
       // text); tapping anywhere inside the DpadInkWell row triggers the
@@ -1519,7 +1519,7 @@ void main() {
 
     testWidgets('Upcoming keeps rows for unmatched channels', (tester) async {
       // Unlike On Now which drops unmatched-channelId entries (no channel
-      // to tune), Upcoming must NOT drop them — the row opens show
+      // to tune), Upcoming must NOT drop them - the row opens show
       // detail, not a channel, so an unmatched channel is still a valid
       // row. Contrast with the On Now `omits airingNow entries whose
       // channelId matches no Channel` test. The row's logo image falls
@@ -1730,7 +1730,7 @@ void main() {
     ) async {
       // Mirrors the Upcoming row test above but framed as the explicit
       // guard against copying On Now's `if (channel == null) continue;`
-      // into _buildUpcomingSection — that would silently delete airings
+      // into _buildUpcomingSection - that would silently delete airings
       // from the section.
       await tester.pumpWidget(
         _TestApp(
@@ -1804,9 +1804,9 @@ void main() {
             )
             .where((t) => t.data != null && t.data!.isNotEmpty)
             .toList();
-        // Title + subtitle (rating-derived) — both small text, neither at
+        // Title + subtitle (rating-derived) - both small text, neither at
         // titleMedium fontSize. If an emphasis label slipped in, its
-        // fontSize would be titleMedium (>= 14 logical px) — assert no
+        // fontSize would be titleMedium (>= 14 logical px) - assert no
         // such row exists.
         for (final t in cardTexts) {
           expect(
@@ -1902,7 +1902,7 @@ void main() {
       tester,
     ) async {
       // 40 future airings of the same show on the same channel must
-      // render exactly ONE row — not 40 cards, not 12. The row shows the
+      // render exactly ONE row - not 40 cards, not 12. The row shows the
       // first 3 airing times plus a "+37 more" affordance that points
       // at the show detail screen (which already lists every airing).
       tester.view.physicalSize = const Size(4000, 1200);
@@ -1951,7 +1951,7 @@ void main() {
       // Text with " · " separators, so the affordance is reached via
       // textContaining rather than exact text.
       expect(find.textContaining('+37 more'), findsOneWidget);
-      // Episode titles are deliberately not rendered — only the show
+      // Episode titles are deliberately not rendered - only the show
       // title (once) and the airing times (3) + the more-affordance.
       expect(find.text('Episode 0'), findsNothing);
       expect(find.text('Episode 39'), findsNothing);
@@ -2079,7 +2079,7 @@ void main() {
         tester,
       ) async {
         // R5.2 only restructures the Upcoming rail. On Now and Movies &
-        // Series must remain MediaPreviewSection instances — the shared
+        // Series must remain MediaPreviewSection instances - the shared
         // rail widget, not the new vertical Column. Pinning this guards
         // against a future "let's also rewrite On Now" drift.
         await tester.pumpWidget(
@@ -2189,7 +2189,7 @@ void main() {
 
     testWidgets('renders one card per airingNow entry', (tester) async {
       // The On Now rail sits below the search field, category bar, and
-      // Upcoming rail — bump the viewport so all rendered cards are in
+      // Upcoming rail - bump the viewport so all rendered cards are in
       // the tree (round-2 lesson: find.text misses off-screen widgets).
       tester.view.physicalSize = const Size(4000, 1200);
       tester.view.devicePixelRatio = 1.0;
@@ -2256,7 +2256,7 @@ void main() {
               channelId: 1,
               channelName: 'BBC One',
               title: 'World News',
-              // subtitle: null — falls through to channel-only.
+              // subtitle: null - falls through to channel-only.
               startTime: DateTime.now().toUtc().subtract(
                 const Duration(minutes: 30),
               ),
@@ -2277,7 +2277,7 @@ void main() {
 
         // Card title is the SHOW name.
         expect(find.text('Tonight News'), findsOneWidget);
-        // Subtitle is the channel alone — no stray " · " separator.
+        // Subtitle is the channel alone - no stray " · " separator.
         expect(find.text('BBC One'), findsOneWidget);
         expect(find.text('World News'), findsNothing);
       },
@@ -2296,7 +2296,7 @@ void main() {
           channels: [],
           episodeCount: 0,
           recentEpisodes: [],
-          // airingNow intentionally omitted — defaults to const [].
+          // airingNow intentionally omitted - defaults to const [].
         );
         await tester.pumpWidget(
           _TestApp(
@@ -2321,7 +2321,7 @@ void main() {
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
 
-        // channelId 999 doesn't appear in `channels` above — the
+        // channelId 999 doesn't appear in `channels` above - the
         // episode has nowhere to tune to. The rail should skip it
         // rather than render a card that can't do anything. Use a
         // show displayTitle that doesn't collide with the 'News'
@@ -2384,7 +2384,7 @@ void main() {
       // Two airings on different channels. The query deliberately
       // matches neither channel name ("Grace and Frankie" doesn't
       // appear in "BBC One" or "CNN"), so the rail can only render
-      // both cards if the lookup uses the full channel list — the
+      // both cards if the lookup uses the full channel list - the
       // exact regression guard for the R3 review bug.
       final show = showWithAiringNow(
         showKey: 'Grace and Frankie',
@@ -2424,7 +2424,7 @@ void main() {
 
       // R6: card title is the SHOW name, not the episode name. Both
       // cards render the same title (same show on two channels);
-      // tap the second one — find by channel subtitle. The fixture
+      // tap the second one - find by channel subtitle. The fixture
       // episodes have no `subtitle` field set, so the subtitle is
       // just the channel name (no `Live Coverage · CNN` joined form).
       final cnnCard = find.ancestor(
@@ -2511,7 +2511,7 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      // R6: card title is the SHOW name, not the episode name — three
+      // R6: card title is the SHOW name, not the episode name - three
       // airings of the same show would now share a title (and the
       // x/y test couldn't disambiguate them). Restructure as three
       // distinct shows with one airing each; the invariant under test
@@ -2586,7 +2586,7 @@ void main() {
         // the full channel list, not the search-filtered one. With
         // query='Grace and Frankie' the filtered channel list is empty
         // (neither 'BBC One' nor 'CNN' contains 'grace' or 'frankie')
-        // — if the rail uses that for lookups, both cards drop and the
+        // - if the rail uses that for lookups, both cards drop and the
         // rail suppresses. The post-fix rail must render both cards.
         final show = showWithAiringNow(
           showKey: 'Grace and Frankie',
@@ -2640,7 +2640,7 @@ void main() {
         // Each card's subtitle carries its channel.
         expect(find.text('BBC One'), findsOneWidget);
         expect(find.text('CNN'), findsOneWidget);
-        // The episode titles never render as Text widgets — they're
+        // The episode titles never render as Text widgets - they're
         // now in the title slot's old position and that slot is the
         // show's displayTitle.
         expect(find.text('Grace on BBC'), findsNothing);
@@ -2777,12 +2777,12 @@ void main() {
 
     // ── R6: On Now card title is the SHOW name, subtitle carries the
     // episode name + channel with graceful degradation. Regression guard
-    // for the wrong-field bug CJ found in manual testing — see
+    // for the wrong-field bug CJ found in manual testing - see
     // AGENT_HANDOFF.md entries at the end of round 5. The previous code
     // rendered `entry.episode.displayTitle` (a getter `subtitle ?? title`),
     // so a "Midsomer Murders" search whose only airing had `subtitle:
     // "A Picture of Innocence"` rendered the card titled "A Picture of
-    // Innocence" — wrong field, looked like drift. None of the existing
+    // Innocence" - wrong field, looked like drift. None of the existing
     // On Now tests caught it because every fixture left `subtitle: null`.
 
     Future<void> setupOnNowCard(
@@ -2823,11 +2823,11 @@ void main() {
       (
         tester,
       ) async {
-        // Both present — title is the SHOW name, subtitle is
+        // Both present - title is the SHOW name, subtitle is
         // "{episode subtitle} · {channel name}". The previous code rendered
         // the episode name as the title (a getter returning subtitle ?? title),
         // so this test fails against the buggy impl and passes against the
-        // fixed one — the mutation check relies on this asymmetry.
+        // fixed one - the mutation check relies on this asymmetry.
         await setupOnNowCard(
           tester,
           EpgShowEpisode(
@@ -2863,7 +2863,7 @@ void main() {
             channelId: 1,
             channelName: 'US: OVATION',
             title: 'Midsomer Murders',
-            // subtitle: null — falls through to channel-only.
+            // subtitle: null - falls through to channel-only.
             startTime: DateTime.now().toUtc().subtract(
               const Duration(minutes: 30),
             ),
@@ -2873,7 +2873,7 @@ void main() {
 
         // Title is the show name (R4 unchanged).
         expect(find.text('Midsomer Murders'), findsOneWidget);
-        // Subtitle is the channel alone — no stray " · " separator.
+        // Subtitle is the channel alone - no stray " · " separator.
         expect(find.text('US: OVATION'), findsOneWidget);
         expect(find.textContaining(' · '), findsNothing);
       },
@@ -2897,7 +2897,7 @@ void main() {
 
         // Title is the show name.
         expect(find.text('Midsomer Murders'), findsOneWidget);
-        // Subtitle is the episode subtitle alone — no trailing " · ".
+        // Subtitle is the episode subtitle alone - no trailing " · ".
         expect(find.text('A Picture of Innocence'), findsOneWidget);
         expect(find.textContaining(' · '), findsNothing);
       },
@@ -2911,7 +2911,7 @@ void main() {
           EpgShowEpisode(
             channelId: 1,
             title: 'Midsomer Murders',
-            // subtitle: null and channelName: null — no subtitle row.
+            // subtitle: null and channelName: null - no subtitle row.
             startTime: DateTime.now().toUtc().subtract(
               const Duration(minutes: 30),
             ),
@@ -2921,7 +2921,7 @@ void main() {
 
         // Title is the show name.
         expect(find.text('Midsomer Murders'), findsOneWidget);
-        // No subtitle Text widget renders — confirmed by walking the
+        // No subtitle Text widget renders - confirmed by walking the
         // card's Text descendants and asserting none has empty data
         // (the phantom-row regression: an empty-string subtitle would
         // render an 11px empty Text below the title).

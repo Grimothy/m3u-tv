@@ -125,7 +125,7 @@ class LiveTvScreen extends ConsumerStatefulWidget {
   /// full-screen push as Home's previews instead of the bare
   /// `context.push` fallback that loses the sidebar-hide chrome and
   /// focus restoration. All three are nullable so the screen works
-  /// unwired — a tap is a no-op when the callback is null.
+  /// unwired - a tap is a no-op when the callback is null.
   final void Function(EpgShow)? onShowSelect;
   final void Function(VodItem)? onVodSelect;
   final void Function(Series)? onSeriesSelect;
@@ -169,7 +169,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
 
   // Lets the Channels column's and day-nav header's own right-edge handlers
   // reach the program grid's actual last-focused block directly, rather
-  // than through _gridFocusNode's focus-history stack — that stack now also
+  // than through _gridFocusNode's focus-history stack - that stack now also
   // holds the Channels column's and day-controls' own (separately-scoped)
   // entries, which can outrank a real grid block there and send focus back
   // to one of them instead of into the grid.
@@ -181,7 +181,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   // left/right traversal from the grid. skipTraversal keeps this wrapper
   // node itself out of dpad's spatial candidate search (which otherwise
   // treats it as a real focusable item, in whichever region its own
-  // BuildContext resolves to) — without it, this node can be picked as a
+  // BuildContext resolves to) - without it, this node can be picked as a
   // directional-navigation target in its own right, `.requestFocus()` calls
   // aimed at *escaping* this region as a fresh candidate would just refocus
   // itself, and the region behind it (or the day-navigation header, in the
@@ -469,7 +469,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   Future<void> _openChannelContextMenu(
     BuildContext context,
     Channel channel,
-    // The program "Record" would act on if tapped — the channel's current
+    // The program "Record" would act on if tapped - the channel's current
     // program from the list/grid views, or whichever block was long-pressed
     // in the EPG timeline (which may be a future program, schedulable ahead
     // of time same as the editor supports; a past program is not, so callers
@@ -817,14 +817,14 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   /// R3.2/R3.3: flatten `airingNow` across all shows, drop entries whose
   /// `channelId` matches no channel at all, and render one card per
   /// currently-airing programme. The server already answered "is this
-  /// airing?" — no client-side timestamp re-filter.
+  /// airing?" - no client-side timestamp re-filter.
   ///
   /// The channel lookup is built from the **full** channel list, not
   /// the search-filtered list. Searching for a show name (the entire
   /// reason this rail exists) does not filter channels by name, so the
   /// lookup must include every channel a programme could be airing on.
   /// Filtering against the name-matched channel list would suppress
-  /// every card on the rail — see the R3 review for the defect this
+  /// every card on the rail - see the R3 review for the defect this
   /// comment exists to prevent.
   ///
   /// The "context" passed to `onChannelContextChanged` is the list of
@@ -832,10 +832,10 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   /// order the user sees them), not the channel list filtered by the
   /// current query. The user is looking at and tapping from the On Now
   /// rail, so skip-previous/next should step between other things
-  /// airing now — those are the only candidates reliably on screen.
+  /// airing now - those are the only candidates reliably on screen.
   ///
   /// Whole section suppressed when empty so On Now doesn't repeat
-  /// Upcoming's loading/error/empty states — Upcoming owns those for
+  /// Upcoming's loading/error/empty states - Upcoming owns those for
   /// the shared search.
   Widget _buildOnNowRail(Map<int, Channel> channelsById) {
     final l10n = AppLocalizations.of(context);
@@ -853,13 +853,12 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
       cards.add(
         MediaPreviewItem(
           // The card title is the SHOW name, not the episode name. The
-          // On Now rail surfaces a *search* result — its job is to
+          // On Now rail surfaces a *search* result - its job is to
           // confirm which show matched the query, so the user knows
           // they're tuning to the right thing. `EpgShowEpisode.displayTitle`
           // is `subtitle ?? title` (domain_models.dart:1219), so using
           // it here would render the episode name (e.g. "A Picture of
-          // Innocence" for a "Midsomer Murders" search) — see the bug
-          // entry in AGENT_HANDOFF.md at the end of round 5. The
+          // Innocence" for a "Midsomer Murders" search). The
           // episode name moves to the subtitle via [_formatOnNowSubtitle]
           // so both names reach the user. The airing time lives in
           // [emphasisLabel] and is structurally un-truncatable.
@@ -895,16 +894,16 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   ///
   /// Deliberately allowed to ellipsise. Round 4 moved the airing time out
   /// of the subtitle line precisely so a long value here costs nothing
-  /// important — the time now lives in `emphasisLabel` and is immune, and
+  /// important - the time now lives in `emphasisLabel` and is immune, and
   /// channel identity is carried redundantly by the station logo. Do NOT
   /// re-add the time here.
   ///
-  /// Returns null (not empty string) when both are absent — empty string
+  /// Returns null (not empty string) when both are absent - empty string
   /// would render a phantom 11px row in `_buildDefaultContent`.
   String? _formatOnNowSubtitle(EpgShowEpisode episode, String? channelName) {
     final ep = episode.subtitle;
     final hasEp = ep != null && ep.trim().isNotEmpty;
-    final hasCh = channelName != null && channelName.isNotEmpty;
+    final hasCh = channelName != null && channelName.trim().isNotEmpty;
     if (hasEp && hasCh) return '$ep · $channelName';
     if (hasEp) return ep;
     if (hasCh) return channelName;
@@ -923,7 +922,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   /// future-only (`startTime.isAfter(now)` with `now` in UTC), blank
   /// titles dropped, null-tolerant on unmatched `channelId` (the rail
   /// navigates to the show, not the channel, so an unmatched channel is
-  /// still a valid card — do not "fix" this to match On Now's `continue`
+  /// still a valid card - do not "fix" this to match On Now's `continue`
   /// on null lookup).
   ///
   /// Height is bounded by the cap at 4 groups; the surrounding
@@ -941,15 +940,10 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
         .where((entry) => entry.episode.startTime.isAfter(now))
         .toList();
 
-    // Group by (show.normalizedTitle, episode.channelId). Using a private
-    // helper instead of a Dart record-as-key to keep `$1`/`$2` access out
-    // of the rendering code below.
+    // Group by (show, episode.channelId).
     final groups = <_UpcomingGroupKey, _UpcomingGroup>{};
     for (final entry in entries) {
-      final key = _UpcomingGroupKey(
-        normalizedTitle: entry.show.normalizedTitle,
-        channelId: entry.episode.channelId,
-      );
+      final key = (show: entry.show, channelId: entry.episode.channelId);
       groups
           .putIfAbsent(
             key,
@@ -990,7 +984,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
           children: [
             Text(
               l10n.liveTvUpcomingAirings,
-              style: Theme.of(context).textTheme.titleMedium,
+              style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
             Text(
@@ -1014,13 +1008,33 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
         children: [
           Text(
             l10n.liveTvUpcomingAirings,
-            style: Theme.of(context).textTheme.titleMedium,
+            style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 8),
-          ...visible.map(
-            (g) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: _buildUpcomingGroupRow(g, channelsById, l10n, localized),
+          DpadRegion(
+            memoryKey: 'preview-row/${l10n.liveTvUpcomingAirings}',
+            horizontalEdge: DpadEdgeBehavior.stop,
+            onEdge: (direction) {
+              if (direction == TraversalDirection.left) {
+                widget.onSidebarActivate?.call();
+              }
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: visible
+                  .map(
+                    (g) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: _buildUpcomingGroupRow(
+                        g,
+                        channelsById,
+                        l10n,
+                        localized,
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
             ),
           ),
         ],
@@ -1090,12 +1104,16 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
               ),
             ),
             const SizedBox(width: MediaBrowsingMetrics.itemGap),
-            Text(
-              timesText,
-              textAlign: TextAlign.end,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: colorScheme.onSurface,
+            Flexible(
+              child: Text(
+                timesText,
+                textAlign: TextAlign.end,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
+                ),
               ),
             ),
           ],
@@ -1106,7 +1124,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
 
   /// R2.4: local, synchronous, no-debounce filter on the already-loaded
   /// VOD and Series lists. Renders as one combined rail with
-  /// `posterStyle: true` to mirror Home's shape — the search affordance
+  /// `posterStyle: true` to mirror Home's shape - the search affordance
   /// is a way to discover existing local content, not a way to fetch new
   /// content. Suppressed entirely when the filtered lists are both empty.
   Widget _buildMoviesAndSeriesRail() {
@@ -1256,7 +1274,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
 
   // A tooltip alone doesn't work on TV (hover-only, no mouse), so the
   // current mode gets an explicit text label alongside its icon rather than
-  // relying on IconButton's tooltip — this also gives the mobile stacked
+  // relying on IconButton's tooltip - this also gives the mobile stacked
   // layout a button matching the Filter button's AppButton styling instead
   // of a bare IconButton.
   Widget _buildViewModeToggle() {
@@ -1351,7 +1369,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
         onCatchupProgramSelect: widget.onCatchupProgramSelect,
         onEnsureEpg: widget.onEnsureEpg,
         onChannelLongPress: (channel, program) => unawaited(
-          // Pass the exact block that was pressed — schedulable for both
+          // Pass the exact block that was pressed - schedulable for both
           // the currently-airing and future programs, same as the editor
           // supports; _openChannelContextMenu withholds "Record" itself
           // if this program has already ended.
@@ -1370,7 +1388,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
       onEdge: _handleGridLeftEdge,
       child: ScrollbarGridView(
         // Zero top inset only, to match the List and EPG views' flush top
-        // edge — ScrollbarGridView's own default padding is symmetric,
+        // edge - ScrollbarGridView's own default padding is symmetric,
         // which otherwise leaves Grid visibly lower than its siblings.
         padding: const EdgeInsets.fromLTRB(
           MediaBrowsingMetrics.contentPadding,
@@ -1670,28 +1688,13 @@ class _ChannelGridItem extends StatelessWidget {
   }
 }
 
-/// R5.2 grouping key: `(show.normalizedTitle, episode.channelId)`. Two
-/// airings of the same show on different channels belong to separate rows;
-/// two airings of the same show on the same channel collapse into one row
-/// whose airing list grows.
-class _UpcomingGroupKey {
-  const _UpcomingGroupKey({
-    required this.normalizedTitle,
-    required this.channelId,
-  });
-
-  final String normalizedTitle;
-  final int channelId;
-
-  @override
-  bool operator ==(Object other) =>
-      other is _UpcomingGroupKey &&
-      other.normalizedTitle == normalizedTitle &&
-      other.channelId == channelId;
-
-  @override
-  int get hashCode => Object.hash(normalizedTitle, channelId);
-}
+/// R5.2 grouping key: `(show, episode.channelId)`. Two airings of the same
+/// show on different channels belong to separate rows; two airings of the
+/// same show on the same channel collapse into one row whose airing list
+/// grows. Keyed on the `EpgShow` instance itself (identity equality, not
+/// `normalizedTitle`) - the server can omit `normalized_title`, and two
+/// distinct shows both falling back to `''` must not merge into one row.
+typedef _UpcomingGroupKey = ({EpgShow show, int channelId});
 
 class _UpcomingGroup {
   _UpcomingGroup({required this.show, required this.channelId});
