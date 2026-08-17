@@ -964,9 +964,59 @@ void main() {
       // Build two shows. "Bad Show" has only a blank-title episode, so it
       // contributes zero non-blank episodes to the rail and its row must
       // not render. "Good Show" has one valid episode and renders once.
-      (
-        tester,
-      ) async {
+      await tester.pumpWidget(
+        _TestApp(
+          channels: channels,
+          categories: categories,
+          onSearchShows: staticResults([
+            EpgShow(
+              normalizedTitle: 'good',
+              displayTitle: 'Good Show',
+              channelCount: 1,
+              channels: [],
+              episodeCount: 0,
+              recentEpisodes: [
+                EpgShowEpisode(
+                  channelId: 1,
+                  channelName: 'BBC One',
+                  title: 'Good Episode',
+                  startTime: futureTime,
+                  endTime: futureTime.add(const Duration(hours: 1)),
+                ),
+              ],
+            ),
+            EpgShow(
+              normalizedTitle: 'bad',
+              displayTitle: 'Bad Show',
+              channelCount: 1,
+              channels: [],
+              episodeCount: 0,
+              recentEpisodes: [
+                EpgShowEpisode(
+                  channelId: 2,
+                  channelName: 'BBC Two',
+                  title: '',
+                  startTime: futureTime,
+                  endTime: futureTime.add(const Duration(hours: 1)),
+                ),
+              ],
+            ),
+          ]),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterQuery(tester, 'sh');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Good Show'), findsOneWidget);
+      expect(find.text('Bad Show'), findsNothing);
+    });
+
+    testWidgets(
+      'Upcoming section renders day-relative .toLocal() time on the row',
+      (tester) async {
         // Derive the airing instant from now (UTC + 30 days) so the test
         // doesn't rot with the calendar. _formatUpcomingTime renders
         // 30-days-out airings as `MMMd jm` of the local instant, which
