@@ -92,7 +92,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get liveTvUpcomingAirings => 'Demnächst';
 
   @override
-  String get liveTvMoviesAndSeries => 'Filme & Serien';
+  String get liveTvSearchFilterAll => 'Alle';
 
   @override
   String get liveTvShowResultsLoading => 'Sendungen werden gesucht …';

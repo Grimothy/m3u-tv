@@ -40,7 +40,7 @@
   "liveTvViewModeEpg": "EPG",
   "liveTvSearchHint": "搜索…",
   "liveTvUpcomingAirings": "即将播出",
-  "liveTvMoviesAndSeries": "电影与电视剧",
+  "liveTvSearchFilterAll": "全部",
   "liveTvOnNow": "正在播出",
   "liveTvAiringUntil": "{time} 结束",
   "@liveTvAiringUntil": {

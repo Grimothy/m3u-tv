@@ -260,11 +260,11 @@ abstract class AppLocalizations {
   /// **'Upcoming'**
   String get liveTvUpcomingAirings;
 
-  /// No description provided for @liveTvMoviesAndSeries.
+  /// No description provided for @liveTvSearchFilterAll.
   ///
   /// In en, this message translates to:
-  /// **'Movies & Series'**
-  String get liveTvMoviesAndSeries;
+  /// **'All'**
+  String get liveTvSearchFilterAll;
 
   /// No description provided for @liveTvShowResultsLoading.
   ///

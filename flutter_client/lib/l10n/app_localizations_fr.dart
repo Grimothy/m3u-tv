@@ -91,7 +91,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get liveTvUpcomingAirings => 'Prochainement';
 
   @override
-  String get liveTvMoviesAndSeries => 'Films et séries';
+  String get liveTvSearchFilterAll => 'Tout';
 
   @override
   String get liveTvShowResultsLoading => 'Recherche d\'émissions…';

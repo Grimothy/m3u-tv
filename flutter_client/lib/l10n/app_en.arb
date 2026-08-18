@@ -40,7 +40,7 @@
   "liveTvViewModeEpg": "EPG",
   "liveTvSearchHint": "Search...",
   "liveTvUpcomingAirings": "Upcoming",
-  "liveTvMoviesAndSeries": "Movies & Series",
+  "liveTvSearchFilterAll": "All",
   "liveTvShowResultsLoading": "Searching shows…",
   "liveTvOnNow": "On Now",
   "liveTvAiringUntil": "Until {time}",

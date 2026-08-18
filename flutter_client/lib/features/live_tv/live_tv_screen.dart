@@ -19,6 +19,7 @@ import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
+import 'package:m3u_tv/shared/dpad_tab_bar.dart';
 import 'package:m3u_tv/shared/dvr_action_dialogs.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/media_category_nav.dart';
@@ -55,8 +56,6 @@ class LiveTvScreen extends ConsumerStatefulWidget {
     this.onBackHandlerReady,
     this.onSearchShows,
     this.onShowSelect,
-    this.onVodSelect,
-    this.onSeriesSelect,
   });
 
   final FavoritesService favoritesService;
@@ -112,29 +111,28 @@ class LiveTvScreen extends ConsumerStatefulWidget {
   final VoidCallback? onEnterFullScreenDetail;
   final VoidCallback? onExitFullScreenDetail;
 
-  /// Wired by AppShell against `XtreamService.searchEpgShows`. Returns
-  /// EPG shows whose titles match the query for the rail above the channel
-  /// list. Null hides the Upcoming rail entirely (the screen works
-  /// unwired, same convention as [onEnsureEpg]).
+  /// Wired by AppShell against `XtreamService.searchEpgShows`. Returns EPG
+  /// shows whose titles match the query for the search results view that
+  /// replaces the channel list. Null hides that view entirely (the screen
+  /// works unwired, same convention as [onEnsureEpg]). VOD/Series matches
+  /// are not surfaced here - they have their own dedicated search screens.
   final Future<List<EpgShow>> Function(String query)? onSearchShows;
 
-  /// R2.2: tap handlers for the Upcoming rail (whose items are EpgShow
-  /// instances) and the Movies & Series rail (whose items are local
-  /// VOD items or Series). Wired by AppShell against `_openShow` /
-  /// `_openVod` / `_openSeries` so the rail uses the same immersive
-  /// full-screen push as Home's previews instead of the bare
-  /// `context.push` fallback that loses the sidebar-hide chrome and
-  /// focus restoration. All three are nullable so the screen works
-  /// unwired - a tap is a no-op when the callback is null.
+  /// Tap handler for a search-result row (both "On Now" and "Upcoming"
+  /// rows navigate to the show detail screen except On Now, which tunes the
+  /// channel directly). Wired by AppShell against `_openShow` so the row
+  /// uses the same immersive full-screen push as Home's previews instead of
+  /// the bare `context.push` fallback that loses the sidebar-hide chrome
+  /// and focus restoration. Nullable so the screen works unwired - a tap is
+  /// a no-op when the callback is null.
   final void Function(EpgShow)? onShowSelect;
-  final void Function(VodItem)? onVodSelect;
-  final void Function(Series)? onSeriesSelect;
 
   @override
   ConsumerState<LiveTvScreen> createState() => _LiveTvScreenState();
 }
 
-class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
+class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
+    with SingleTickerProviderStateMixin {
   // Multiview drives several concurrent player instances. tvOS, iOS, and
   // Android multiplex them over their one native channel pair by playerId
   // (see AvKitPlaybackPlugin.swift / Media3PlaybackPlugin.kt); macOS
@@ -164,6 +162,12 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   // Shared across all three view modes since only one is ever mounted at a
   // time (see the `switch (_viewMode)` in build()).
   final FocusScopeNode _gridFocusNode = FocusScopeNode();
+  // MediaCategoryNav's strip hands focus off to whichever scope is passed
+  // as gridFocusScopeNode on its right edge - _gridFocusNode has no
+  // focusable descendants while search results have replaced the channel
+  // grid, so the search results get their own scope and build() passes
+  // whichever one is actually live.
+  final FocusScopeNode _searchResultsFocusNode = FocusScopeNode();
   final GlobalKey<MediaCategoryNavState> _navKey =
       GlobalKey<MediaCategoryNavState>();
 
@@ -205,10 +209,17 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
   List<EpgShow> _showResults = const <EpgShow>[];
   bool _showIsLoading = false;
   String? _showError;
+  late final TabController _searchResultsTabController;
 
   @override
   void initState() {
     super.initState();
+    // Constructed eagerly here, not via a lazy `late` initializer, because
+    // it's only read from build() while a search is active - a `late`
+    // initializer would defer construction until dispose() on any screen
+    // instance that never searched, and TabController's AnimationController
+    // needs a live TickerMode ancestor that's already gone by then.
+    _searchResultsTabController = TabController(length: 3, vsync: this);
     widget.favoritesService.addListener(_onFavoritesChanged);
     _attachViewSettingsListener();
     unawaited(_initCategory());
@@ -238,9 +249,11 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     widget.favoritesService.removeListener(_onFavoritesChanged);
     _detachViewSettingsListener(widget.viewSettingsService);
     _gridFocusNode.dispose();
+    _searchResultsFocusNode.dispose();
     _channelColumnFocusNode.dispose();
     _dayControlsFocusNode.dispose();
     _showSearchDebounce?.cancel();
+    _searchResultsTabController.dispose();
     super.dispose();
   }
 
@@ -348,13 +361,21 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     }
   }
 
+  // Tracks whether the *previous* keystroke's query already met the 2-char
+  // search threshold, so the results tab only resets to "All" on the
+  // transition into search mode - not on every keystroke while refining an
+  // already-active query, which would otherwise bounce the user off a
+  // deliberately-chosen On Now/Upcoming tab mid-typing.
+  bool _showSearchWasActive = false;
+
   /// Mirrors `ShowsScreen._onQueryChanged`. Kept independent of the
   /// synchronous `_query` setState that drives [_filteredChannels] so the
-  /// channel list narrows on every keystroke while the show rail waits
+  /// channel list narrows on every keystroke while the show search waits
   /// out the debounce + network roundtrip.
   void _onShowQueryChanged(String value) {
     final trimmed = value.trim();
     if (trimmed.length < 2) {
+      _showSearchWasActive = false;
       _showSearchDebounce?.cancel();
       _showSearchGeneration++;
       if (_showResults.isNotEmpty || _showIsLoading || _showError != null) {
@@ -366,10 +387,14 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
       }
       return;
     }
+    if (!_showSearchWasActive) {
+      _searchResultsTabController.index = 0;
+    }
+    _showSearchWasActive = true;
     _showSearchDebounce?.cancel();
-    // R2.1: flip to loading synchronously so the Upcoming rail renders
+    // R2.1: flip to loading synchronously so the results view renders
     // "Searching shows…" the same frame the qualifying query first
-    // arrives. Without this, the empty rail flashes "No shows match your
+    // arrives. Without this, the empty view flashes "No shows match your
     // search" for the 350ms the debounce is waiting before the network
     // call fires.
     setState(() {
@@ -716,6 +741,13 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     final channelsById = {for (final c in channels) c.id: c};
     _loadEpgForChannels(filtered, epgService);
     final l = AppLocalizations.of(context);
+    // Search results replace the channel list/grid entirely (rather than
+    // stacking above it) once a qualifying show search is active - mirrors
+    // SearchScreen's DpadTabBar + Expanded(TabBarView) structure, which
+    // keeps the results in one direct DpadRegion-per-tab instead of nested
+    // regions competing with a separate FocusScope for the channel grid.
+    final showSearchActive =
+        widget.onSearchShows != null && _query.trim().length >= 2;
     final nav = MediaCategoryNav(
       key: _navKey,
       useSidebarLayout: widget.useSidebarLayout,
@@ -733,76 +765,70 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
       leading: _buildViewModeToggle(),
       trailing: _buildMultiviewButton(),
       onSidebarActivate: widget.onSidebarActivate,
-      gridFocusScopeNode: _gridFocusNode,
+      // The strip's right edge hands focus to whichever of these actually
+      // has live focusable descendants - _gridFocusNode is empty while
+      // search results have replaced the channel grid.
+      gridFocusScopeNode: showSearchActive
+          ? _searchResultsFocusNode
+          : _gridFocusNode,
       memoryKeyPrefix: 'live-tv',
       onEntryFocusScopeReady: widget.onEntryFocusScopeReady,
     );
-    final searchResults = <Widget>[
-      if (_query.trim().length >= 2)
-        ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.55,
-          ),
-          child: DpadRegion(
-            memoryKey: 'live-tv/search-results',
-            horizontalEdge: DpadEdgeBehavior.stop,
-            onEdge: (direction) {
-              if (direction == TraversalDirection.left) {
-                widget.onSidebarActivate?.call();
-              }
-            },
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (widget.onSearchShows != null)
-                    _buildOnNowRail(channelsById),
-                  if (widget.onSearchShows != null)
-                    _buildUpcomingSection(channelsById),
-                  _buildMoviesAndSeriesRail(),
-                ],
-              ),
-            ),
-          ),
-        ),
-    ];
     final content = Expanded(
       child: Column(
         children: [
-          ...searchResults,
-          Expanded(
-            child: isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : filtered.isEmpty
-                ? Center(
-                    child: Text(
-                      AppLocalizations.of(context).liveTvNoChannels,
-                      style: Theme.of(context).textTheme.bodyLarge,
+          if (showSearchActive)
+            Expanded(
+              child: FocusScope(
+                node: _searchResultsFocusNode,
+                child: Column(
+                  children: [
+                    DpadTabBar(
+                      controller: _searchResultsTabController,
+                      tabs: [
+                        l.liveTvSearchFilterAll,
+                        l.liveTvOnNow,
+                        l.liveTvUpcomingAirings,
+                      ],
                     ),
-                  )
-                : FocusScope(
-                    node: _gridFocusNode,
-                    child: switch (_viewMode) {
-                      _ViewMode.epgGrid => _buildEpgGrid(
-                        filtered,
-                        epgService,
-                        recordingChannelIds,
-                        EpgRecordingIndex.fromRecordings(
-                          ref.watch(dvrRecordingsProvider),
+                    Expanded(child: _buildSearchResultsTabs(channelsById)),
+                  ],
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : filtered.isEmpty
+                  ? Center(
+                      child: Text(
+                        AppLocalizations.of(context).liveTvNoChannels,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      ),
+                    )
+                  : FocusScope(
+                      node: _gridFocusNode,
+                      child: switch (_viewMode) {
+                        _ViewMode.epgGrid => _buildEpgGrid(
+                          filtered,
+                          epgService,
+                          recordingChannelIds,
+                          EpgRecordingIndex.fromRecordings(
+                            ref.watch(dvrRecordingsProvider),
+                          ),
                         ),
-                      ),
-                      _ViewMode.logoGrid => _buildGridView(
-                        filtered,
-                        recordingChannelIds,
-                      ),
-                      _ViewMode.list => _buildListView(
-                        filtered,
-                        recordingChannelIds,
-                      ),
-                    },
-                  ),
-          ),
+                        _ViewMode.logoGrid => _buildGridView(
+                          filtered,
+                          recordingChannelIds,
+                        ),
+                        _ViewMode.list => _buildListView(
+                          filtered,
+                          recordingChannelIds,
+                        ),
+                      },
+                    ),
+            ),
         ],
       ),
     );
@@ -814,257 +840,215 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     );
   }
 
-  /// R3.2/R3.3: flatten `airingNow` across all shows, drop entries whose
-  /// `channelId` matches no channel at all, and render one card per
-  /// currently-airing programme. The server already answered "is this
-  /// airing?" - no client-side timestamp re-filter.
-  ///
-  /// The channel lookup is built from the **full** channel list, not
-  /// the search-filtered list. Searching for a show name (the entire
-  /// reason this rail exists) does not filter channels by name, so the
-  /// lookup must include every channel a programme could be airing on.
-  /// Filtering against the name-matched channel list would suppress
-  /// every card on the rail - see the R3 review for the defect this
-  /// comment exists to prevent.
-  ///
-  /// The "context" passed to `onChannelContextChanged` is the list of
-  /// distinct channels represented in this rail (deduped, in the
-  /// order the user sees them), not the channel list filtered by the
-  /// current query. The user is looking at and tapping from the On Now
-  /// rail, so skip-previous/next should step between other things
-  /// airing now - those are the only candidates reliably on screen.
-  ///
-  /// Whole section suppressed when empty so On Now doesn't repeat
-  /// Upcoming's loading/error/empty states - Upcoming owns those for
-  /// the shared search.
-  Widget _buildOnNowRail(Map<int, Channel> channelsById) {
-    final l10n = AppLocalizations.of(context);
-    final localized = Localizations.localeOf(context).toLanguageTag();
-    final entries = _showResults.expand(
-      (show) => show.airingNow.map((ep) => (show: show, episode: ep)),
-    );
-    final cards = <MediaPreviewItem>[];
-    final onNowChannelIds = <int>{};
-    final onNowChannels = <Channel>[];
-    for (final entry in entries) {
-      final channel = channelsById[entry.episode.channelId];
-      if (channel == null) continue;
-      final channelName = entry.episode.channelName;
-      cards.add(
-        MediaPreviewItem(
-          // The card title is the SHOW name, not the episode name. The
-          // On Now rail surfaces a *search* result - its job is to
-          // confirm which show matched the query, so the user knows
-          // they're tuning to the right thing. `EpgShowEpisode.displayTitle`
-          // is `subtitle ?? title` (domain_models.dart:1219), so using
-          // it here would render the episode name (e.g. "A Picture of
-          // Innocence" for a "Midsomer Murders" search). The
-          // episode name moves to the subtitle via [_formatOnNowSubtitle]
-          // so both names reach the user. The airing time lives in
-          // [emphasisLabel] and is structurally un-truncatable.
-          title: entry.show.displayTitle,
-          imageUrl: channel.logoUrl,
-          imageFit: BoxFit.contain,
-          imagePadding: const EdgeInsets.all(10),
-          imageBackgroundColor: Colors.transparent,
-          subtitle: _formatOnNowSubtitle(entry.episode, channelName),
-          emphasisLabel: l10n.liveTvAiringUntil(
-            DateFormat.jm(localized).format(entry.episode.endTime.toLocal()),
-          ),
-          fallbackIcon: Icons.live_tv,
-          onTap: () {
-            widget.onChannelContextChanged?.call(onNowChannels);
-            widget.onChannelSelect(channel);
-          },
+  /// Builds the three [DpadTabBarView] pages (All / On Now / Upcoming) that
+  /// replace the channel list while a qualifying show search is active.
+  /// One [_buildShowResultEntries] pass serves all three tabs - each tab is
+  /// just a different filter over the same combined, deduped result set.
+  Widget _buildSearchResultsTabs(Map<int, Channel> channelsById) {
+    final result = _buildShowResultEntries(channelsById);
+    return DpadTabBarView(
+      controller: _searchResultsTabController,
+      children: [
+        _buildSearchResultsList(
+          channelsById,
+          result.all,
+          result.onNowChannels,
+          'all',
         ),
-      );
-      if (onNowChannelIds.add(channel.id)) onNowChannels.add(channel);
-    }
-    if (cards.isEmpty) return const SizedBox.shrink();
-    return MediaPreviewSection(
-      title: l10n.liveTvOnNow,
-      items: cards,
-      emptyLabel: '',
-      onSidebarActivate: widget.onSidebarActivate,
+        _buildSearchResultsList(
+          channelsById,
+          result.onNow,
+          result.onNowChannels,
+          'on-now',
+        ),
+        _buildSearchResultsList(
+          channelsById,
+          result.upcoming,
+          result.onNowChannels,
+          'upcoming',
+        ),
+      ],
     );
   }
 
-  /// R6: episode name first (the higher-value token), channel second. Both
-  /// are optional and either may be absent.
-  ///
-  /// Deliberately allowed to ellipsise. Round 4 moved the airing time out
-  /// of the subtitle line precisely so a long value here costs nothing
-  /// important - the time now lives in `emphasisLabel` and is immune, and
-  /// channel identity is carried redundantly by the station logo. Do NOT
-  /// re-add the time here.
-  ///
-  /// Returns null (not empty string) when both are absent - empty string
-  /// would render a phantom 11px row in `_buildDefaultContent`.
-  String? _formatOnNowSubtitle(EpgShowEpisode episode, String? channelName) {
-    final ep = episode.subtitle;
-    final hasEp = ep != null && ep.trim().isNotEmpty;
-    final hasCh = channelName != null && channelName.trim().isNotEmpty;
-    if (hasEp && hasCh) return '$ep · $channelName';
-    if (hasEp) return ep;
-    if (hasCh) return channelName;
-    return null;
-  }
-
-  /// R5.2: vertical Upcoming section, grouped by `(show.normalizedTitle,
-  /// episode.channelId)`. A single show repeating on one network used to
-  /// render a wall of identical horizontal cards (40 future airings of
-  /// `"Grace and Frankie"` on one channel produced 12 identical tiles);
-  /// grouping collapses duplicates into one row that shows up to 3 airing
-  /// times plus a `"+N more"` affordance that points at the show detail
-  /// screen, which already lists every airing.
-  ///
-  /// Filtering rules inherited from the R2.3 rail and unchanged here:
-  /// future-only (`startTime.isAfter(now)` with `now` in UTC), blank
-  /// titles dropped, null-tolerant on unmatched `channelId` (the rail
-  /// navigates to the show, not the channel, so an unmatched channel is
-  /// still a valid card - do not "fix" this to match On Now's `continue`
-  /// on null lookup).
-  ///
-  /// Height is bounded by the cap at 4 groups; the surrounding
-  /// `ConstrainedBox` + `SingleChildScrollView` (R5.1) handles overflow
-  /// for the full results area on 1080p/DPR 1.6 panels.
-  Widget _buildUpcomingSection(Map<int, Channel> channelsById) {
+  Widget _buildSearchResultsList(
+    Map<int, Channel> channelsById,
+    List<_ShowResultEntry> entries,
+    List<Channel> onNowChannels,
+    String tabKey,
+  ) {
     final l10n = AppLocalizations.of(context);
     final localized = Localizations.localeOf(context).toLanguageTag();
-    final now = DateTime.now().toUtc();
-    final entries = _showResults
-        .expand(
-          (show) => show.recentEpisodes.map((ep) => (show: show, episode: ep)),
-        )
-        .where((entry) => entry.episode.displayTitle.isNotEmpty)
-        .where((entry) => entry.episode.startTime.isAfter(now))
-        .toList();
-
-    // Group by (show, episode.channelId).
-    final groups = <_UpcomingGroupKey, _UpcomingGroup>{};
-    for (final entry in entries) {
-      final key = (show: entry.show, channelId: entry.episode.channelId);
-      groups
-          .putIfAbsent(
-            key,
-            () => _UpcomingGroup(show: entry.show, channelId: key.channelId),
-          )
-          .episodes
-          .add(entry.episode);
-    }
-    // Within each group, soonest first.
-    for (final g in groups.values) {
-      g.episodes.sort((a, b) => a.startTime.compareTo(b.startTime));
-    }
-    // Order groups by each group's earliest airing, soonest overall first.
-    final ordered = groups.values.toList()
-      ..sort(
-        (a, b) =>
-            a.episodes.first.startTime.compareTo(b.episodes.first.startTime),
-      );
-    final visible = ordered.take(4).toList(growable: false);
-
-    if (visible.isEmpty) {
-      // No future airings to show. Preserve the R2.1 loading UX: when the
-      // user types a qualifying query and the search is still in flight,
-      // show the loading label instead of the no-matches label, so the
-      // latter doesn't flash before the request resolves.
+    if (entries.isEmpty) {
+      // Preserve the R2.1 loading UX: when the user types a qualifying
+      // query and the search is still in flight, show the loading label
+      // instead of the no-matches label, so the latter doesn't flash
+      // before the request resolves.
       final emptyText = _showIsLoading
           ? l10n.liveTvShowResultsLoading
           : _showError != null
           ? l10n.showsSearchError
           : l10n.showsNoResults;
-      return Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: MediaBrowsingMetrics.contentPadding,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              l10n.liveTvUpcomingAirings,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              emptyText,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
+      return Center(
+        child: Text(emptyText, style: Theme.of(context).textTheme.bodyLarge),
       );
     }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: MediaBrowsingMetrics.contentPadding,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            l10n.liveTvUpcomingAirings,
-            style: Theme.of(context).textTheme.titleLarge,
+    return DpadRegion(
+      memoryKey: 'live-tv/search-results/$tabKey',
+      horizontalEdge: DpadEdgeBehavior.stop,
+      onEdge: _handleGridLeftEdge,
+      child: ScrollbarListView(
+        itemCount: entries.length,
+        itemBuilder: (context, index) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: _buildSearchResultRow(
+            entries[index],
+            channelsById,
+            onNowChannels,
+            l10n,
+            localized,
+            autofocus: index == 0,
           ),
-          const SizedBox(height: 8),
-          DpadRegion(
-            memoryKey: 'preview-row/${l10n.liveTvUpcomingAirings}',
-            horizontalEdge: DpadEdgeBehavior.stop,
-            onEdge: (direction) {
-              if (direction == TraversalDirection.left) {
-                widget.onSidebarActivate?.call();
-              }
-            },
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: visible
-                  .map(
-                    (g) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: _buildUpcomingGroupRow(
-                        g,
-                        channelsById,
-                        l10n,
-                        localized,
-                      ),
-                    ),
-                  )
-                  .toList(growable: false),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildUpcomingGroupRow(
-    _UpcomingGroup group,
+  /// Combines `airingNow` and future `recentEpisodes` into one row model
+  /// per (show, channelId), deduped so a show currently airing doesn't also
+  /// render as its own Upcoming row for the same channel - the On Now row
+  /// already covers it. `onNow`/`upcoming` are the same entries split out
+  /// per tab; `all` is On Now first, then Upcoming, matching the previous
+  /// stacking order. `onNowChannels` is the deduped, ordered list of
+  /// channels represented in On Now, used for skip-previous/next context
+  /// when a rider taps an On Now row (those are the only channels reliably
+  /// on screen for that action).
+  ({
+    List<_ShowResultEntry> all,
+    List<_ShowResultEntry> onNow,
+    List<_ShowResultEntry> upcoming,
+    List<Channel> onNowChannels,
+  })
+  _buildShowResultEntries(Map<int, Channel> channelsById) {
+    final now = DateTime.now().toUtc();
+
+    // On Now: one entry per (show, channelId) currently airing. The channel
+    // lookup is built from the **full** channel list, not the
+    // search-filtered list - searching for a show name does not filter
+    // channels by name, so the lookup must include every channel a
+    // programme could be airing on.
+    final onNowKeys = <_ShowResultKey>{};
+    final onNowEntries = <_ShowResultEntry>[];
+    final onNowChannelIds = <int>{};
+    final onNowChannels = <Channel>[];
+    for (final show in _showResults) {
+      for (final episode in show.airingNow) {
+        final channel = channelsById[episode.channelId];
+        if (channel == null) continue;
+        final key = (show: show, channelId: episode.channelId);
+        if (!onNowKeys.add(key)) continue;
+        onNowEntries.add(
+          _ShowResultEntry(
+            show: show,
+            channelId: episode.channelId,
+            episodes: [episode],
+            isOnNow: true,
+          ),
+        );
+        if (onNowChannelIds.add(channel.id)) onNowChannels.add(channel);
+      }
+    }
+
+    // Upcoming: future airings grouped by (show, channelId) - a single show
+    // repeating on one network used to render a wall of identical rows (40
+    // future airings of "Grace and Frankie" on one channel produced 12
+    // identical rows); grouping collapses duplicates into one row that
+    // shows up to 3 airing times plus a "+N more" affordance pointing at
+    // the show detail screen, which already lists every airing. Skips any
+    // (show, channelId) already covered by On Now.
+    final groups = <_ShowResultKey, List<EpgShowEpisode>>{};
+    for (final show in _showResults) {
+      for (final episode in show.recentEpisodes) {
+        if (episode.displayTitle.isEmpty) continue;
+        if (!episode.startTime.isAfter(now)) continue;
+        final key = (show: show, channelId: episode.channelId);
+        if (onNowKeys.contains(key)) continue;
+        groups.putIfAbsent(key, () => <EpgShowEpisode>[]).add(episode);
+      }
+    }
+    final upcomingEntries =
+        groups.entries.map((entry) {
+          final episodes = entry.value
+            ..sort((a, b) => a.startTime.compareTo(b.startTime));
+          return _ShowResultEntry(
+            show: entry.key.show,
+            channelId: entry.key.channelId,
+            episodes: episodes,
+            isOnNow: false,
+          );
+        }).toList()..sort(
+          (a, b) => a.episodes.first.startTime.compareTo(
+            b.episodes.first.startTime,
+          ),
+        );
+
+    return (
+      all: [...onNowEntries, ...upcomingEntries],
+      onNow: onNowEntries,
+      upcoming: upcomingEntries,
+      onNowChannels: onNowChannels,
+    );
+  }
+
+  /// Single row style shared by On Now and Upcoming results so the merged
+  /// "All" tab reads as one consistent list rather than mixed layouts. On
+  /// Now rows tap straight to the channel (skip-previous/next then stays
+  /// within the On Now channel set); Upcoming rows open the show detail
+  /// screen, which has the recording actions.
+  Widget _buildSearchResultRow(
+    _ShowResultEntry entry,
     Map<int, Channel> channelsById,
+    List<Channel> onNowChannels,
     AppLocalizations l10n,
-    String languageTag,
-  ) {
+    String languageTag, {
+    bool autofocus = false,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
-    final channel = channelsById[group.channelId];
-    final channelName = group.episodes.first.channelName;
-    final times = <String>[];
-    for (final ep in group.episodes.take(3)) {
-      times.add(_formatUpcomingTime(ep.startTime, languageTag, l10n));
+    final channel = channelsById[entry.channelId];
+    final firstEpisode = entry.episodes.first;
+    final channelName = firstEpisode.channelName;
+    final String? subtitle;
+    final String trailingText;
+    if (entry.isOnNow) {
+      subtitle = _formatOnNowSubtitle(firstEpisode, channelName);
+      trailingText = l10n.liveTvAiringUntil(
+        DateFormat.jm(languageTag).format(firstEpisode.endTime.toLocal()),
+      );
+    } else {
+      subtitle = channelName;
+      final times = <String>[];
+      for (final episode in entry.episodes.take(3)) {
+        times.add(_formatUpcomingTime(episode.startTime, languageTag, l10n));
+      }
+      final remainder = entry.episodes.length - times.length;
+      if (remainder > 0) {
+        times.add(l10n.liveTvMoreAirings(remainder));
+      }
+      trailingText = times.join(' · ');
     }
-    final remainder = group.episodes.length - times.length;
-    if (remainder > 0) {
-      times.add(l10n.liveTvMoreAirings(remainder));
-    }
-    final timesText = times.join(' · ');
 
     return DpadInkWell(
+      autofocus: autofocus,
       borderRadius: BorderRadius.circular(8),
       color: colorScheme.surfaceContainerHigh,
-      onTap: () => widget.onShowSelect?.call(group.show),
+      onTap: entry.isOnNow
+          ? channel == null
+                ? null
+                : () {
+                    widget.onChannelContextChanged?.call(onNowChannels);
+                    widget.onChannelSelect(channel);
+                  }
+          : () => widget.onShowSelect?.call(entry.show),
       child: Padding(
         padding: const EdgeInsets.all(MediaBrowsingMetrics.contentPadding),
         child: Row(
@@ -1084,15 +1068,15 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    group.show.displayTitle,
+                    entry.show.displayTitle,
                     style: Theme.of(context).textTheme.bodyMedium,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (channelName != null && channelName.isNotEmpty) ...[
+                  if (subtitle != null && subtitle.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
-                      channelName,
+                      subtitle,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -1106,7 +1090,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
             const SizedBox(width: MediaBrowsingMetrics.itemGap),
             Flexible(
               child: Text(
-                timesText,
+                trailingText,
                 textAlign: TextAlign.end,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -1122,69 +1106,25 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen> {
     );
   }
 
-  /// R2.4: local, synchronous, no-debounce filter on the already-loaded
-  /// VOD and Series lists. Renders as one combined rail with
-  /// `posterStyle: true` to mirror Home's shape - the search affordance
-  /// is a way to discover existing local content, not a way to fetch new
-  /// content. Suppressed entirely when the filtered lists are both empty.
-  Widget _buildMoviesAndSeriesRail() {
-    final l10n = AppLocalizations.of(context);
-    final vodItems = ref.watch(vodItemsProvider);
-    final seriesList = ref.watch(seriesListProvider);
-    final normalizedQuery = _query.trim().toLowerCase();
-    final vodMatches = vodItems
-        .where((item) => item.name.toLowerCase().contains(normalizedQuery))
-        .toList(growable: false);
-    final seriesMatches = seriesList
-        .where(
-          (series) => series.name.toLowerCase().contains(normalizedQuery),
-        )
-        .toList(growable: false);
-    if (vodMatches.isEmpty && seriesMatches.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    final vodCards = vodMatches.map(
-      (item) => MediaPreviewItem(
-        title: item.name,
-        imageUrl: item.logoUrl,
-        subtitle: item.rating == null ? l10n.homeMovie : '★ ${item.rating}',
-        fallbackIcon: Icons.movie,
-        onTap: () => widget.onVodSelect?.call(item),
-      ),
-    );
-    final seriesCards = seriesMatches.map(
-      (series) => MediaPreviewItem(
-        title: series.name,
-        imageUrl: series.coverUrl,
-        subtitle: series.rating == null ? l10n.navSeries : '★ ${series.rating}',
-        fallbackIcon: Icons.tv,
-        onTap: () => widget.onSeriesSelect?.call(series),
-      ),
-    );
-    // Interleave rather than concatenate so a 12-item cap doesn't let one
-    // kind of match starve the other out entirely.
-    final items = <MediaPreviewItem>[];
-    final vodIterator = vodCards.iterator;
-    final seriesIterator = seriesCards.iterator;
-    var vodHasNext = vodIterator.moveNext();
-    var seriesHasNext = seriesIterator.moveNext();
-    while (vodHasNext || seriesHasNext) {
-      if (vodHasNext) {
-        items.add(vodIterator.current);
-        vodHasNext = vodIterator.moveNext();
-      }
-      if (seriesHasNext) {
-        items.add(seriesIterator.current);
-        seriesHasNext = seriesIterator.moveNext();
-      }
-    }
-    return MediaPreviewSection(
-      title: l10n.liveTvMoviesAndSeries,
-      items: items,
-      emptyLabel: '',
-      posterStyle: true,
-      onSidebarActivate: widget.onSidebarActivate,
-    );
+  /// R6: episode name first (the higher-value token), channel second. Both
+  /// are optional and either may be absent.
+  ///
+  /// Deliberately allowed to ellipsise. Round 4 moved the airing time out
+  /// of the subtitle line precisely so a long value here costs nothing
+  /// important - the time now lives in the trailing time text and is
+  /// immune, and channel identity is carried redundantly by the station
+  /// logo. Do NOT re-add the time here.
+  ///
+  /// Returns null (not empty string) when both are absent - empty string
+  /// would render a phantom 11px row in the result row.
+  String? _formatOnNowSubtitle(EpgShowEpisode episode, String? channelName) {
+    final ep = episode.subtitle;
+    final hasEp = ep != null && ep.trim().isNotEmpty;
+    final hasCh = channelName != null && channelName.trim().isNotEmpty;
+    if (hasEp && hasCh) return '$ep · $channelName';
+    if (hasEp) return ep;
+    if (hasCh) return channelName;
+    return null;
   }
 
   String _formatUpcomingTime(
@@ -1688,18 +1628,27 @@ class _ChannelGridItem extends StatelessWidget {
   }
 }
 
-/// R5.2 grouping key: `(show, episode.channelId)`. Two airings of the same
-/// show on different channels belong to separate rows; two airings of the
-/// same show on the same channel collapse into one row whose airing list
-/// grows. Keyed on the `EpgShow` instance itself (identity equality, not
+/// Grouping key: `(show, channelId)`. Two airings of the same show on
+/// different channels belong to separate rows; two airings of the same show
+/// on the same channel collapse into one row whose airing list grows.
+/// Keyed on the `EpgShow` instance itself (identity equality, not
 /// `normalizedTitle`) - the server can omit `normalized_title`, and two
 /// distinct shows both falling back to `''` must not merge into one row.
-typedef _UpcomingGroupKey = ({EpgShow show, int channelId});
+typedef _ShowResultKey = ({EpgShow show, int channelId});
 
-class _UpcomingGroup {
-  _UpcomingGroup({required this.show, required this.channelId});
+/// One row in the unified search-results list. On Now rows carry exactly
+/// one episode (the one currently airing); Upcoming rows carry 1+ future
+/// episodes on this show+channel, soonest first.
+class _ShowResultEntry {
+  const _ShowResultEntry({
+    required this.show,
+    required this.channelId,
+    required this.episodes,
+    required this.isOnNow,
+  });
 
   final EpgShow show;
   final int channelId;
-  final List<EpgShowEpisode> episodes = [];
+  final List<EpgShowEpisode> episodes;
+  final bool isOnNow;
 }
