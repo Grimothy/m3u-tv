@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
     show KeyDownEvent, KeyEvent, LogicalKeyboardKey;
+import 'package:m3u_tv/shared/app_button.dart' show kStadiumFocusEffects;
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/media_image_cache_manager.dart';
@@ -86,6 +87,17 @@ class InlineMediaSearchField extends StatefulWidget {
 class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
   late final TextEditingController _controller;
   FocusNode? _internalFocusNode;
+  // Wraps the TextField + Clear button as one focus scope. Listening on this
+  // instead of _focusNode directly lets us tell "d-padded from the TextField
+  // to its own Clear button" (a descendant of this node still has focus)
+  // apart from "d-padded away from the field entirely" (nothing under this
+  // node has focus) - see _handleFocusChange.
+  final FocusNode _containerFocusNode = FocusNode(
+    debugLabel: 'InlineMediaSearchField container',
+  );
+  final FocusNode _clearFocusNode = FocusNode(
+    debugLabel: 'InlineMediaSearchField clear button',
+  );
   bool _focused = false;
   late bool _activated = !widget.activateOnSelect;
 
@@ -96,7 +108,7 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.query);
-    _focusNode.addListener(_handleFocusChange);
+    _containerFocusNode.addListener(_handleFocusChange);
   }
 
   @override
@@ -108,17 +120,14 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
         selection: TextSelection.collapsed(offset: widget.query.length),
       );
     }
-    if (oldWidget.focusNode != widget.focusNode) {
-      (oldWidget.focusNode ?? _internalFocusNode)?.removeListener(
-        _handleFocusChange,
-      );
-      _focusNode.addListener(_handleFocusChange);
-    }
   }
 
   @override
   void dispose() {
-    _focusNode.removeListener(_handleFocusChange);
+    _containerFocusNode
+      ..removeListener(_handleFocusChange)
+      ..dispose();
+    _clearFocusNode.dispose();
     _internalFocusNode?.dispose();
     _controller.dispose();
     super.dispose();
@@ -126,12 +135,15 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
 
   void _handleFocusChange() {
     if (!mounted) return;
-    setState(() => _focused = _focusNode.hasFocus);
+    setState(() => _focused = _containerFocusNode.hasFocus);
     // Losing focus for any reason (d-pad navigating away, not just an
     // explicit Escape/Back press) reverts to the inactive facade - a live
     // TextField left mounted-but-unfocused looks and behaves differently
-    // from the facade button it should have become again.
-    if (!_focusNode.hasFocus) _deactivate();
+    // from the facade button it should have become again. Checking the
+    // container node (rather than the TextField's own _focusNode) means
+    // moving focus onto the adjacent Clear button - still a descendant of
+    // this node - does not count as leaving.
+    if (!_containerFocusNode.hasFocus) _deactivate();
   }
 
   void _clear() {
@@ -151,11 +163,40 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
     setState(() => _activated = false);
   }
 
+  /// [TextField]'s default `onTapOutside` unfocuses on mouse pointer-DOWN
+  /// (not tap-up) for any point outside the [TextField] itself - it has no
+  /// notion of the Clear button being logically part of this component. Left
+  /// as default, a mouse-down on Clear counts as "outside", unfocuses
+  /// _focusNode, deactivates the field and unmounts the Clear button before
+  /// its own tap-up ever fires, so the click appears to do nothing. Only
+  /// unfocus for a point genuinely outside this whole widget (i.e. still let
+  /// clicking elsewhere on screen close the field, matching Escape/Back).
+  void _handleTapOutside(PointerDownEvent event) {
+    final renderObject = _containerFocusNode.context?.findRenderObject();
+    if (renderObject is RenderBox && renderObject.attached) {
+      final local = renderObject.globalToLocal(event.position);
+      if (renderObject.paintBounds.contains(local)) return;
+    }
+    _focusNode.unfocus();
+  }
+
   KeyEventResult _handleEditingKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     if (event.logicalKey == LogicalKeyboardKey.escape ||
         event.logicalKey == LogicalKeyboardKey.goBack) {
       _deactivate();
+      return KeyEventResult.handled;
+    }
+    // EditableText's own Shortcuts consume Left/Right (and, on multi-line
+    // fields, Up) for cursor/selection movement before they ever bubble out
+    // to the app's d-pad traversal, so there is otherwise no d-pad path from
+    // a focused TextField to the adjacent Clear button - Down is the one
+    // arrow a single-line field never claims, so it doubles as "jump to
+    // Clear" while editing.
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown &&
+        widget.query.isNotEmpty &&
+        _focusNode.hasFocus) {
+      _clearFocusNode.requestFocus();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -231,24 +272,33 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
                   left: 12,
                   right: widget.query.isEmpty ? 12 : 4,
                 ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.search,
-                      size: 24,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Focus(
-                        onKeyEvent: widget.activateOnSelect
-                            ? _handleEditingKey
-                            : null,
+                child: Focus(
+                  focusNode: _containerFocusNode,
+                  canRequestFocus: false,
+                  skipTraversal: true,
+                  // Handles Escape/Back and the Clear-button jump regardless
+                  // of whether the TextField or the Clear button itself
+                  // holds focus - both are descendants of this node.
+                  onKeyEvent: widget.activateOnSelect
+                      ? _handleEditingKey
+                      : null,
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.search,
+                        size: 24,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
                         child: TextField(
                           controller: _controller,
                           focusNode: _focusNode,
                           autofocus:
                               !widget.activateOnSelect && widget.autofocus,
+                          onTapOutside: widget.activateOnSelect
+                              ? _handleTapOutside
+                              : null,
                           textInputAction: widget.textInputAction,
                           style: hintStyle?.copyWith(
                             color: colorScheme.onSurface,
@@ -261,14 +311,19 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
                           onSubmitted: (_) => _deactivate(),
                         ),
                       ),
-                    ),
-                    if (widget.query.isNotEmpty)
-                      IconButton(
-                        tooltip: 'Clear search',
-                        icon: const Icon(Icons.clear),
-                        onPressed: _clear,
-                      ),
-                  ],
+                      if (widget.query.isNotEmpty)
+                        DpadFocusable(
+                          focusNode: _clearFocusNode,
+                          onSelect: _clear,
+                          effects: kStadiumFocusEffects,
+                          child: IconButton(
+                            tooltip: 'Clear search',
+                            icon: const Icon(Icons.clear),
+                            onPressed: _clear,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
