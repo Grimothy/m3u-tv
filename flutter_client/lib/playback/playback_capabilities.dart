@@ -5,8 +5,10 @@ enum PlaybackBackend {
   androidMpv,
   appleMediaKit,
   appleAvKit,
+  appleMpvNative,
   desktopLibmpv,
   desktopMediaKit,
+  macMpvNative,
   serverTranscode,
 }
 
@@ -85,6 +87,26 @@ class PlaybackCapabilities {
     supportsSubtitleTrackSelection: true,
     supportsEmbeddedSubtitles: true,
     supportsExternalSubtitles: true,
+    supportsAdvancedSubtitleFormats: true,
+    supportsPlaybackSpeed: true,
+    supportsSeek: true,
+    supportsLiveSeek: false,
+  );
+
+  static const PlaybackCapabilities appleMpvNative = PlaybackCapabilities(
+    platform: PlaybackPlatform.apple,
+    backend: PlaybackBackend.appleMpvNative,
+    displayName: 'Apple native mpv',
+    supportsDirectStreams: true,
+    supportsServerTranscodeFallback: true,
+    supportsHls: true,
+    supportsMpegTs: true,
+    supportsMp4: true,
+    supportsAdvancedCodecs: true,
+    supportsAudioTrackSelection: true,
+    supportsSubtitleTrackSelection: true,
+    supportsEmbeddedSubtitles: true,
+    supportsExternalSubtitles: false,
     supportsAdvancedSubtitleFormats: true,
     supportsPlaybackSpeed: true,
     supportsSeek: true,
@@ -171,6 +193,26 @@ class PlaybackCapabilities {
     supportsLiveSeek: false,
   );
 
+  static const PlaybackCapabilities macMpvNative = PlaybackCapabilities(
+    platform: PlaybackPlatform.desktop,
+    backend: PlaybackBackend.macMpvNative,
+    displayName: 'macOS native mpv',
+    supportsDirectStreams: true,
+    supportsServerTranscodeFallback: true,
+    supportsHls: true,
+    supportsMpegTs: true,
+    supportsMp4: true,
+    supportsAdvancedCodecs: true,
+    supportsAudioTrackSelection: true,
+    supportsSubtitleTrackSelection: true,
+    supportsEmbeddedSubtitles: true,
+    supportsExternalSubtitles: false,
+    supportsAdvancedSubtitleFormats: true,
+    supportsPlaybackSpeed: true,
+    supportsSeek: true,
+    supportsLiveSeek: false,
+  );
+
   static const PlaybackCapabilities serverTranscode = PlaybackCapabilities(
     platform: PlaybackPlatform.server,
     backend: PlaybackBackend.serverTranscode,
@@ -195,13 +237,25 @@ class PlaybackCapabilities {
   static const List<PlaybackCapabilities> matrix = <PlaybackCapabilities>[
     androidExoPlayer,
     androidMpv,
+    appleMpvNative,
     appleMediaKit,
     appleAvKit,
     desktopLibmpv,
     desktopMediaKit,
+    macMpvNative,
     serverTranscode,
   ];
 
+  /// The declared capability rows for [platform], in fallback order.
+  /// `PlaybackOrchestrator._nativeBackends()` walks this list filtered by
+  /// which backends actually have an adapter registered
+  /// (`_adapters.containsKey`) -- this list is the full theoretical catalog
+  /// for the platform, not a claim that every row is currently wired up in
+  /// `buildPlaybackOrchestrator()` (lib/navigation/app_router.dart). Notably
+  /// `appleMediaKit`/`desktopMediaKit` are declared here but are not
+  /// registered anywhere today (MPVKit symbol collision; see that
+  /// function's comments) -- see `apple_backend_feasibility.dart` for what
+  /// is actually registered per Apple target.
   static List<PlaybackCapabilities> forPlatform(PlaybackPlatform platform) {
     return switch (platform) {
       PlaybackPlatform.android => const <PlaybackCapabilities>[
@@ -209,13 +263,15 @@ class PlaybackCapabilities {
         serverTranscode,
       ],
       PlaybackPlatform.apple => const <PlaybackCapabilities>[
+        appleMpvNative,
         appleMediaKit,
         appleAvKit,
         serverTranscode,
       ],
       PlaybackPlatform.desktop => const <PlaybackCapabilities>[
-        desktopLibmpv,
+        macMpvNative,
         desktopMediaKit,
+        desktopLibmpv,
         serverTranscode,
       ],
       PlaybackPlatform.server => const <PlaybackCapabilities>[serverTranscode],

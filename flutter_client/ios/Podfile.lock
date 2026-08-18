@@ -66,8 +66,6 @@ PODS:
     - GoogleUtilities/Privacy
   - integration_test (0.0.1):
     - Flutter
-  - media_kit_libs_ios_video (1.0.4):
-    - Flutter
   - media_kit_video (0.0.1):
     - Flutter
   - nanopb (3.30910.0):
@@ -93,7 +91,6 @@ DEPENDENCIES:
   - flutter_local_notifications (from `.symlinks/plugins/flutter_local_notifications/ios`)
   - flutter_secure_storage_darwin (from `.symlinks/plugins/flutter_secure_storage_darwin/darwin`)
   - integration_test (from `.symlinks/plugins/integration_test/ios`)
-  - media_kit_libs_ios_video (from `.symlinks/plugins/media_kit_libs_ios_video/ios`)
   - media_kit_video (from `.symlinks/plugins/media_kit_video/ios`)
   - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
   - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
@@ -125,8 +122,6 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/flutter_secure_storage_darwin/darwin"
   integration_test:
     :path: ".symlinks/plugins/integration_test/ios"
-  media_kit_libs_ios_video:
-    :path: ".symlinks/plugins/media_kit_libs_ios_video/ios"
   media_kit_video:
     :path: ".symlinks/plugins/media_kit_video/ios"
   package_info_plus:
@@ -152,8 +147,7 @@ SPEC CHECKSUMS:
   GoogleDataTransport: a24e58982ab3ba2f64d79613e027fe7f57e88539
   GoogleUtilities: 766ace00c6b10d8148408f329d10c4f051931850
   integration_test: 252f60fa39af5e17c3aa9899d35d908a0721b573
-  media_kit_libs_ios_video: a5fe24bc7875ccd6378a0978c13185e1344651c1
-  media_kit_video: 5da63f157170e5bf303bf85453b7ef6971218a2e
+  media_kit_video: 26c5b265a4094a2df3e8d41e6724d9b964c13151
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
   package_info_plus: c0502532a26c7662a62a356cebe2692ec5fe4ec4
   PromisesObjC: 752c3227f599e3467650e47ea36f433eeb10c273

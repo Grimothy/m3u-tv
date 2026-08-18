@@ -1,0 +1,14 @@
+{
+  "pins" : [
+    {
+      "identity" : "mpvkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/edde746/MPVKit",
+      "state" : {
+        "revision" : "1b8e5b2ba83f0b62c0eab6e90f36fa3dc5b4038f",
+        "version" : "1.0.21"
+      }
+    }
+  ],
+  "version" : 2
+}

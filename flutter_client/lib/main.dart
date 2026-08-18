@@ -28,8 +28,15 @@ Future<void> main() async {
   tz_data.initializeTimeZones();
   final systemUiPolicy = SystemUiPolicy();
   await systemUiPolicy.applyBrowsing();
-  // MediaKit (libmpv) is used on desktop and iOS. tvOS uses AVKit exclusively.
-  if (!kIsWeb && !Platform.isAndroid && Platform.operatingSystem != 'tvos') {
+  // MediaKit (libmpv) is only bundled for Linux/Windows now -- Apple
+  // platforms use native mpv (MPVKit) as primary, with AVKit as an
+  // automatic fallback on iOS/tvOS (macOS has none, see
+  // buildPlaybackOrchestrator in lib/navigation/app_router.dart).
+  // media_kit_libs_macos_video/ios_video were removed because they vendored
+  // a second, independently-versioned ffmpeg/libmpv build that collided at
+  // link time with MPVKit's, corrupting native mpv's own library-version
+  // check.
+  if (Platform.isLinux || Platform.isWindows) {
     MediaKit.ensureInitialized();
   }
   if (!kIsWeb && Platform.isMacOS) {
@@ -312,7 +319,19 @@ class _TvZoom extends StatelessWidget {
         child: SizedBox.fromSize(
           size: virtualSize,
           child: MediaQuery(
-            data: mediaQuery.copyWith(size: virtualSize),
+            // padding/viewPadding/viewInsets/systemGestureInsets are all
+            // calibrated for the real screen -- FittedBox stretches the
+            // virtual canvas back up by _scale, so anything computed from
+            // these in the virtual coordinate space (SafeArea, manual
+            // Positioned offsets) must divide by _scale too, or it consumes
+            // a _scale-times-too-large share of the smaller virtual canvas.
+            data: mediaQuery.copyWith(
+              size: virtualSize,
+              padding: mediaQuery.padding / _scale,
+              viewPadding: mediaQuery.viewPadding / _scale,
+              viewInsets: mediaQuery.viewInsets / _scale,
+              systemGestureInsets: mediaQuery.systemGestureInsets / _scale,
+            ),
             child: child,
           ),
         ),

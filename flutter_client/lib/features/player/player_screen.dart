@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show HttpClient, HttpStatus;
+import 'dart:io' show HttpClient, HttpStatus, Platform;
 
 import 'package:dpad/dpad.dart';
 import 'package:flutter/foundation.dart' show mapEquals;
@@ -13,6 +13,7 @@ import 'package:m3u_tv/features/player/playback_controls.dart';
 import 'package:m3u_tv/features/player/wakelock_controller.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
+import 'package:m3u_tv/playback/native_video_surface.dart';
 import 'package:m3u_tv/playback/playback_capabilities.dart';
 import 'package:m3u_tv/playback/playback_orchestrator.dart';
 import 'package:m3u_tv/playback/player_adapter.dart';
@@ -971,13 +972,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 // top edge under the status bar/notch.
                 final mediaQuery = MediaQuery.of(context);
                 final isCompact = mediaQuery.size.width < 600;
-                final overlayLeft = isCompact ? 16.0 : 104.0;
                 // On compact/portrait layouts the back button lives in
-                // PlaybackControls' own top-left corner (40px padding + a
-                // ~44px circular hit target); the overlay must clear that
-                // whole row instead of overlapping it.
-                final overlayTop =
-                    mediaQuery.padding.top + (isCompact ? 96.0 : 40.0);
+                // PlaybackControls' own top-left corner
+                // (overlayEdgePadding + a ~44px circular hit target); the
+                // overlay must clear that whole row instead of overlapping
+                // it. Derive the left offset from the actual button
+                // geometry instead of a magic constant: safe-area inset +
+                // PlaybackControls' own padding (overlayEdgePadding, shared
+                // with it so the two can't drift apart) + the ~44px
+                // circular back button + a real gap.
+                final overlayLeft = isCompact
+                    ? 16.0
+                    : Platform.operatingSystem == 'tvos'
+                    ? mediaQuery.padding.left + overlayEdgePadding + 44.0 + 16.0
+                    : 104.0;
+                // Must match PlaybackControls' own overlayEdgePadding or the
+                // back button and this overlay's top edges drift apart.
+                final topPaddingMatch = Platform.operatingSystem == 'tvos'
+                    ? overlayEdgePadding
+                    : (isCompact ? 96.0 : overlayEdgePadding);
+                final overlayTop = mediaQuery.padding.top + topPaddingMatch;
                 final overlayWidth = isCompact
                     ? mediaQuery.size.width - overlayLeft * 2
                     : 420.0;
@@ -985,8 +999,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 return Stack(
                   children: [
                     Positioned.fill(
-                      child: _VideoSurface(
+                      child: NativeVideoSurface(
                         textureId: widget.orchestrator.activeTextureId,
+                        platformView:
+                            widget.orchestrator.activePlatformViewProvider,
                         aspectRatio: _videoAspectRatio,
                       ),
                     ),
@@ -1073,43 +1089,47 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
                     // Playback controls overlay
                     if (_overlayVisible && _errorMessage == null)
-                      GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onTap: _hideOverlay,
-                        child: PlaybackControls(
-                          isPlaying: _isPlaying,
-                          isLive: _isLive,
-                          canSeek: _canSeek,
-                          currentPosition: _currentPosition,
-                          duration: _duration,
-                          onPlayPause: _togglePlayPause,
-                          onSeek: _seekTo,
-                          onBack: _goBack,
-                          audioTracks: _audioTracks,
-                          subtitleTracks: _subtitleTracks,
-                          selectedAudioTrackId: _selectedAudioTrackId,
-                          selectedSubtitleTrackId: _selectedSubtitleTrackId,
-                          isAudioTrackSelectionKnown:
-                              _isAudioTrackSelectionKnown,
-                          isSubtitleTrackSelectionKnown:
-                              _isSubtitleTrackSelectionKnown,
-                          onAudioTrackSelected: _handleAudioTrackSelected,
-                          onSubtitleTrackSelected: _handleSubtitleTrackSelected,
-                          onTrackDialogVisibilityChanged:
-                              _handleTrackDialogVisibilityChanged,
-                          fallbackReason: _showPlaybackDiagnostics
-                              ? _fallbackReason
-                              : null,
-                          playPauseFocusNode: _controlsFocusNode,
-                          onNextChannel: widget.onNextChannel,
-                          onPreviousChannel: widget.onPreviousChannel,
-                          onRecordNow:
-                              (_isLive &&
-                                  widget.onRecordProgram != null &&
-                                  _epgData?.current != null)
-                              ? () => widget.onRecordProgram!(_epgData!.current)
-                              : null,
-                          isRecording: widget.isRecordingCurrentChannel,
+                      Positioned.fill(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTap: _hideOverlay,
+                          child: PlaybackControls(
+                            isPlaying: _isPlaying,
+                            isLive: _isLive,
+                            canSeek: _canSeek,
+                            currentPosition: _currentPosition,
+                            duration: _duration,
+                            onPlayPause: _togglePlayPause,
+                            onSeek: _seekTo,
+                            onBack: _goBack,
+                            audioTracks: _audioTracks,
+                            subtitleTracks: _subtitleTracks,
+                            selectedAudioTrackId: _selectedAudioTrackId,
+                            selectedSubtitleTrackId: _selectedSubtitleTrackId,
+                            isAudioTrackSelectionKnown:
+                                _isAudioTrackSelectionKnown,
+                            isSubtitleTrackSelectionKnown:
+                                _isSubtitleTrackSelectionKnown,
+                            onAudioTrackSelected: _handleAudioTrackSelected,
+                            onSubtitleTrackSelected:
+                                _handleSubtitleTrackSelected,
+                            onTrackDialogVisibilityChanged:
+                                _handleTrackDialogVisibilityChanged,
+                            fallbackReason: _showPlaybackDiagnostics
+                                ? _fallbackReason
+                                : null,
+                            playPauseFocusNode: _controlsFocusNode,
+                            onNextChannel: widget.onNextChannel,
+                            onPreviousChannel: widget.onPreviousChannel,
+                            onRecordNow:
+                                (_isLive &&
+                                    widget.onRecordProgram != null &&
+                                    _epgData?.current != null)
+                                ? () =>
+                                      widget.onRecordProgram!(_epgData!.current)
+                                : null,
+                            isRecording: widget.isRecordingCurrentChannel,
+                          ),
                         ),
                       ),
 
@@ -1208,28 +1228,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
               },
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _VideoSurface extends StatelessWidget {
-  const _VideoSurface({required this.textureId, required this.aspectRatio});
-
-  final int? textureId;
-  final double aspectRatio;
-
-  @override
-  Widget build(BuildContext context) {
-    final id = textureId;
-    if (id == null) return const ColoredBox(color: Colors.black);
-    return ColoredBox(
-      color: Colors.black,
-      child: Center(
-        child: AspectRatio(
-          aspectRatio: aspectRatio,
-          child: Texture(textureId: id),
         ),
       ),
     );
@@ -1423,10 +1421,12 @@ class _PlaybackDiagnosticsSnapshot {
     return switch (parts[1]) {
       'androidExoPlayer' => PlaybackBackend.androidExoPlayer,
       'androidMpv' => PlaybackBackend.androidMpv,
+      'appleMpvNative' => PlaybackBackend.appleMpvNative,
       'appleMediaKit' => PlaybackBackend.appleMediaKit,
       'appleAvKit' => PlaybackBackend.appleAvKit,
       'desktopLibmpv' => PlaybackBackend.desktopLibmpv,
       'desktopMediaKit' => PlaybackBackend.desktopMediaKit,
+      'macMpvNative' => PlaybackBackend.macMpvNative,
       'serverTranscode' => PlaybackBackend.serverTranscode,
       _ => null,
     };
@@ -1436,10 +1436,12 @@ class _PlaybackDiagnosticsSnapshot {
     return switch (backend) {
       PlaybackBackend.androidExoPlayer => 'Android ExoPlayer',
       PlaybackBackend.androidMpv => 'Android mpv/libmpv disabled',
+      PlaybackBackend.appleMpvNative => 'Apple native mpv',
       PlaybackBackend.appleMediaKit => 'Apple Media Kit',
       PlaybackBackend.appleAvKit => 'Apple AVKit fallback',
       PlaybackBackend.desktopLibmpv => 'Desktop libmpv',
       PlaybackBackend.desktopMediaKit => 'Desktop Media Kit',
+      PlaybackBackend.macMpvNative => 'macOS native mpv',
       PlaybackBackend.serverTranscode => 'Server transcode fallback',
       null => 'Selecting backend',
     };

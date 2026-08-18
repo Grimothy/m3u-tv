@@ -9,6 +9,7 @@ import 'package:m3u_tv/features/multiview/multiview_grid_math.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/navigation/content_actions.dart';
+import 'package:m3u_tv/playback/native_video_surface.dart';
 import 'package:m3u_tv/playback/playback_orchestrator.dart';
 import 'package:m3u_tv/playback/player_adapter.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
@@ -66,6 +67,7 @@ class _MultiviewScreenState extends ConsumerState<MultiviewScreen> {
   int _primaryIndex = 0;
   MultiviewPipCorner _pipCorner = MultiviewPipCorner.bottomRight;
   int _nextPlayerSeq = 0;
+  bool _closing = false;
 
   @override
   void initState() {
@@ -81,6 +83,23 @@ class _MultiviewScreenState extends ConsumerState<MultiviewScreen> {
       tile.dispose();
     }
     super.dispose();
+  }
+
+  // Same rationale as app_shell.dart's _closePlayer: a platform-view-backed
+  // core can hold an unretained pointer into its own native view's layer,
+  // so every tile's native teardown must finish before this route's own
+  // pop unmounts those views, not after. Routed through PopScope (below)
+  // rather than State.dispose(), which the framework calls synchronously
+  // as the route is already being removed -- too late to delay anything.
+  Future<void> _handleClose() async {
+    if (_closing) return;
+    _closing = true;
+    await Future.wait([
+      for (final tile in _tiles)
+        tile.orchestrator?.dispose() ?? Future<void>.value(),
+    ]);
+    if (!mounted) return;
+    Navigator.of(context).pop();
   }
 
   PlaybackSource _sourceFor(Channel channel) => PlaybackSource(
@@ -184,9 +203,27 @@ class _MultiviewScreenState extends ConsumerState<MultiviewScreen> {
     );
   }
 
-  void _removeTile(int index) {
-    ref.read(multiviewControllerProvider).toggle(_tiles[index].channel);
-    _tiles.removeAt(index).dispose();
+  Future<void> _removeTile(int index) async {
+    final tile = _tiles[index];
+    ref.read(multiviewControllerProvider).toggle(tile.channel);
+    // Wait for native teardown to actually finish before removing this
+    // tile's platform view from the widget tree below -- a platform-view
+    // backend's native core can hold an unretained pointer into that
+    // view's own layer, so unmounting it first (as an unawaited dispose
+    // would let happen) risks a use-after-free. Same rationale as
+    // MpvPlayerCore.dispose's header comment / app_shell.dart's
+    // _closePlayer.
+    await tile.orchestrator?.dispose();
+    if (!mounted) return;
+    // The awaited dispose above gives a concurrent removal a chance to run
+    // first, so re-resolve this tile's position instead of trusting the
+    // stale `index` argument.
+    final currentIndex = _tiles.indexOf(tile);
+    if (currentIndex == -1) return;
+    unawaited(tile.stateSub?.cancel());
+    unawaited(tile.errorSub?.cancel());
+    tile.focusNode.dispose();
+    _tiles.removeAt(currentIndex);
     if (_tiles.isEmpty) {
       Navigator.of(context).pop();
       return;
@@ -194,7 +231,7 @@ class _MultiviewScreenState extends ConsumerState<MultiviewScreen> {
     setState(() {
       if (_focusedIndex >= _tiles.length) _focusedIndex = _tiles.length - 1;
       if (_primaryIndex >= _tiles.length) _primaryIndex = 0;
-      if (_reorderingIndex == index) _reorderingIndex = null;
+      if (_reorderingIndex == currentIndex) _reorderingIndex = null;
       final layoutStillValid = switch (_layoutMode) {
         _LayoutMode.pip => _tiles.length == 2,
         _LayoutMode.featured => _tiles.length > 1,
@@ -329,7 +366,7 @@ class _MultiviewScreenState extends ConsumerState<MultiviewScreen> {
       case _TileMenuAction.fullscreen:
         unawaited(_openFullscreen(index));
       case _TileMenuAction.remove:
-        _removeTile(index);
+        unawaited(_removeTile(index));
       case null:
         break;
     }
@@ -338,41 +375,48 @@ class _MultiviewScreenState extends ConsumerState<MultiviewScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return Scaffold(
-      backgroundColor: const Color(0xFF09090b),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-              child: Row(
-                children: [
-                  DpadFocusable(
-                    onSelect: () => Navigator.of(context).pop(),
-                    effects: const [
-                      GradientBorderEffect(
-                        borderRadius: BorderRadius.all(Radius.circular(50)),
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        unawaited(_handleClose());
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF09090b),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+                child: Row(
+                  children: [
+                    DpadFocusable(
+                      onSelect: () => Navigator.of(context).pop(),
+                      effects: const [
+                        GradientBorderEffect(
+                          borderRadius: BorderRadius.all(Radius.circular(50)),
+                        ),
+                      ],
+                      child: const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Icon(Icons.arrow_back),
                       ),
-                    ],
-                    child: const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Icon(Icons.arrow_back),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  Text(
-                    l10n.multiviewTitle,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ],
+                    const SizedBox(width: 16),
+                    Text(
+                      l10n.multiviewTitle,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Expanded(
-              child: _tiles.isEmpty
-                  ? Center(child: Text(l10n.multiviewEmpty))
-                  : _buildLayout(),
-            ),
-          ],
+              Expanded(
+                child: _tiles.isEmpty
+                    ? Center(child: Text(l10n.multiviewEmpty))
+                    : _buildLayout(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -517,9 +561,19 @@ class _MultiviewScreenState extends ConsumerState<MultiviewScreen> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              _TileVideoSurface(
+              NativeVideoSurface(
+                // Reordering swaps which tile backs this grid position
+                // (_handleDirection moves entries within _tiles), but this
+                // widget's position in the tree stays put -- without a key
+                // tied to the tile's own identity, Flutter would reuse the
+                // existing AppKitView/UiKitView element and its already-
+                // attached native view for the new tile instead of
+                // recreating it.
+                key: ValueKey(tile.playerId),
                 textureId: _textureIdFor(tile),
+                platformView: _platformViewFor(tile),
                 aspectRatio: state?.videoAspectRatio ?? 16 / 9,
+                wrapInBlackBackground: false,
               ),
               if (tile.hasError)
                 Center(
@@ -580,8 +634,18 @@ class _MultiviewScreenState extends ConsumerState<MultiviewScreen> {
 
   int? _textureIdFor(_MultiviewTile tile) {
     final backend = tile.backend;
-    if (backend == null) return null;
-    return backend.textureId;
+    if (backend is VideoTextureProvider) {
+      return (backend! as VideoTextureProvider).textureId;
+    }
+    return null;
+  }
+
+  PlatformViewProvider? _platformViewFor(_MultiviewTile tile) {
+    final backend = tile.backend;
+    if (backend is PlatformViewProvider) {
+      return backend! as PlatformViewProvider;
+    }
+    return null;
   }
 }
 
@@ -615,25 +679,6 @@ class _MenuOption extends StatelessWidget {
             Text(label),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _TileVideoSurface extends StatelessWidget {
-  const _TileVideoSurface({required this.textureId, required this.aspectRatio});
-
-  final int? textureId;
-  final double aspectRatio;
-
-  @override
-  Widget build(BuildContext context) {
-    final id = textureId;
-    if (id == null) return const ColoredBox(color: Colors.black);
-    return Center(
-      child: AspectRatio(
-        aspectRatio: aspectRatio,
-        child: Texture(textureId: id),
       ),
     );
   }

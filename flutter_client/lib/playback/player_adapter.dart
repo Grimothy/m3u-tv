@@ -22,11 +22,35 @@ abstract class VideoTextureProvider {
   int? get textureId;
 }
 
-/// A [PlayerAdapter] that Multiview can drive: one concurrently playable,
-/// texture-backed instance per grid tile. [setVolume] mutes/unmutes a tile
-/// by audio focus without touching its playback state, which none of the
-/// other [PlayerAdapter] methods express.
-abstract class MultiviewBackend implements PlayerAdapter, VideoTextureProvider {
+/// A [PlayerAdapter] that renders through a native `FlutterPlatformView`
+/// (e.g. `AppKitView`) instead of a `Texture`. Used by backends that draw
+/// directly to a native surface owned by the platform's compositor (GPU/Metal
+/// on macOS, `AVSampleBufferDisplayLayer` on iOS/tvOS) to avoid the
+/// CVPixelBuffer/texture-copy bridge that [VideoTextureProvider] backends go
+/// through.
+abstract class PlatformViewProvider {
+  /// The registered platform view type, e.g. `'m3u_tv/mac_mpv_view'`.
+  String get platformViewType;
+
+  /// Creation-time arguments passed to the platform view factory, if any.
+  Map<String, dynamic>? get platformViewCreationParams;
+
+  /// Tears down the native resources backing this platform view (e.g. a
+  /// native player core holding an unretained pointer into the view's
+  /// layer) without closing this adapter's [PlayerAdapter.onState]/
+  /// [PlayerAdapter.onError] streams, so the adapter is still safe to
+  /// [PlayerAdapter.load] again later. Must not resolve until native
+  /// teardown has actually finished releasing that pointer -- callers rely
+  /// on this to unmount the platform view safely afterward.
+  Future<void> releaseNativeView();
+}
+
+/// A [PlayerAdapter] that Multiview can drive: one concurrently playable
+/// instance per grid tile, rendered via either [VideoTextureProvider] or
+/// [PlatformViewProvider]. [setVolume] mutes/unmutes a tile by audio focus
+/// without touching its playback state, which none of the other
+/// [PlayerAdapter] methods express.
+abstract class MultiviewBackend implements PlayerAdapter {
   Future<void> setVolume(double volume);
 }
 
@@ -332,6 +356,18 @@ class PlaybackException implements Exception {
 
   @override
   String toString() => 'PlaybackException($backend, $code): $message';
+}
+
+/// A native mpv `PlatformViewProvider` backend's native core failed to
+/// initialize (e.g. `mpv_create`/`mpv_initialize` failed on the Swift side).
+/// Shared between `MacMpvNativeBackend` and `AppleMpvNativeBackend`.
+class NativeMpvUnavailableException extends PlaybackException {
+  NativeMpvUnavailableException(
+    String message, {
+    required super.backend,
+  }) : super(message: message, code: unavailableCode, recoverable: true);
+
+  static const String unavailableCode = 'backend_unavailable';
 }
 
 class _Unchanged {

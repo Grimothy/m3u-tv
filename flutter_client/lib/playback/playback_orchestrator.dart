@@ -80,6 +80,12 @@ class PlaybackOrchestrator {
     return (adapter as SubtitleControllerProvider).subtitleController;
   }
 
+  PlatformViewProvider? get activePlatformViewProvider {
+    final adapter = _activeAdapter;
+    if (adapter is! PlatformViewProvider) return null;
+    return adapter! as PlatformViewProvider;
+  }
+
   List<String> get diagnostics => List<String>.unmodifiable(_diagnostics);
 
   Future<void> open(PlaybackSource source) async {
@@ -157,8 +163,17 @@ class PlaybackOrchestrator {
     if (_disposed) return;
     await stop();
     _disposed = true;
+    // Deliberately not awaited: awaiting a subscription's cancel() Future
+    // and then later closing the broadcast StreamController it was
+    // subscribed to (which every adapter.dispose() below does, for its own
+    // onState/onError controllers) can deadlock under Flutter's test zone
+    // (confirmed independent of any app code -- a minimal
+    // listen()+await cancel()+close() repro hangs under `flutter_test`,
+    // while the identical sequence completes instantly under plain `dart
+    // run`). cancel() still runs and detaches the listener; just don't
+    // block on its Future completing.
     for (final subscription in _subscriptions) {
-      await subscription.cancel();
+      unawaited(subscription.cancel());
     }
     for (final adapter in _adapters.values.toSet()) {
       await adapter.dispose();
@@ -194,6 +209,24 @@ class PlaybackOrchestrator {
     _activeAdapter = adapter;
     _activeBackend = backend;
     _activeSource = source;
+    if (adapter is PlatformViewProvider) {
+      // A PlatformView-backed adapter's native side can't finish load()
+      // until Flutter actually creates its platform view and the native
+      // create() callback runs -- which can't happen without a widget
+      // rebuild. Nothing otherwise guarantees a rebuild happens in the gap
+      // between selecting this backend and its first real onState event
+      // (that event is what a listener like PlayerScreen would normally
+      // rebuild on, but the adapter can't emit one yet for exactly this
+      // reason). On screens with little incidental UI activity there may be
+      // no other rebuild trigger during that window, so without this the
+      // platform view never mounts and load() times out waiting for a
+      // native side that was never given the chance to attach.
+      _stateController.add(
+        PlaybackState.idle(
+          backend: backend,
+        ).copyWith(status: PlaybackStatus.loading, source: source),
+      );
+    }
     try {
       await adapter.load(source);
       if (!_isCurrentGeneration(generation)) {
@@ -212,6 +245,14 @@ class PlaybackOrchestrator {
           _activeBackend = null;
           _activeSource = null;
         }
+        if (adapter is PlatformViewProvider) {
+          // Same use-after-free reasoning as the PlaybackException branch
+          // below: this adapter's platform view is about to be unmounted
+          // (the current generation's own adapter is what's now mounted),
+          // and a native platform-view-backed core can hold an unretained
+          // pointer into that view's layer until this finishes.
+          await (adapter as PlatformViewProvider).releaseNativeView();
+        }
         await adapter.stop();
         return null;
       }
@@ -227,6 +268,17 @@ class PlaybackOrchestrator {
         _activeAdapter = null;
         _activeBackend = null;
         _activeSource = null;
+      }
+      if (adapter is PlatformViewProvider) {
+        // This adapter's platform view is about to be unmounted (the
+        // caller falls through to a different backend, and PlayerScreen
+        // rebuilds without this adapter once activePlatformViewProvider no
+        // longer resolves to it). A native platform-view-backed core can
+        // hold an unretained pointer into that view's own layer, so it must
+        // finish releasing it before the widget tree unmounts the view --
+        // otherwise the fallback backend's own rebuild can deallocate the
+        // layer while the native core is still attached to it.
+        await (adapter as PlatformViewProvider).releaseNativeView();
       }
       _diagnostics.add(
         'load-failed:${backend.name}:${error.code}:${error.message}',
