@@ -360,7 +360,7 @@ enum DvrRecordingStatus {
   completed,
   failed,
   cancelled,
-  // Not a real server-side recording status — only ever seen on a `dvr.status`
+  // Not a real server-side recording status - only ever seen on a `dvr.status`
   // push signalling the recording was deleted. See _onDvrStatusPush, which
   // removes the recording locally instead of rendering this state.
   deleted,
@@ -597,7 +597,7 @@ MediaRequestStatus mediaRequestStatusFromWire(String value) {
 }
 
 /// Structured rating forwarded by `request_search`
-/// (`ContentRequestService::search()`'s `rating` field — sourced from
+/// (`ContentRequestService::search()`'s `rating` field - sourced from
 /// Sonarr/Radarr's `ratings.imdb`/`ratings.tmdb`).
 class ContentRequestRating {
   const ContentRequestRating({required this.value, this.votes, this.source});
@@ -620,7 +620,7 @@ class ContentRequestRating {
 }
 
 /// A single season of a series search result, mirroring
-/// `ContentRequestService::search()`'s per-season shape — enough to let the
+/// `ContentRequestService::search()`'s per-season shape - enough to let the
 /// TV app pre-select missing seasons and show which ones the library already
 /// has (`has_file`), without exposing Sonarr's full monitored/statistics shape.
 class ContentRequestSeason {
@@ -1010,7 +1010,7 @@ extension DvrSeriesModeWire on DvrSeriesMode {
 }
 
 /// Parses `DvrSeriesMode` from its m3u-editor wire value. `null` falls back to
-/// `uniqueSe` — the server's column default (`dvr_setting.default_series_mode`).
+/// `uniqueSe` - the server's column default (`dvr_setting.default_series_mode`).
 /// Tolerates the legacy `new_only` / `new` spellings that earlier client
 /// releases sent before the wire values were corrected.
 DvrSeriesMode dvrSeriesModeFromWire(String? value) {
@@ -1130,7 +1130,7 @@ class DvrSeriesRule {
 }
 
 /// The seven tunable options exposed by the series-rule configure sheet.
-/// All fields are nullable — null means "use server default / omit from request".
+/// All fields are nullable - null means "use server default / omit from request".
 /// Passed to `XtreamService.createDvrSeriesRule` via AppShell's
 /// `_createDvrSeriesRule` callback.
 class DvrSeriesRuleOptions {
@@ -1253,6 +1253,7 @@ class EpgShow {
     required this.episodeCount,
     this.nextAiringAt,
     required this.recentEpisodes,
+    this.airingNow = const <EpgShowEpisode>[],
     this.hasSeriesRule = false,
     this.seriesRuleId,
   });
@@ -1264,6 +1265,12 @@ class EpgShow {
   final int episodeCount;
   final DateTime? nextAiringAt;
   final List<EpgShowEpisode> recentEpisodes;
+
+  /// Programmes currently in progress, from `search_epg_shows.airing_now`.
+  /// Same entry shape as [recentEpisodes] - the server shares one payload
+  /// builder for both. Empty (never null) when nothing is airing, and empty
+  /// against servers predating m3u-editor #1414.
+  final List<EpgShowEpisode> airingNow;
 
   /// True when a persistent DVR series rule already exists for this show
   /// (mirrors `search_epg_shows.has_series_rule`). Surfaces the
@@ -1306,6 +1313,10 @@ class EpgShow {
             .map((m) => EpgShowEpisode.fromXtream(m.cast<String, Object?>()))
             .toList() ??
         const <EpgShowEpisode>[];
+    final airingNow = _asList(json['airing_now'])
+        .whereType<Map<dynamic, dynamic>>()
+        .map((m) => EpgShowEpisode.fromXtream(m.cast<String, Object?>()))
+        .toList();
     return EpgShow(
       normalizedTitle: (json['normalized_title'] as String?) ?? '',
       displayTitle: (json['display_title'] as String?) ?? '',
@@ -1314,6 +1325,7 @@ class EpgShow {
       episodeCount: asInt(json['episode_count']),
       nextAiringAt: asDate(json['next_airing_at']),
       recentEpisodes: episodes,
+      airingNow: airingNow,
       hasSeriesRule: json['has_series_rule'] == true,
       seriesRuleId: asIntOrNull(json['series_rule_id']),
     );

@@ -42,7 +42,7 @@ import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/notification_toast.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// Height of the hidden-titlebar drag strip on macOS desktop — keeps the
+/// Height of the hidden-titlebar drag strip on macOS desktop - keeps the
 /// window draggable and clears the floating traffic-light buttons, which
 /// content would otherwise render underneath (see main.dart's
 /// TitleBarStyle.hidden setup). Painted solid with the app's background
@@ -157,7 +157,7 @@ class AppShellState extends ConsumerState<AppShell>
   // stays stable across a channel switch and its State survives via
   // didUpdateWidget instead of being torn down and rebuilt. This matters
   // because the Android Media3 and Apple AVKit native plugins each hold a
-  // single global player behind their MethodChannel — remounting PlayerScreen
+  // single global player behind their MethodChannel - remounting PlayerScreen
   // per channel would dispose the *previous* orchestrator after the *new*
   // one has already started loading, and that deferred dispose tears down
   // whatever the native side currently has loaded (the new channel).
@@ -406,7 +406,7 @@ class AppShellState extends ConsumerState<AppShell>
   // wherever focus happened to be before the sidebar was activated. Flutter's
   // native FocusScopeNode restoration (`_contentFocusNode.requestFocus()`
   // below) always drills down to whichever of a screen's sibling scopes
-  // (strip vs. grid) last held actual focus — which, once a screen has both,
+  // (strip vs. grid) last held actual focus - which, once a screen has both,
   // means it would silently skip the strip and land straight back in the
   // grid whenever the grid was the last thing focused. Keying by route
   // (rather than tracking "the last registered node") avoids clobbering the
@@ -421,7 +421,7 @@ class AppShellState extends ConsumerState<AppShell>
   }
 
   // Lets a screen intercept the Back key itself before AppShell's default
-  // handling (sidebar activation) runs — currently only Live TV, to move
+  // handling (sidebar activation) runs - currently only Live TV, to move
   // focus to the EPG's Channels column instead. Same route-keyed,
   // register-once pattern as _contentEntryFocusByRoute above, for the same
   // StatefulNavigationShell branch-retention reason.
@@ -519,7 +519,7 @@ class AppShellState extends ConsumerState<AppShell>
     unawaited(_systemUiPolicy.applyPlayer());
 
     if (_playerOrchestrator != null) {
-      // A player is already open (e.g. skip-previous/skip-next) — reuse its
+      // A player is already open (e.g. skip-previous/skip-next) - reuse its
       // orchestrator/session rather than building a new one. PlayerScreen's
       // key is unchanged, so the framework updates the existing State via
       // didUpdateWidget instead of disposing it, keeping exactly one native
@@ -646,7 +646,10 @@ class AppShellState extends ConsumerState<AppShell>
   void _switchChannel(int direction) {
     final args = _playerArgs;
     if (args == null || args.type != 'live') return;
-    final channels = _playerChannelContext.isNotEmpty
+    // A context of exactly one channel (e.g. the On Now rail's set of
+    // channels airing the searched show) can't skip anywhere - fall back to
+    // the full channel list rather than silently no-op on `% 1 == 0`.
+    final channels = _playerChannelContext.length > 1
         ? _playerChannelContext
         : ref.read(liveChannelsProvider);
     if (channels.isEmpty) return;
@@ -768,7 +771,7 @@ class AppShellState extends ConsumerState<AppShell>
   /// `XtreamService.createDvrSeriesRule` throws as
   /// `DvrSeriesRuleExistsException`. The `on Object { return false; }`
   /// blanket from earlier releases would have collapsed the duplicate case
-  /// into a generic failure — B2 surfaces it instead.
+  /// into a generic failure - B2 surfaces it instead.
   Future<CreateDvrSeriesRuleOutcome> _createDvrSeriesRule({
     int? channelId,
     required String title,
@@ -793,7 +796,7 @@ class AppShellState extends ConsumerState<AppShell>
       await _appState.refreshDvrSeriesRules();
       // The rule's `created` hook may have already matched and scheduled a
       // recording server-side (see AppStateController.refreshDvrRecordings
-      // doc comment) — refresh so it shows up in the Recordings tab without
+      // doc comment) - refresh so it shows up in the Recordings tab without
       // waiting for the next full app reload.
       unawaited(_appState.refreshDvrRecordings());
       return id == 0
@@ -849,7 +852,7 @@ class AppShellState extends ConsumerState<AppShell>
   }
 
   /// Stops a scheduled or in-progress recording and deletes the row from the
-  /// editor — the "Delete recording" choice on the Recordings screen's stop
+  /// editor - the "Delete recording" choice on the Recordings screen's stop
   /// dialog (see DvrRecordingsScreen._confirmCancel). m3u-editor's
   /// `cancel_dvr_recording` only marks the recording `cancelled` (a stop +
   /// history-keep operation), so this chains a follow-up `delete_dvr_recording`
@@ -858,7 +861,7 @@ class AppShellState extends ConsumerState<AppShell>
   ///
   /// If the cancel succeeds but the delete fails (e.g. transient server
   /// hiccup), the recording is still stopped and stays in the local list with
-  /// its Cancelled status — the user can retry Delete from there. The delete
+  /// its Cancelled status - the user can retry Delete from there. The delete
   /// failure is rethrown (not swallowed) so DvrRecordingsScreen's
   /// _runWithFeedback shows the "could not delete" SnackBar instead of a
   /// false "deleted" success message for a recording that's still there.
@@ -873,9 +876,9 @@ class AppShellState extends ConsumerState<AppShell>
   }
 
   /// Pushes a detail route. When [fullScreen] is true, the sidebar-hide
-  /// transition is tied directly to this call's own push/pop — flipped
+  /// transition is tied directly to this call's own push/pop - flipped
   /// synchronously right before `context.push` and unwound in `finally`
-  /// once that same push's route is gone — rather than to the pushed
+  /// once that same push's route is gone - rather than to the pushed
   /// widget's own init/dispose lifecycle. A widget can only announce itself
   /// after it already exists, which is inherently a frame (or more) behind
   /// the moment navigation was requested; doing it here instead means the
@@ -959,7 +962,7 @@ class AppShellState extends ConsumerState<AppShell>
   }
 
   /// Lets a descendant enter/exit the same immersive full-screen state as
-  /// `_pushDetail(fullScreen: true)` — sidebar hidden, bottom nav hidden —
+  /// `_pushDetail(fullScreen: true)` - sidebar hidden, bottom nav hidden —
   /// without going through a go_router push itself. Needed for screens
   /// like the DVR series-rule Options page, which is opened via a plain
   /// `Navigator.push` (not a route) from a tab that isn't already
@@ -1090,8 +1093,6 @@ class AppShellState extends ConsumerState<AppShell>
             _registerContentBackHandler(RouteNames.liveTv, handler),
         onSearchShows: _searchEpgShows,
         onShowSelect: _openShow,
-        onVodSelect: _openVod,
-        onSeriesSelect: _openSeries,
       ),
       RouteNames.vod => VodScreen(
         onVodSelect: _openVod,
@@ -1489,7 +1490,7 @@ class AppShellState extends ConsumerState<AppShell>
 
           // The sidebar physically slides off-screen to the left and the
           // content pane's left edge animates out to meet it, both on the
-          // same AnimatedPositioned duration/curve — timed to start the
+          // same AnimatedPositioned duration/curve - timed to start the
           // instant `_pushDetail(..., fullScreen: true)` flips this state
           // (before the route push/pop even begins), so this motion and the
           // detail route's own slide transition (_slidePage in

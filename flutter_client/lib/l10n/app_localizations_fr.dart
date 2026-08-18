@@ -91,10 +91,34 @@ class AppLocalizationsFr extends AppLocalizations {
   String get liveTvUpcomingAirings => 'Prochainement';
 
   @override
-  String get liveTvMoviesAndSeries => 'Films et séries';
+  String get liveTvSearchFilterAll => 'Tout';
 
   @override
   String get liveTvShowResultsLoading => 'Recherche d\'émissions…';
+
+  @override
+  String get liveTvOnNow => 'En direct';
+
+  @override
+  String liveTvAiringUntil(String time) {
+    return 'Jusqu\'à $time';
+  }
+
+  @override
+  String liveTvAiringTomorrow(String time) {
+    return 'Demain $time';
+  }
+
+  @override
+  String liveTvMoreAirings(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '+$count autres',
+      one: '+1 autre',
+    );
+    return '$_temp0';
+  }
 
   @override
   String get liveTvNoChannels => 'Aucune chaîne disponible';

@@ -14,9 +14,10 @@ import 'package:m3u_tv/services/epg_service.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/services/persistent_store.dart';
 import 'package:m3u_tv/services/view_settings_service.dart';
+import 'package:m3u_tv/shared/dpad_tab_bar.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
-/// #217 made the Live TV search field `activateOnSelect: true` — on TV it
+/// #217 made the Live TV search field `activateOnSelect: true` - on TV it
 /// renders as a non-editing button facade until activated, so there is no
 /// `TextField` in the tree to type into. Activate first, then type.
 Future<void> enterQuery(WidgetTester tester, String query) async {
@@ -691,7 +692,7 @@ void main() {
     });
   });
 
-  group('LiveTvScreen show search', () {
+  group('LiveTvScreen search results', () {
     late List<Channel> channels;
     late List<Category> categories;
     late DateTime futureTime;
@@ -725,15 +726,20 @@ void main() {
       ];
     });
 
-    final railTitle = find.text('Upcoming');
-
     Future<List<EpgShow>> Function(String) staticResults(
       List<EpgShow> results,
     ) {
       return (query) async => results;
     }
 
-    testWidgets('null onSearchShows renders no Upcoming rail', (tester) async {
+    final tabBarFinder = find.byType(DpadTabBar);
+    final allTab = find.text('All');
+    final onNowTab = find.text('On Now');
+    final upcomingTab = find.text('Upcoming');
+
+    testWidgets('null onSearchShows keeps the channel list, no tab bar', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _TestApp(channels: channels, categories: categories),
       );
@@ -742,193 +748,143 @@ void main() {
       await enterQuery(tester, 'bbc');
       await tester.pumpAndSettle();
 
-      expect(railTitle, findsNothing);
+      expect(tabBarFinder, findsNothing);
+      // Channel-name filter still applies synchronously.
+      expect(find.text('BBC One'), findsOneWidget);
+      expect(find.text('CNN'), findsNothing);
     });
 
-    testWidgets('Upcoming rail renders one card per future airing', (
+    testWidgets('query under 2 chars keeps the channel list, no tab bar', (
       tester,
     ) async {
       await tester.pumpWidget(
         _TestApp(
           channels: channels,
           categories: categories,
-          onSearchShows: staticResults([
-            EpgShow(
-              normalizedTitle: 'news',
-              displayTitle: 'News',
-              channelCount: 1,
-              channels: [],
-              episodeCount: 0,
-              recentEpisodes: [
-                EpgShowEpisode(
-                  channelId: 1,
-                  channelName: 'BBC One',
-                  title: 'World News',
-                  startTime: futureTime,
-                  endTime: futureTime.add(const Duration(hours: 1)),
-                ),
-                EpgShowEpisode(
-                  channelId: 1,
-                  channelName: 'CNN',
-                  title: 'Breaking News',
-                  startTime: futureTime.add(const Duration(hours: 1)),
-                  endTime: futureTime.add(const Duration(hours: 2)),
-                ),
-              ],
-            ),
-          ]),
+          onSearchShows: staticResults(const []),
         ),
       );
       await tester.pumpAndSettle();
 
-      await enterQuery(tester, 'ne');
-      await tester.pump(const Duration(milliseconds: 400));
+      await enterQuery(tester, 'b');
       await tester.pumpAndSettle();
 
-      expect(railTitle, findsOneWidget);
-      expect(find.text('World News'), findsOneWidget);
-      expect(find.text('Breaking News'), findsOneWidget);
+      expect(tabBarFinder, findsNothing);
+      expect(find.text('BBC One'), findsOneWidget);
     });
 
     testWidgets(
-      'channel-name filter narrows immediately while show search is in flight',
+      'qualifying query with onSearchShows replaces the channel list with tabs',
       (tester) async {
-        final pending = Completer<List<EpgShow>>();
         await tester.pumpWidget(
           _TestApp(
             channels: channels,
             categories: categories,
-            onSearchShows: (query) => pending.future,
+            onSearchShows: staticResults(const []),
           ),
         );
         await tester.pumpAndSettle();
 
-        await enterQuery(tester, 'cn');
-        // Pump just past the 350ms debounce but stop before the in-flight
-        // future ever completes — the channel list must already be filtered.
+        await enterQuery(tester, 'bb');
         await tester.pump(const Duration(milliseconds: 400));
-        await tester.pump();
-
-        expect(find.text('BBC One'), findsNothing);
-        expect(find.text('CNN'), findsOneWidget);
-        expect(find.text('ESPN'), findsNothing);
-
-        // Finish the search; the rail renders once the future resolves.
-        pending.complete(const <EpgShow>[]);
         await tester.pumpAndSettle();
+
+        expect(tabBarFinder, findsOneWidget);
+        expect(allTab, findsOneWidget);
+        expect(onNowTab, findsOneWidget);
+        expect(upcomingTab, findsOneWidget);
+        // Channel-name-filtered channel list is gone while search is active.
+        expect(find.text('BBC One'), findsNothing);
       },
     );
 
-    testWidgets('clearing the query drops the rail', (tester) async {
+    testWidgets(
+      'D-pad Right from the nav strip enters the search results, not a '
+      'dead grid scope',
+      (tester) async {
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: staticResults([
+              EpgShow(
+                normalizedTitle: 'show',
+                displayTitle: 'Show',
+                channelCount: 1,
+                channels: const [],
+                episodeCount: 0,
+                recentEpisodes: [
+                  EpgShowEpisode(
+                    channelId: 1,
+                    channelName: 'Channel',
+                    title: 'Episode',
+                    startTime: futureTime,
+                    endTime: futureTime.add(const Duration(hours: 1)),
+                  ),
+                ],
+              ),
+            ]),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'sh');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        // Move focus onto a plain category chip rather than leaving it in
+        // the search TextField - EditableText intercepts Right for cursor
+        // movement, which would make this test pass or fail for the wrong
+        // reason regardless of the strip's edge-handoff wiring.
+        await tester.tap(find.text('News'));
+        await tester.pumpAndSettle();
+
+        // MediaCategoryNav's strip still hands right-edge focus to
+        // gridFocusScopeNode, which must now point at the search-results
+        // scope (not the empty channel-grid one) while results are shown.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+
+        final resultsFocus = tester
+            .widgetList<Focus>(
+              find.descendant(
+                of: find.byType(DpadTabBarView),
+                matching: find.byType(Focus),
+              ),
+            )
+            .where((focus) => focus.focusNode != null);
+        expect(
+          resultsFocus.any((focus) => focus.focusNode!.hasFocus),
+          isTrue,
+        );
+      },
+    );
+
+    testWidgets('clearing the query restores the channel list', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _TestApp(
           channels: channels,
           categories: categories,
-          onSearchShows: staticResults(const [
-            EpgShow(
-              normalizedTitle: 'x',
-              displayTitle: 'Hit',
-              channelCount: 1,
-              channels: [],
-              episodeCount: 0,
-              recentEpisodes: [],
-            ),
-          ]),
+          onSearchShows: staticResults(const []),
         ),
       );
       await tester.pumpAndSettle();
 
-      await enterQuery(tester, 'hi');
+      await enterQuery(tester, 'bb');
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
-      expect(railTitle, findsOneWidget);
+      expect(tabBarFinder, findsOneWidget);
 
       await enterQuery(tester, '');
       await tester.pumpAndSettle();
-      expect(railTitle, findsNothing);
-
-      // Under 2 chars must also hide the rail — the service's 2-char
-      // short-circuit means no network call should be triggered and no
-      // results should linger.
-      await enterQuery(tester, 'h');
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pumpAndSettle();
-      expect(railTitle, findsNothing);
+      expect(tabBarFinder, findsNothing);
+      expect(find.text('BBC One'), findsOneWidget);
     });
 
     testWidgets(
-      'stale slow result does not overwrite a fresher fast result',
-      (tester) async {
-        final slow = Completer<List<EpgShow>>();
-        final fast = Completer<List<EpgShow>>();
-        var useSlow = true;
-        await tester.pumpWidget(
-          _TestApp(
-            channels: channels,
-            categories: categories,
-            onSearchShows: (query) => useSlow ? slow.future : fast.future,
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        // First query: slow.
-        await enterQuery(tester, 'ab');
-        await tester.pump(const Duration(milliseconds: 400));
-        await tester.pump();
-        useSlow = false;
-
-        // Second query (overrides the first): fast. The generation counter
-        // must cause the slow result to be ignored when it eventually lands.
-        await enterQuery(tester, 'abc');
-        await tester.pump(const Duration(milliseconds: 400));
-        fast.complete([
-          EpgShow(
-            normalizedTitle: 'abc',
-            displayTitle: 'Fresh',
-            channelCount: 1,
-            channels: [],
-            episodeCount: 0,
-            recentEpisodes: [
-              EpgShowEpisode(
-                channelId: 1,
-                channelName: 'Channel',
-                title: 'Fresh Episode',
-                startTime: futureTime,
-                endTime: futureTime.add(const Duration(hours: 1)),
-              ),
-            ],
-          ),
-        ]);
-        await tester.pumpAndSettle();
-        expect(find.text('Fresh Episode'), findsOneWidget);
-
-        // Now resolve the original slow Promise — it must NOT overwrite.
-        slow.complete([
-          EpgShow(
-            normalizedTitle: 'ab',
-            displayTitle: 'Stale',
-            channelCount: 1,
-            channels: [],
-            episodeCount: 0,
-            recentEpisodes: [
-              EpgShowEpisode(
-                channelId: 2,
-                channelName: 'Channel',
-                title: 'Stale Episode',
-                startTime: futureTime,
-                endTime: futureTime.add(const Duration(hours: 1)),
-              ),
-            ],
-          ),
-        ]);
-        await tester.pumpAndSettle();
-        expect(find.text('Stale Episode'), findsNothing);
-        expect(find.text('Fresh Episode'), findsOneWidget);
-      },
-    );
-
-    testWidgets(
-      'throwing onSearchShows renders search-failed, not no-matches',
+      'throwing onSearchShows renders search-failed on the All tab',
       (tester) async {
         await tester.pumpWidget(
           _TestApp(
@@ -943,118 +899,8 @@ void main() {
         await tester.pump(const Duration(milliseconds: 400));
         await tester.pumpAndSettle();
 
-        // Error state — distinct from "no matches".
         expect(find.text('Search failed'), findsOneWidget);
         expect(find.text('No shows match your search'), findsNothing);
-
-        // Channel list still rendered.
-        expect(find.text('BBC One'), findsOneWidget);
-      },
-    );
-
-    testWidgets('blank episode title is filtered out', (tester) async {
-      await tester.pumpWidget(
-        _TestApp(
-          channels: channels,
-          categories: categories,
-          onSearchShows: staticResults([
-            EpgShow(
-              normalizedTitle: 'good',
-              displayTitle: 'Good Show',
-              channelCount: 1,
-              channels: [],
-              episodeCount: 0,
-              recentEpisodes: [
-                EpgShowEpisode(
-                  channelId: 1,
-                  channelName: 'BBC One',
-                  title: 'Good Episode',
-                  startTime: futureTime,
-                  endTime: futureTime.add(const Duration(hours: 1)),
-                ),
-              ],
-            ),
-            EpgShow(
-              normalizedTitle: 'bad',
-              displayTitle: 'Bad Show',
-              channelCount: 1,
-              channels: [],
-              episodeCount: 0,
-              recentEpisodes: [
-                EpgShowEpisode(
-                  channelId: 2,
-                  channelName: 'BBC Two',
-                  title: '',
-                  startTime: futureTime,
-                  endTime: futureTime.add(const Duration(hours: 1)),
-                ),
-              ],
-            ),
-          ]),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await enterQuery(tester, 'good');
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Good Episode'), findsOneWidget);
-      // The blank-title episode must not render an empty card; the rail
-      // contains exactly one item, found as a MediaPreviewSection ancestor.
-      final rail = find.ancestor(
-        of: find.text('Good Episode'),
-        matching: find.byType(MediaPreviewSection),
-      );
-      expect(rail, findsOneWidget);
-    });
-
-    testWidgets(
-      'Upcoming rail subtitle uses episode startTime via .toLocal()',
-      (
-        tester,
-      ) async {
-        // Derive the airing instant from now (UTC + 30 days) so the test
-        // doesn't rot with the calendar. The .toLocal() invocation is
-        // exercised by the widget building without throwing on a UTC
-        // input; we also check that the subtitle Text widget carries the
-        // channel name (the formatted local time is asserted via the
-        // surrounding text rather than a hardcoded wall-clock string).
-        final utc = DateTime.now().toUtc().add(const Duration(days: 30));
-        await tester.pumpWidget(
-          _TestApp(
-            channels: channels,
-            categories: categories,
-            onSearchShows: (_) async => [
-              EpgShow(
-                normalizedTitle: 'local-time',
-                displayTitle: 'Local Time Check',
-                channelCount: 1,
-                channels: const [
-                  EpgShowChannel(channelId: 1, channelName: 'BBC One'),
-                ],
-                episodeCount: 0,
-                recentEpisodes: [
-                  EpgShowEpisode(
-                    channelId: 1,
-                    channelName: 'BBC One',
-                    title: 'Episode Slot',
-                    startTime: utc,
-                    endTime: utc.add(const Duration(hours: 1)),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        await enterQuery(tester, 'loc');
-        await tester.pump(const Duration(milliseconds: 400));
-        await tester.pumpAndSettle();
-
-        expect(find.text('Episode Slot'), findsOneWidget);
-        expect(find.textContaining('BBC One'), findsOneWidget);
       },
     );
 
@@ -1072,11 +918,9 @@ void main() {
         await tester.pumpAndSettle();
 
         await enterQuery(tester, 'bb');
-        // Pump exactly one frame — the debounce hasn't fired yet (350ms),
-        // but the rail should already render "Searching shows…" instead
-        // of "No shows match your search". Without the R2.1 fix the rail
-        // would flash the empty-matches label for a frame before flipping
-        // to loading.
+        // Pump exactly one frame - the debounce hasn't fired yet (350ms),
+        // but the All tab should already render "Searching shows…" instead
+        // of "No shows match your search".
         await tester.pump();
         expect(find.text('Searching shows…'), findsOneWidget);
         expect(find.text('No shows match your search'), findsNothing);
@@ -1086,212 +930,766 @@ void main() {
       },
     );
 
-    testWidgets('Upcoming rail drops past airings', (tester) async {
-      await tester.pumpWidget(
-        _TestApp(
-          channels: channels,
-          categories: categories,
-          onSearchShows: staticResults([
-            EpgShow(
-              normalizedTitle: 'show',
-              displayTitle: 'Show',
-              channelCount: 1,
-              channels: [],
-              episodeCount: 0,
-              recentEpisodes: [
-                EpgShowEpisode(
-                  channelId: 1,
-                  channelName: 'Channel',
-                  title: 'Past Episode',
-                  startTime: futureTime.subtract(const Duration(hours: 2)),
-                  endTime: futureTime.subtract(const Duration(hours: 1)),
-                ),
-                EpgShowEpisode(
-                  channelId: 1,
-                  channelName: 'Channel',
-                  title: 'Future Episode',
-                  startTime: futureTime.add(const Duration(hours: 1)),
-                  endTime: futureTime.add(const Duration(hours: 2)),
-                ),
-              ],
-            ),
-          ]),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await enterQuery(tester, 'sh');
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Future Episode'), findsOneWidget);
-      expect(find.text('Past Episode'), findsNothing);
-    });
-
-    testWidgets('Upcoming rail caps at 12 airings soonest first', (
-      tester,
-    ) async {
-      // Default test surface (800x600) only renders ~5-6 cards in the
-      // horizontal ListView; size up so all 12 are findable without
-      // scrolling the rail mid-test.
-      tester.view.physicalSize = const Size(4000, 1200);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-
-      final episodes = <EpgShowEpisode>[];
-      for (var i = 0; i < 15; i++) {
-        episodes.add(
-          EpgShowEpisode(
-            channelId: 1,
-            channelName: 'Channel',
-            title: 'Episode $i',
-            startTime: futureTime.add(Duration(hours: i)),
-            endTime: futureTime.add(Duration(hours: i + 1)),
-          ),
-        );
-      }
-      await tester.pumpWidget(
-        _TestApp(
-          channels: channels,
-          categories: categories,
-          onSearchShows: staticResults([
-            EpgShow(
-              normalizedTitle: 'show',
-              displayTitle: 'Show',
-              channelCount: 1,
-              channels: [],
-              episodeCount: 0,
-              recentEpisodes: episodes,
-            ),
-          ]),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await enterQuery(tester, 'sh');
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pumpAndSettle();
-
-      // Episodes 0-11 are visible (soonest first), 12-14 are not.
-      for (var i = 0; i < 12; i++) {
-        expect(find.text('Episode $i'), findsOneWidget);
-      }
-      for (var i = 12; i < 15; i++) {
-        expect(find.text('Episode $i'), findsNothing);
-      }
-    });
-
-    testWidgets('Movies & Series rail filters local VOD and Series by query', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _TestApp(
-          channels: channels,
-          categories: categories,
-          vodItems: const [
-            VodItem(
-              id: 1,
-              name: 'The Matrix',
-              streamUrl: 'http://example.com/m.m3u8',
-              containerExtension: 'mp4',
-            ),
-            VodItem(
-              id: 2,
-              name: 'Inception',
-              streamUrl: 'http://example.com/i.m3u8',
-              containerExtension: 'mp4',
-            ),
-          ],
-          seriesList: const [Series(id: 10, name: 'Breaking Bad')],
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await enterQuery(tester, 'mat');
-      // No debounce on the local filter — should be visible on the same
-      // frame the keystroke lands, without waiting for the 350ms debounce
-      // the network-driven Upcoming rail uses.
-      await tester.pump();
-      expect(find.text('Movies & Series'), findsOneWidget);
-      expect(find.text('The Matrix'), findsOneWidget);
-      expect(find.text('Inception'), findsNothing);
-      expect(find.text('Breaking Bad'), findsNothing);
-    });
-
-    testWidgets(
-      'Movies & Series rail updates same frame as channel list',
-      (tester) async {
+    group('All tab', () {
+      testWidgets('shows On Now first, then Upcoming', (tester) async {
         await tester.pumpWidget(
           _TestApp(
             channels: channels,
             categories: categories,
-            vodItems: const [
-              VodItem(
-                id: 1,
-                name: 'Action Movie',
-                streamUrl: 'http://example.com/a.m3u8',
-                containerExtension: 'mp4',
+            onSearchShows: staticResults([
+              EpgShow(
+                normalizedTitle: 'live-show',
+                displayTitle: 'Live Show',
+                channelCount: 1,
+                channels: const [],
+                episodeCount: 0,
+                recentEpisodes: const [],
+                airingNow: [
+                  EpgShowEpisode(
+                    channelId: 1,
+                    channelName: 'BBC One',
+                    title: 'Live Episode',
+                    startTime: futureTime.subtract(const Duration(minutes: 10)),
+                    endTime: futureTime.add(const Duration(minutes: 50)),
+                  ),
+                ],
               ),
-            ],
+              EpgShow(
+                normalizedTitle: 'future-show',
+                displayTitle: 'Future Show',
+                channelCount: 1,
+                channels: const [],
+                episodeCount: 0,
+                recentEpisodes: [
+                  EpgShowEpisode(
+                    channelId: 2,
+                    channelName: 'CNN',
+                    title: 'Future Episode',
+                    startTime: futureTime.add(const Duration(hours: 2)),
+                    endTime: futureTime.add(const Duration(hours: 3)),
+                  ),
+                ],
+              ),
+            ]),
           ),
         );
         await tester.pumpAndSettle();
 
-        await enterQuery(tester, 'act');
-        // Both the channel list and the Movies & Series rail update on
-        // the same frame — neither has a debounce. The Movies & Series
-        // rail filters vodItems by `name.contains(query)` synchronously
-        // alongside the channel-name filter narrowing the channels list.
-        await tester.pump();
-        expect(find.text('Action Movie'), findsOneWidget);
-        // No channel name contains "act" — channel list is empty.
-        expect(find.text('BBC One'), findsNothing);
-        expect(find.text('CNN'), findsNothing);
-        expect(find.text('ESPN'), findsNothing);
-      },
-    );
+        await enterQuery(tester, 'show');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
 
-    testWidgets('Movies & Series rail suppressed when no local matches', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _TestApp(
-          channels: channels,
-          categories: categories,
-          vodItems: const [
-            VodItem(
-              id: 1,
-              name: 'Inception',
-              streamUrl: 'http://example.com/i.m3u8',
-              containerExtension: 'mp4',
+        final liveTitle = tester.getCenter(find.text('Live Show'));
+        final futureTitle = tester.getCenter(find.text('Future Show'));
+        expect(liveTitle.dy, lessThan(futureTitle.dy));
+      });
+
+      testWidgets(
+        'a show airing now is not duplicated as an Upcoming row for the same channel',
+        (tester) async {
+          await tester.pumpWidget(
+            _TestApp(
+              channels: channels,
+              categories: categories,
+              onSearchShows: staticResults([
+                EpgShow(
+                  normalizedTitle: 'rerun-show',
+                  displayTitle: 'Rerun Show',
+                  channelCount: 1,
+                  channels: const [],
+                  episodeCount: 0,
+                  recentEpisodes: [
+                    // A later rerun of the SAME channel the show is
+                    // currently airing on - must be suppressed, since the
+                    // On Now row already represents this (show, channel).
+                    EpgShowEpisode(
+                      channelId: 1,
+                      channelName: 'BBC One',
+                      title: 'Rerun Episode',
+                      startTime: futureTime.add(const Duration(hours: 4)),
+                      endTime: futureTime.add(const Duration(hours: 5)),
+                    ),
+                  ],
+                  airingNow: [
+                    EpgShowEpisode(
+                      channelId: 1,
+                      channelName: 'BBC One',
+                      title: 'Rerun Episode',
+                      startTime: futureTime.subtract(
+                        const Duration(minutes: 10),
+                      ),
+                      endTime: futureTime.add(const Duration(minutes: 50)),
+                    ),
+                  ],
+                ),
+              ]),
             ),
-          ],
-        ),
-      );
-      await tester.pumpAndSettle();
+          );
+          await tester.pumpAndSettle();
 
-      await enterQuery(tester, 'xy');
-      await tester.pump();
-      // No matches in VOD/Series for "xy" — rail should not render.
-      expect(find.text('Movies & Series'), findsNothing);
+          await enterQuery(tester, 'rerun');
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+
+          // Exactly one "Rerun Show" row - the On Now one.
+          expect(find.text('Rerun Show'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'a show airing now on one channel still shows Upcoming on a different channel',
+        (tester) async {
+          await tester.pumpWidget(
+            _TestApp(
+              channels: channels,
+              categories: categories,
+              onSearchShows: staticResults([
+                EpgShow(
+                  normalizedTitle: 'syndicated-show',
+                  displayTitle: 'Syndicated Show',
+                  channelCount: 2,
+                  channels: const [],
+                  episodeCount: 0,
+                  recentEpisodes: [
+                    EpgShowEpisode(
+                      channelId: 2,
+                      channelName: 'CNN',
+                      title: 'Later Airing',
+                      startTime: futureTime.add(const Duration(hours: 4)),
+                      endTime: futureTime.add(const Duration(hours: 5)),
+                    ),
+                  ],
+                  airingNow: [
+                    EpgShowEpisode(
+                      channelId: 1,
+                      channelName: 'BBC One',
+                      title: 'Now Airing',
+                      startTime: futureTime.subtract(
+                        const Duration(minutes: 10),
+                      ),
+                      endTime: futureTime.add(const Duration(minutes: 50)),
+                    ),
+                  ],
+                ),
+              ]),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await enterQuery(tester, 'synd');
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+
+          // Two distinct rows: one On Now (BBC One), one Upcoming (CNN).
+          expect(find.text('Syndicated Show'), findsNWidgets(2));
+        },
+      );
     });
 
-    testWidgets(
-      'tapping Upcoming card invokes onShowSelect with parent show',
-      (tester) async {
+    group('On Now tab', () {
+      testWidgets('shows only currently-airing entries', (tester) async {
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: staticResults([
+              EpgShow(
+                normalizedTitle: 'live-show',
+                displayTitle: 'Live Show',
+                channelCount: 1,
+                channels: const [],
+                episodeCount: 0,
+                recentEpisodes: const [],
+                airingNow: [
+                  EpgShowEpisode(
+                    channelId: 1,
+                    channelName: 'BBC One',
+                    title: 'Live Episode',
+                    startTime: futureTime.subtract(const Duration(minutes: 10)),
+                    endTime: futureTime.add(const Duration(minutes: 50)),
+                  ),
+                ],
+              ),
+              EpgShow(
+                normalizedTitle: 'future-show',
+                displayTitle: 'Future Show',
+                channelCount: 1,
+                channels: const [],
+                episodeCount: 0,
+                recentEpisodes: [
+                  EpgShowEpisode(
+                    channelId: 2,
+                    channelName: 'CNN',
+                    title: 'Future Episode',
+                    startTime: futureTime.add(const Duration(hours: 2)),
+                    endTime: futureTime.add(const Duration(hours: 3)),
+                  ),
+                ],
+              ),
+            ]),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'show');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        await tester.tap(onNowTab);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Live Show'), findsOneWidget);
+        expect(find.text('Future Show'), findsNothing);
+      });
+
+      testWidgets(
+        'omits airingNow entries whose channelId matches no Channel',
+        (tester) async {
+          await tester.pumpWidget(
+            _TestApp(
+              channels: channels,
+              categories: categories,
+              onSearchShows: staticResults([
+                EpgShow(
+                  normalizedTitle: 'orphan-show',
+                  displayTitle: 'Orphan Show',
+                  channelCount: 1,
+                  channels: const [],
+                  episodeCount: 0,
+                  recentEpisodes: const [],
+                  airingNow: [
+                    EpgShowEpisode(
+                      channelId: 999,
+                      channelName: 'Unknown Channel',
+                      title: 'Orphan Episode',
+                      startTime: futureTime.subtract(
+                        const Duration(minutes: 10),
+                      ),
+                      endTime: futureTime.add(const Duration(minutes: 50)),
+                    ),
+                  ],
+                ),
+              ]),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await enterQuery(tester, 'orphan');
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+
+          await tester.tap(onNowTab);
+          await tester.pumpAndSettle();
+
+          expect(find.text('Orphan Show'), findsNothing);
+          expect(find.text('No shows match your search'), findsOneWidget);
+        },
+      );
+
+      testWidgets('tapping a row tunes the channel and updates context', (
+        tester,
+      ) async {
+        Channel? tapped;
+        List<Channel>? context;
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onChannelSelect: (channel) => tapped = channel,
+            onChannelContextChanged: (ctx) => context = ctx,
+            onSearchShows: staticResults([
+              EpgShow(
+                normalizedTitle: 'live-show',
+                displayTitle: 'Live Show',
+                channelCount: 1,
+                channels: const [],
+                episodeCount: 0,
+                recentEpisodes: const [],
+                airingNow: [
+                  EpgShowEpisode(
+                    channelId: 1,
+                    channelName: 'BBC One',
+                    title: 'Live Episode',
+                    startTime: futureTime.subtract(const Duration(minutes: 10)),
+                    endTime: futureTime.add(const Duration(minutes: 50)),
+                  ),
+                ],
+              ),
+            ]),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'live');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Live Show'));
+        await tester.pumpAndSettle();
+
+        expect(tapped?.id, 1);
+        expect(context, isNotNull);
+        expect(context!.map((c) => c.id), [1]);
+      });
+
+      testWidgets(
+        'subtitle falls back to channel name with no episode subtitle',
+        (
+          tester,
+        ) async {
+          await tester.pumpWidget(
+            _TestApp(
+              channels: channels,
+              categories: categories,
+              onSearchShows: staticResults([
+                EpgShow(
+                  normalizedTitle: 'live-show',
+                  displayTitle: 'Live Show',
+                  channelCount: 1,
+                  channels: const [],
+                  episodeCount: 0,
+                  recentEpisodes: const [],
+                  airingNow: [
+                    EpgShowEpisode(
+                      channelId: 1,
+                      channelName: 'BBC One',
+                      title: 'Live Episode',
+                      startTime: futureTime.subtract(
+                        const Duration(minutes: 10),
+                      ),
+                      endTime: futureTime.add(const Duration(minutes: 50)),
+                    ),
+                  ],
+                ),
+              ]),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await enterQuery(tester, 'live');
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+
+          expect(find.text('BBC One'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'whitespace-only channel name does not render a blank subtitle',
+        (tester) async {
+          await tester.pumpWidget(
+            _TestApp(
+              channels: channels,
+              categories: categories,
+              onSearchShows: staticResults([
+                EpgShow(
+                  normalizedTitle: 'live-show',
+                  displayTitle: 'Live Show',
+                  channelCount: 1,
+                  channels: const [],
+                  episodeCount: 0,
+                  recentEpisodes: const [],
+                  airingNow: [
+                    EpgShowEpisode(
+                      channelId: 1,
+                      channelName: ' ',
+                      title: 'Live Episode',
+                      startTime: futureTime.subtract(
+                        const Duration(minutes: 10),
+                      ),
+                      endTime: futureTime.add(const Duration(minutes: 50)),
+                    ),
+                  ],
+                ),
+              ]),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await enterQuery(tester, 'live');
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+
+          // Only the title Text renders under the row - no blank subtitle.
+          final row = find.ancestor(
+            of: find.text('Live Show'),
+            matching: find.byType(Column),
+          );
+          final blankTexts = tester
+              .widgetList<Text>(
+                find.descendant(of: row.first, matching: find.byType(Text)),
+              )
+              .where((t) => t.data != null && t.data!.trim().isEmpty);
+          expect(blankTexts, isEmpty);
+        },
+      );
+    });
+
+    group('Upcoming tab', () {
+      testWidgets('shows only future entries', (tester) async {
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: staticResults([
+              EpgShow(
+                normalizedTitle: 'live-show',
+                displayTitle: 'Live Show',
+                channelCount: 1,
+                channels: const [],
+                episodeCount: 0,
+                recentEpisodes: const [],
+                airingNow: [
+                  EpgShowEpisode(
+                    channelId: 1,
+                    channelName: 'BBC One',
+                    title: 'Live Episode',
+                    startTime: futureTime.subtract(const Duration(minutes: 10)),
+                    endTime: futureTime.add(const Duration(minutes: 50)),
+                  ),
+                ],
+              ),
+              EpgShow(
+                normalizedTitle: 'future-show',
+                displayTitle: 'Future Show',
+                channelCount: 1,
+                channels: const [],
+                episodeCount: 0,
+                recentEpisodes: [
+                  EpgShowEpisode(
+                    channelId: 2,
+                    channelName: 'CNN',
+                    title: 'Future Episode',
+                    startTime: futureTime.add(const Duration(hours: 2)),
+                    endTime: futureTime.add(const Duration(hours: 3)),
+                  ),
+                ],
+              ),
+            ]),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'show');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        await tester.tap(upcomingTab);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Future Show'), findsOneWidget);
+        expect(find.text('Live Show'), findsNothing);
+      });
+
+      testWidgets('drops past airings', (tester) async {
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: staticResults([
+              EpgShow(
+                normalizedTitle: 'show',
+                displayTitle: 'Show',
+                channelCount: 1,
+                channels: const [],
+                episodeCount: 0,
+                recentEpisodes: [
+                  EpgShowEpisode(
+                    channelId: 1,
+                    channelName: 'Channel',
+                    title: 'Past Episode',
+                    startTime: futureTime.subtract(const Duration(hours: 2)),
+                    endTime: futureTime.subtract(const Duration(hours: 1)),
+                  ),
+                  EpgShowEpisode(
+                    channelId: 1,
+                    channelName: 'Channel',
+                    title: 'Future Episode',
+                    startTime: futureTime.add(const Duration(hours: 1)),
+                    endTime: futureTime.add(const Duration(hours: 2)),
+                  ),
+                ],
+              ),
+            ]),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'sh');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        await tester.tap(upcomingTab);
+        await tester.pumpAndSettle();
+
+        // Only one row for the show, and its trailing time reflects the
+        // single future episode, not the dropped past one.
+        expect(find.text('Show'), findsOneWidget);
+      });
+
+      testWidgets('drops blank-title episodes', (tester) async {
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: staticResults([
+              EpgShow(
+                normalizedTitle: 'good',
+                displayTitle: 'Good Show',
+                channelCount: 1,
+                channels: const [],
+                episodeCount: 0,
+                recentEpisodes: [
+                  EpgShowEpisode(
+                    channelId: 1,
+                    channelName: 'BBC One',
+                    title: 'Good Episode',
+                    startTime: futureTime,
+                    endTime: futureTime.add(const Duration(hours: 1)),
+                  ),
+                ],
+              ),
+              EpgShow(
+                normalizedTitle: 'bad',
+                displayTitle: 'Bad Show',
+                channelCount: 1,
+                channels: const [],
+                episodeCount: 0,
+                recentEpisodes: [
+                  EpgShowEpisode(
+                    channelId: 2,
+                    channelName: 'BBC Two',
+                    title: '',
+                    startTime: futureTime,
+                    endTime: futureTime.add(const Duration(hours: 1)),
+                  ),
+                ],
+              ),
+            ]),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'sh');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        await tester.tap(upcomingTab);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Good Show'), findsOneWidget);
+        expect(find.text('Bad Show'), findsNothing);
+      });
+
+      testWidgets(
+        'groups repeated airings of the same show+channel into one row',
+        (tester) async {
+          await tester.pumpWidget(
+            _TestApp(
+              channels: channels,
+              categories: categories,
+              onSearchShows: staticResults([
+                EpgShow(
+                  normalizedTitle: 'grace-and-frankie',
+                  displayTitle: 'Grace and Frankie',
+                  channelCount: 1,
+                  channels: const [],
+                  episodeCount: 0,
+                  recentEpisodes: List.generate(
+                    5,
+                    (i) => EpgShowEpisode(
+                      channelId: 1,
+                      channelName: 'BBC One',
+                      title: 'Episode $i',
+                      startTime: futureTime.add(Duration(hours: i)),
+                      endTime: futureTime.add(Duration(hours: i + 1)),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await enterQuery(tester, 'grace');
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+
+          await tester.tap(upcomingTab);
+          await tester.pumpAndSettle();
+
+          // One row, not five - and a "+N more" affordance for the airings
+          // beyond the first 3 shown.
+          expect(find.text('Grace and Frankie'), findsOneWidget);
+          expect(find.textContaining('more'), findsOneWidget);
+        },
+      );
+
+      testWidgets('same show on two channels renders two rows', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: staticResults([
+              EpgShow(
+                normalizedTitle: 'show',
+                displayTitle: 'Show',
+                channelCount: 2,
+                channels: const [],
+                episodeCount: 0,
+                recentEpisodes: [
+                  EpgShowEpisode(
+                    channelId: 1,
+                    channelName: 'BBC One',
+                    title: 'Episode A',
+                    startTime: futureTime,
+                    endTime: futureTime.add(const Duration(hours: 1)),
+                  ),
+                  EpgShowEpisode(
+                    channelId: 2,
+                    channelName: 'CNN',
+                    title: 'Episode B',
+                    startTime: futureTime.add(const Duration(hours: 1)),
+                    endTime: futureTime.add(const Duration(hours: 2)),
+                  ),
+                ],
+              ),
+            ]),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'sh');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        await tester.tap(upcomingTab);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Show'), findsNWidgets(2));
+      });
+
+      testWidgets('groups order by earliest airing across shows', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: staticResults([
+              EpgShow(
+                normalizedTitle: 'later',
+                displayTitle: 'Later Show',
+                channelCount: 1,
+                channels: const [],
+                episodeCount: 0,
+                recentEpisodes: [
+                  EpgShowEpisode(
+                    channelId: 1,
+                    channelName: 'Channel',
+                    title: 'Episode',
+                    startTime: futureTime.add(const Duration(hours: 5)),
+                    endTime: futureTime.add(const Duration(hours: 6)),
+                  ),
+                ],
+              ),
+              EpgShow(
+                normalizedTitle: 'sooner',
+                displayTitle: 'Sooner Show',
+                channelCount: 1,
+                channels: const [],
+                episodeCount: 0,
+                recentEpisodes: [
+                  EpgShowEpisode(
+                    channelId: 2,
+                    channelName: 'Channel',
+                    title: 'Episode',
+                    startTime: futureTime.add(const Duration(hours: 1)),
+                    endTime: futureTime.add(const Duration(hours: 2)),
+                  ),
+                ],
+              ),
+            ]),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'show');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        await tester.tap(upcomingTab);
+        await tester.pumpAndSettle();
+
+        final soonerPos = tester.getCenter(find.text('Sooner Show'));
+        final laterPos = tester.getCenter(find.text('Later Show'));
+        expect(soonerPos.dy, lessThan(laterPos.dy));
+      });
+
+      testWidgets(
+        'renders a day-relative airing time on the row',
+        (tester) async {
+          final now = DateTime.now();
+          final laterToday = DateTime(now.year, now.month, now.day, 23).toUtc();
+          await tester.pumpWidget(
+            _TestApp(
+              channels: channels,
+              categories: categories,
+              onSearchShows: staticResults([
+                EpgShow(
+                  normalizedTitle: 'local-time',
+                  displayTitle: 'Local Time Check',
+                  channelCount: 1,
+                  channels: const [
+                    EpgShowChannel(channelId: 1, channelName: 'BBC One'),
+                  ],
+                  episodeCount: 0,
+                  recentEpisodes: [
+                    EpgShowEpisode(
+                      channelId: 1,
+                      channelName: 'BBC One',
+                      title: 'Episode Slot',
+                      startTime: laterToday.isAfter(DateTime.now().toUtc())
+                          ? laterToday
+                          : laterToday.add(const Duration(days: 1)),
+                      endTime: laterToday.add(const Duration(hours: 1)),
+                    ),
+                  ],
+                ),
+              ]),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await enterQuery(tester, 'loc');
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+
+          expect(find.text('Local Time Check'), findsOneWidget);
+          expect(find.text('BBC One'), findsOneWidget);
+        },
+      );
+
+      testWidgets('tapping a row invokes onShowSelect with the parent show', (
+        tester,
+      ) async {
         EpgShow? tapped;
+        // "Nightly Report", not "News" - the fixture categories in this
+        // file already include a "News" category tab, which stays visible
+        // in the nav strip above the results and would collide.
         final parent = EpgShow(
-          normalizedTitle: 'news',
-          displayTitle: 'News',
+          normalizedTitle: 'nightly-report',
+          displayTitle: 'Nightly Report',
           channelCount: 1,
-          channels: [],
+          channels: const [],
           episodeCount: 0,
           recentEpisodes: [
             EpgShowEpisode(
               channelId: 1,
               channelName: 'BBC One',
-              title: 'News Episode',
+              title: 'Nightly Report Episode',
               startTime: futureTime,
               endTime: futureTime.add(const Duration(hours: 1)),
             ),
@@ -1307,130 +1705,129 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await enterQuery(tester, 'ne');
+        await enterQuery(tester, 'ni');
         await tester.pump(const Duration(milliseconds: 400));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('News Episode'));
+        await tester.tap(find.text('Nightly Report'));
         await tester.pumpAndSettle();
 
-        // The tap routes the *parent* EpgShow, not the episode — same
-        // shape AppShell._openShow expects.
         expect(tapped, isNotNull);
-        expect(tapped!.normalizedTitle, 'news');
+        expect(tapped!.normalizedTitle, 'nightly-report');
+      });
+
+      testWidgets('null onShowSelect is a no-op, not a throw', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: staticResults([
+              EpgShow(
+                normalizedTitle: 'nightly-report',
+                displayTitle: 'Nightly Report',
+                channelCount: 1,
+                channels: const [],
+                episodeCount: 0,
+                recentEpisodes: [
+                  EpgShowEpisode(
+                    channelId: 1,
+                    channelName: 'Channel',
+                    title: 'Nightly Report Episode',
+                    startTime: futureTime,
+                    endTime: futureTime.add(const Duration(hours: 1)),
+                  ),
+                ],
+              ),
+            ]),
+            // No onShowSelect callback.
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'ni');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Nightly Report'));
+        await tester.pumpAndSettle();
+      });
+    });
+
+    testWidgets(
+      'starting a new qualifying search resets the tab back to All',
+      (tester) async {
+        // "Nightly Report" is upcoming-only; "Weather" is on-now-only (the
+        // "News" category tab in the fixture categories would otherwise
+        // collide with a show named "News"). If the tab is still on
+        // Upcoming after the reset, Weather stays hidden; if the reset
+        // actually landed back on All, both are visible.
+        final results = staticResults([
+          EpgShow(
+            normalizedTitle: 'nightly-report',
+            displayTitle: 'Nightly Report',
+            channelCount: 1,
+            channels: const [],
+            episodeCount: 0,
+            recentEpisodes: [
+              EpgShowEpisode(
+                channelId: 1,
+                channelName: 'Channel',
+                title: 'Nightly Report Episode',
+                startTime: futureTime,
+                endTime: futureTime.add(const Duration(hours: 1)),
+              ),
+            ],
+          ),
+          EpgShow(
+            normalizedTitle: 'weather',
+            displayTitle: 'Weather',
+            channelCount: 1,
+            channels: const [],
+            episodeCount: 0,
+            recentEpisodes: const [],
+            airingNow: [
+              EpgShowEpisode(
+                channelId: 2,
+                channelName: 'Channel',
+                title: 'Weather Episode',
+                startTime: futureTime.subtract(const Duration(minutes: 10)),
+                endTime: futureTime.add(const Duration(minutes: 50)),
+              ),
+            ],
+          ),
+        ]);
+        await tester.pumpWidget(
+          _TestApp(
+            channels: channels,
+            categories: categories,
+            onSearchShows: results,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await enterQuery(tester, 'ni');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        await tester.tap(upcomingTab);
+        await tester.pumpAndSettle();
+        expect(find.text('Nightly Report'), findsOneWidget);
+        expect(find.text('Weather'), findsNothing);
+
+        // Drop below the 2-char threshold, then start a fresh search.
+        await enterQuery(tester, '');
+        await tester.pumpAndSettle();
+        await enterQuery(tester, 'ni');
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        // Back on the All tab - both rows render again.
+        expect(find.text('Nightly Report'), findsOneWidget);
+        expect(find.text('Weather'), findsOneWidget);
       },
     );
-
-    testWidgets('tapping VOD item invokes onVodSelect', (tester) async {
-      VodItem? tapped;
-      await tester.pumpWidget(
-        _TestApp(
-          channels: channels,
-          categories: categories,
-          vodItems: const [
-            VodItem(
-              id: 1,
-              name: 'The Matrix',
-              streamUrl: 'http://example.com/m.m3u8',
-              containerExtension: 'mp4',
-            ),
-          ],
-          onVodSelect: (item) => tapped = item,
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await enterQuery(tester, 'mat');
-      await tester.pump();
-      expect(find.text('The Matrix'), findsOneWidget);
-
-      await tester.tap(find.text('The Matrix'));
-      await tester.pumpAndSettle();
-
-      expect(tapped, isNotNull);
-      expect(tapped!.id, 1);
-    });
-
-    testWidgets('tapping Series item invokes onSeriesSelect', (tester) async {
-      Series? tapped;
-      await tester.pumpWidget(
-        _TestApp(
-          channels: channels,
-          categories: categories,
-          seriesList: const [Series(id: 10, name: 'Breaking Bad')],
-          onSeriesSelect: (series) => tapped = series,
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await enterQuery(tester, 'bre');
-      await tester.pump();
-      expect(find.text('Breaking Bad'), findsOneWidget);
-
-      await tester.tap(find.text('Breaking Bad'));
-      await tester.pumpAndSettle();
-
-      expect(tapped, isNotNull);
-      expect(tapped!.id, 10);
-    });
-
-    testWidgets('null tap callbacks are no-ops', (tester) async {
-      // The M&S rail sits below the 600px viewport fold once the search
-      // field, category bar, and Upcoming rail are stacked above it. Bump
-      // the viewport so both target widgets are in the render tree.
-      tester.view.physicalSize = const Size(4000, 1200);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-
-      final parent = EpgShow(
-        normalizedTitle: 'news',
-        displayTitle: 'News',
-        channelCount: 1,
-        channels: [],
-        episodeCount: 0,
-        recentEpisodes: [
-          EpgShowEpisode(
-            channelId: 1,
-            channelName: 'Channel',
-            title: 'News Episode',
-            startTime: futureTime,
-            endTime: futureTime.add(const Duration(hours: 1)),
-          ),
-        ],
-      );
-      await tester.pumpWidget(
-        _TestApp(
-          channels: channels,
-          categories: categories,
-          onSearchShows: (_) async => [parent],
-          vodItems: const [
-            VodItem(
-              id: 1,
-              name: 'Money Movie',
-              streamUrl: 'http://example.com/m.m3u8',
-              containerExtension: 'mp4',
-            ),
-          ],
-          // No onShowSelect, onVodSelect, onSeriesSelect callbacks.
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await enterQuery(tester, 'ne');
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pumpAndSettle();
-
-      // Tapping each rail must not throw — null callbacks are no-ops so
-      // unwired LiveTvScreen instances still render and respond.
-      await tester.tap(find.text('News Episode'));
-      await tester.pumpAndSettle();
-      // Target the VOD title ('Money Movie'), not the card's subtitle
-      // which is rendered from the `homeMovie` ARB key ("Movie") and
-      // would match the wrong Text widget.
-      await tester.tap(find.text('Money Movie'));
-      await tester.pumpAndSettle();
-    });
   });
 }
 
@@ -1501,10 +1898,6 @@ class _TestApp extends StatelessWidget {
     this.useSidebarLayout = true,
     this.onSearchShows,
     this.onShowSelect,
-    this.onVodSelect,
-    this.onSeriesSelect,
-    this.vodItems = const [],
-    this.seriesList = const [],
   });
 
   final List<Channel> channels;
@@ -1521,10 +1914,6 @@ class _TestApp extends StatelessWidget {
   final bool useSidebarLayout;
   final Future<List<EpgShow>> Function(String query)? onSearchShows;
   final void Function(EpgShow)? onShowSelect;
-  final void Function(VodItem)? onVodSelect;
-  final void Function(Series)? onSeriesSelect;
-  final List<VodItem> vodItems;
-  final List<Series> seriesList;
 
   @override
   Widget build(BuildContext context) {
@@ -1536,8 +1925,6 @@ class _TestApp extends StatelessWidget {
         isLoadingContentProvider.overrideWith((_) => isLoading),
         liveChannelsProvider.overrideWith((_) => channels),
         liveCategoriesProvider.overrideWith((_) => categories),
-        vodItemsProvider.overrideWith((_) => vodItems),
-        seriesListProvider.overrideWith((_) => seriesList),
         epgServiceProvider.overrideWith((_) => epg),
         dvrRecordingsProvider.overrideWith((_) => dvrRecordings),
         recordingChannelIdsProvider.overrideWith(
@@ -1560,8 +1947,6 @@ class _TestApp extends StatelessWidget {
           onScheduleProgram: onScheduleProgram,
           onSearchShows: onSearchShows,
           onShowSelect: onShowSelect,
-          onVodSelect: onVodSelect,
-          onSeriesSelect: onSeriesSelect,
         ),
       ),
     );
