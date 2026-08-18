@@ -160,6 +160,7 @@ class VodInfo {
     this.backdropUrl,
     this.containerExtension,
     this.tmdbId,
+    this.edlUrl,
   });
 
   final int id;
@@ -176,6 +177,7 @@ class VodInfo {
   final String? backdropUrl;
   final String? containerExtension;
   final int? tmdbId;
+  final String? edlUrl;
 
   factory VodInfo.fromXtream(Map<String, Object?> json) {
     final info = _asMap(json['info']);
@@ -222,6 +224,7 @@ class VodInfo {
         pick(['container_extension', 'containerExtension']),
       ),
       tmdbId: _asIntOrNull(pick(['tmdb_id', 'tmdb'])),
+      edlUrl: _asNullableString(pick(['edl_url'])),
     );
   }
 }
@@ -293,6 +296,7 @@ class Episode {
     this.duration,
     this.releaseDate,
     this.streamUrl,
+    this.edlUrl,
   });
 
   final String id;
@@ -306,6 +310,7 @@ class Episode {
   final String? duration;
   final String? releaseDate;
   final String? streamUrl;
+  final String? edlUrl;
 
   factory Episode.fromXtream(Map<String, Object?> json, {String? streamUrl}) {
     final info =
@@ -337,6 +342,7 @@ class Episode {
         pick(['release_date', 'releasedate', 'air_date']),
       ),
       streamUrl: streamUrl,
+      edlUrl: _asNullableString(pick(['edl_url'])),
     );
   }
 }

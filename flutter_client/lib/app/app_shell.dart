@@ -1320,6 +1320,7 @@ class AppShellState extends ConsumerState<AppShell>
                   epgService: _appState.epgService,
                   xtreamService: _appState.xtreamService,
                   comskipSettings: _appState.comskipSettings,
+                  hasDvrFeature: _appState.hasDvrFeature,
                   viewerId: viewerId,
                   onNextChannel: args.type == 'live' ? _openNextChannel : null,
                   onPreviousChannel: args.type == 'live'
