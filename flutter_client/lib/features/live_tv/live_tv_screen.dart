@@ -204,6 +204,15 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
   final FocusScopeNode _dayControlsFocusNode = FocusScopeNode(
     skipTraversal: true,
   );
+
+  // Lets LiveTvScreen reach TimelineEpgViewState's row-aware
+  // focusChannelColumn/focusProgramGrid directly (see _handleBackFromEpg,
+  // _handleChannelColumnEdge, _handleDayControlsEdge, and the nav strip's
+  // onGridEdgeEnter below) instead of the plain FocusScopeNode.requestFocus()
+  // calls above, which only ever restore whatever Flutter's own focus-history
+  // last landed on - not necessarily the row the user was actually just on.
+  final GlobalKey<TimelineEpgViewState> _timelineEpgViewKey =
+      GlobalKey<TimelineEpgViewState>();
   Timer? _showSearchDebounce;
   int _showSearchGeneration = 0;
   List<EpgShow> _showResults = const <EpgShow>[];
@@ -229,7 +238,12 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
   bool _handleBackFromEpg() {
     if (_viewMode != _ViewMode.epgGrid) return false;
     if (!_gridFocusNode.hasFocus) return false;
-    _channelColumnFocusNode.requestFocus();
+    final state = _timelineEpgViewKey.currentState;
+    if (state != null) {
+      state.focusChannelColumn();
+    } else {
+      _channelColumnFocusNode.requestFocus();
+    }
     return true;
   }
 
@@ -771,6 +785,14 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
       gridFocusScopeNode: showSearchActive
           ? _searchResultsFocusNode
           : _gridFocusNode,
+      // In the EPG view, always land on the Channels column row that last
+      // held focus rather than whatever _gridFocusNode's own focus-history
+      // last remembered - once any program block has ever been focused,
+      // that plain FocusScopeNode.requestFocus() would otherwise skip the
+      // Channels column entirely and jump straight back into the grid.
+      onGridEdgeEnter: (!showSearchActive && _viewMode == _ViewMode.epgGrid)
+          ? _focusEpgChannelColumn
+          : null,
       memoryKeyPrefix: 'live-tv',
       onEntryFocusScopeReady: widget.onEntryFocusScopeReady,
     );
@@ -1178,7 +1200,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
   void _handleChannelColumnEdge(TraversalDirection direction) {
     switch (direction) {
       case TraversalDirection.right:
-        _focusEpgGridFallback();
+        _focusEpgGrid();
       case TraversalDirection.up:
         _dayControlsFocusNode.requestFocus();
       case TraversalDirection.left:
@@ -1195,9 +1217,33 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
       case TraversalDirection.left:
         _activateSidebarNav();
       case TraversalDirection.right:
-        _focusEpgGridFallback();
+        _focusEpgGrid();
       case TraversalDirection.up:
         break;
+    }
+  }
+
+  // Lands on the currently-airing program in whichever channel row last held
+  // focus (see TimelineEpgViewState._focusedChannelIndex), falling back to
+  // the region-memory-based _focusEpgGridFallback only when that row has no
+  // "now" block to target (e.g. no EPG data yet).
+  void _focusEpgGrid() {
+    final state = _timelineEpgViewKey.currentState;
+    if (state != null) {
+      state.focusProgramGrid();
+    } else {
+      _focusEpgGridFallback();
+    }
+  }
+
+  // Lands on the Channels column row that last held focus, falling back to
+  // Flutter's own remembered focus in _channelColumnFocusNode.
+  void _focusEpgChannelColumn() {
+    final state = _timelineEpgViewKey.currentState;
+    if (state != null) {
+      state.focusChannelColumn();
+    } else {
+      _channelColumnFocusNode.requestFocus();
     }
   }
 
@@ -1287,6 +1333,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
       horizontalEdge: DpadEdgeBehavior.stop,
       onEdge: _handleGridLeftEdge,
       child: TimelineEpgView(
+        key: _timelineEpgViewKey,
         channels: channels,
         epgService: epgService,
         useSidebarLayout: widget.useSidebarLayout,
@@ -1302,6 +1349,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
         onChannelColumnEdge: _handleChannelColumnEdge,
         dayControlsFocusNode: _dayControlsFocusNode,
         onDayControlsEdge: _handleDayControlsEdge,
+        onFallbackFocusGrid: _focusEpgGridFallback,
         onChannelSelect: (channel) {
           widget.onChannelContextChanged?.call(channels);
           widget.onChannelSelect(channel);

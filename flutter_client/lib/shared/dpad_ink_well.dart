@@ -29,6 +29,8 @@ class DpadInkWell extends StatefulWidget {
     this.borderRadius,
     this.scrollPadding,
     this.clipBehavior = Clip.none,
+    this.focusNode,
+    this.onFocusChange,
   });
 
   final Widget child;
@@ -43,6 +45,15 @@ class DpadInkWell extends StatefulWidget {
   final double? scrollPadding;
   final Clip clipBehavior;
 
+  /// Supplies an external [FocusNode] instead of letting this widget manage
+  /// its own, so a caller can `requestFocus()` on a specific item directly
+  /// (e.g. targeting a particular row in a list) rather than only through
+  /// spatial/memory-based traversal.
+  final FocusNode? focusNode;
+
+  /// Called with `true`/`false` as this item gains/loses focus.
+  final ValueChanged<bool>? onFocusChange;
+
   /// Count of [HardwareKeyboard] global handlers this class currently has
   /// registered and not yet released. Exposed for leak-detection tests.
   @visibleForTesting
@@ -53,7 +64,9 @@ class DpadInkWell extends StatefulWidget {
 }
 
 class _DpadInkWellState extends State<DpadInkWell> {
-  final FocusNode _focusNode = FocusNode();
+  FocusNode? _ownedFocusNode;
+  FocusNode get _focusNode =>
+      widget.focusNode ?? (_ownedFocusNode ??= FocusNode());
   bool _hovered = false;
 
   // The long-select menu opens at the threshold mid-hold. A freshly-mounted
@@ -86,7 +99,7 @@ class _DpadInkWellState extends State<DpadInkWell> {
       _handlerRegistered = false;
       DpadInkWell.debugActiveGlobalHandlers--;
     }
-    _focusNode.dispose();
+    _ownedFocusNode?.dispose();
     super.dispose();
   }
 
@@ -185,6 +198,7 @@ class _DpadInkWellState extends State<DpadInkWell> {
         focusNode: _focusNode,
         onSelect: widget.onTap == null ? null : _onDpadSelect,
         onLongSelect: widget.onLongTap == null ? null : _onDpadLongSelect,
+        onFocusChange: widget.onFocusChange,
         enabled: widget.enabled,
         // InkWell handles touch taps; DpadFocusable.onSelect handles D-pad key
         // events. The default tapToSelect: true wraps the child in a

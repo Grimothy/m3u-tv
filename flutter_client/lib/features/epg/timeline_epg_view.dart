@@ -58,6 +58,7 @@ class TimelineEpgView extends StatefulWidget {
     this.epgStartView = EpgStartView.currentTime,
     this.useSidebarLayout = false,
     this.channelColumnLayout = ChannelColumnLayout.logoOnly,
+    this.onFallbackFocusGrid,
   });
 
   final List<Channel> channels;
@@ -137,11 +138,18 @@ class TimelineEpgView extends StatefulWidget {
   /// What each row of the fixed Channels column shows for a channel.
   final ChannelColumnLayout channelColumnLayout;
 
+  /// Called by [TimelineEpgViewState.focusProgramGrid] when the target
+  /// channel row's "now" program block isn't available to focus directly
+  /// (e.g. no live program data for that row yet) — falls back to whatever
+  /// the caller considers a reasonable default (typically the program
+  /// grid's own region focus-history).
+  final VoidCallback? onFallbackFocusGrid;
+
   @override
-  State<TimelineEpgView> createState() => _TimelineEpgViewState();
+  State<TimelineEpgView> createState() => TimelineEpgViewState();
 }
 
-class _TimelineEpgViewState extends State<TimelineEpgView> {
+class TimelineEpgViewState extends State<TimelineEpgView> {
   late final ScrollController _leftVCtrl;
   late final ScrollController _rightVCtrl;
   late final ScrollController _headerHCtrl;
@@ -154,6 +162,20 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
   late double _totalW;
   late double _nowOffset;
 
+  // Tracks whichever channel row last held focus, in either the Channels
+  // column or the program grid, so the two can hand focus back and forth on
+  // that same row instead of relying on Flutter's/dpad's own separate
+  // per-scope focus-history (which has no notion of "row" and drifts out of
+  // sync with whichever row the user is actually looking at - see
+  // LiveTvScreen's _handleBackFromEpg / _handleChannelColumnEdge callers of
+  // focusChannelColumn / focusProgramGrid).
+  int _focusedChannelIndex = 0;
+  late List<FocusNode> _channelFocusNodes;
+  // One per channel row, attached to that row's currently-airing program
+  // block (if any) so `focusProgramGrid` can land there directly instead of
+  // the day's first block.
+  late List<FocusNode> _nowFocusNodes;
+
   @override
   void initState() {
     super.initState();
@@ -163,9 +185,52 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
     _rightVCtrl = ScrollController();
     _headerHCtrl = ScrollController(initialScrollOffset: _nowOffset);
     _rowHCtrls = _makeRowCtrls(widget.channels.length);
+    _channelFocusNodes = _makeFocusNodes(widget.channels.length);
+    _nowFocusNodes = _makeFocusNodes(widget.channels.length);
     _leftVCtrl.addListener(_onLeftV);
     _rightVCtrl.addListener(_onRightV);
     WidgetsBinding.instance.addPostFrameCallback(_scrollToStart);
+  }
+
+  List<FocusNode> _makeFocusNodes(int count) =>
+      List.generate(count, (_) => FocusNode());
+
+  void _setFocusedChannelIndex(int index) {
+    if (_focusedChannelIndex == index) return;
+    // Not setState: this only feeds the next focusChannelColumn/
+    // focusProgramGrid call, nothing in build() reads it.
+    _focusedChannelIndex = index;
+  }
+
+  FocusNode? _attachedFocusNode(List<FocusNode> nodes, int index) {
+    if (index < 0 || index >= nodes.length) return null;
+    final node = nodes[index];
+    return node.context != null ? node : null;
+  }
+
+  /// Moves focus to the Channels column, landing on the row last associated
+  /// with [_focusedChannelIndex] (whichever row most recently held focus in
+  /// either the Channels column or the program grid) rather than wherever
+  /// Flutter's own focus-history for the column happens to point.
+  void focusChannelColumn() {
+    final node = _attachedFocusNode(_channelFocusNodes, _focusedChannelIndex);
+    if (node != null) {
+      node.requestFocus();
+    } else {
+      widget.channelColumnFocusNode.requestFocus();
+    }
+  }
+
+  /// Moves focus into the program grid, landing on the currently-airing
+  /// program for the row last associated with [_focusedChannelIndex] rather
+  /// than the day's first program block or a stale remembered cell.
+  void focusProgramGrid() {
+    final node = _attachedFocusNode(_nowFocusNodes, _focusedChannelIndex);
+    if (node != null) {
+      node.requestFocus();
+    } else {
+      widget.onFallbackFocusGrid?.call();
+    }
   }
 
   void _initWindow() {
@@ -284,15 +349,26 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
   }
 
   @override
-  void didUpdateWidget(TimelineEpgView old) {
-    super.didUpdateWidget(old);
-    if (widget.channels.length != old.channels.length) {
+  void didUpdateWidget(TimelineEpgView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.channels.length != oldWidget.channels.length) {
       for (final c in _rowHCtrls) {
         c.dispose();
       }
       _rowHCtrls = _makeRowCtrls(widget.channels.length);
+      for (final n in _channelFocusNodes) {
+        n.dispose();
+      }
+      _channelFocusNodes = _makeFocusNodes(widget.channels.length);
+      for (final n in _nowFocusNodes) {
+        n.dispose();
+      }
+      _nowFocusNodes = _makeFocusNodes(widget.channels.length);
+      if (_focusedChannelIndex >= widget.channels.length) {
+        _focusedChannelIndex = math.max(0, widget.channels.length - 1);
+      }
     }
-    if (widget.epgStartView != old.epgStartView) {
+    if (widget.epgStartView != oldWidget.epgStartView) {
       _initWindow();
       WidgetsBinding.instance.addPostFrameCallback(_scrollToStart);
     }
@@ -312,6 +388,12 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
     _leftVCtrl.dispose();
     _rightVCtrl.dispose();
     _headerHCtrl.dispose();
+    for (final n in _channelFocusNodes) {
+      n.dispose();
+    }
+    for (final n in _nowFocusNodes) {
+      n.dispose();
+    }
     for (final c in _rowHCtrls) {
       c.dispose();
     }
@@ -420,6 +502,12 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
                               // header or a program block), so it's the
                               // only autofocus target in this widget.
                               autofocus: i == 0,
+                              focusNode: i < _channelFocusNodes.length
+                                  ? _channelFocusNodes[i]
+                                  : null,
+                              onFocusChange: (focused) {
+                                if (focused) _setFocusedChannelIndex(i);
+                              },
                               onTap: () =>
                                   widget.onChannelSelect(widget.channels[i]),
                               onLongTap: widget.onChannelColumnLongPress == null
@@ -536,6 +624,11 @@ class _TimelineEpgViewState extends State<TimelineEpgView> {
                                     rowHeight: _kRowH,
                                     catchupRetentionDays: catchupRetentionDays,
                                     now: now,
+                                    nowFocusNode: i < _nowFocusNodes.length
+                                        ? _nowFocusNodes[i]
+                                        : null,
+                                    onAnyBlockFocus: () =>
+                                        _setFocusedChannelIndex(i),
                                     // Curry the row's channel in: _ProgramsRow
                                     // only sees programmes, but resolving a
                                     // recording needs the channel's database
@@ -769,6 +862,8 @@ class _ChannelCell extends StatelessWidget {
     this.onLongTap,
     this.autofocus = false,
     this.columnLayout = ChannelColumnLayout.logoOnly,
+    this.focusNode,
+    this.onFocusChange,
   });
   final Channel channel;
   final bool isRecording;
@@ -776,6 +871,8 @@ class _ChannelCell extends StatelessWidget {
   final VoidCallback? onLongTap;
   final bool autofocus;
   final ChannelColumnLayout columnLayout;
+  final FocusNode? focusNode;
+  final ValueChanged<bool>? onFocusChange;
 
   Widget _logo({required double size}) {
     if (channel.logoUrl != null && channel.logoUrl!.isNotEmpty) {
@@ -822,6 +919,8 @@ class _ChannelCell extends StatelessWidget {
       onTap: onTap,
       onLongTap: onLongTap,
       autofocus: autofocus,
+      focusNode: focusNode,
+      onFocusChange: onFocusChange,
       borderRadius: BorderRadius.zero,
       child: Container(
         height: _kRowH,
@@ -1000,6 +1099,8 @@ class _ProgramsRow extends StatelessWidget {
     required this.now,
     this.onLongPress,
     this.recordingStateFor = _noRecordingState,
+    this.nowFocusNode,
+    this.onAnyBlockFocus,
   });
 
   final List<EpgProgram> programs;
@@ -1014,6 +1115,15 @@ class _ProgramsRow extends StatelessWidget {
 
   /// Opens the favorite/record context menu for the pressed block.
   final void Function(EpgProgram program)? onLongPress;
+
+  /// Attached to this row's currently-airing block (if any), so the caller
+  /// can `requestFocus()` directly onto "now" instead of the day's first
+  /// block.
+  final FocusNode? nowFocusNode;
+
+  /// Called whenever any block in this row gains focus, so the caller can
+  /// track which channel row currently holds grid focus.
+  final VoidCallback? onAnyBlockFocus;
 
   /// Resolves the per-programme recording indicator for a block. Defaults
   /// to [EpgRecordingState.none], which renders no badge and is visually
@@ -1073,6 +1183,12 @@ class _ProgramsRow extends StatelessWidget {
             ),
             onTap: () => onTap(p),
             onLongTap: onLongPress == null ? null : () => onLongPress!(p),
+            focusNode: isCurrent ? nowFocusNode : null,
+            onFocusChange: onAnyBlockFocus == null
+                ? null
+                : (focused) {
+                    if (focused) onAnyBlockFocus!();
+                  },
             borderRadius: BorderRadius.circular(6),
             child: Container(
               decoration: BoxDecoration(

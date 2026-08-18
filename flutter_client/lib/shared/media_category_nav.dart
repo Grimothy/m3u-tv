@@ -41,6 +41,7 @@ class MediaCategoryNav extends StatefulWidget {
     this.trailing,
     this.onSidebarActivate,
     this.gridFocusScopeNode,
+    this.onGridEdgeEnter,
     this.memoryKeyPrefix = 'media-category-nav',
     this.searchAutofocus = false,
     this.onEntryFocusScopeReady,
@@ -75,8 +76,17 @@ class MediaCategoryNav extends StatefulWidget {
   final VoidCallback? onSidebarActivate;
 
   /// TV/desktop only: the caller's content-grid region, so the strip's
-  /// right edge can hand focus back to it.
+  /// right edge can hand focus back to it. Ignored when [onGridEdgeEnter] is
+  /// supplied.
   final FocusScopeNode? gridFocusScopeNode;
+
+  /// TV/desktop only: when supplied, called instead of
+  /// `gridFocusScopeNode?.requestFocus()` on the strip's right edge. Lets a
+  /// caller land focus somewhere more specific than whatever Flutter's own
+  /// focus-history last remembered inside that scope (e.g. Live TV's EPG
+  /// grid, which should always land on the Channels column rather than a
+  /// stale program-grid cell that has since claimed the scope's memory).
+  final VoidCallback? onGridEdgeEnter;
 
   final String memoryKeyPrefix;
 
@@ -117,7 +127,11 @@ class MediaCategoryNavState extends State<MediaCategoryNav> {
     if (direction == TraversalDirection.left) {
       widget.onSidebarActivate?.call();
     } else if (direction == TraversalDirection.right) {
-      widget.gridFocusScopeNode?.requestFocus();
+      if (widget.onGridEdgeEnter != null) {
+        widget.onGridEdgeEnter!();
+      } else {
+        widget.gridFocusScopeNode?.requestFocus();
+      }
     }
   }
 
