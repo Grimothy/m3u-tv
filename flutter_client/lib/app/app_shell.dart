@@ -777,6 +777,16 @@ class AppShellState extends ConsumerState<AppShell>
     );
   }
 
+  /// Schedules a batch of DVR airings for one Shows-search selection.
+  /// Per-item failures land inside the returned list (the screen turns that
+  /// into a single summary SnackBar) — no per-item SnackBars here, mirroring
+  /// the single-item `_scheduleDvrAiring`'s "screen owns feedback" rule.
+  Future<List<DvrAiringScheduleResult>> _scheduleDvrAirings(
+    List<EpgShowEpisode> episodes,
+  ) {
+    return _appState.scheduleDvrAirings(episodes);
+  }
+
   /// Calls the foundation-agent-owned `XtreamService.createDvrSeriesRule`
   /// and refreshes the cached series rules list so the DVR screen's new
   /// "Series Rules" section reflects the addition immediately.
@@ -1259,6 +1269,7 @@ class AppShellState extends ConsumerState<AppShell>
       onRecordSeries: _createDvrSeriesRule,
       onDeleteSeriesRule: _deleteDvrSeriesRule,
       onScheduleEpisode: _scheduleDvrAiring,
+      onScheduleEpisodes: _scheduleDvrAirings,
       buildTabScreen: _buildTabScreen,
       child: FocusScope(
         node: _contentFocusNode,

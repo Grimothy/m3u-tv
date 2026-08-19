@@ -49,6 +49,7 @@ void main() {
             // Override dvrSeriesRulesProvider directly so we don't need a
             // full AppStateController mock.
             dvrSeriesRulesProvider.overrideWith((_) => [matchingRule]),
+            dvrRecordingsProvider.overrideWith((_) => const []),
           ],
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -118,6 +119,7 @@ void main() {
         ProviderScope(
           overrides: [
             dvrSeriesRulesProvider.overrideWith((_) => const []),
+            dvrRecordingsProvider.overrideWith((_) => const []),
           ],
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,

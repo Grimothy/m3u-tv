@@ -1073,6 +1073,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get showSeriesRuleActive => '剧集规则已启用';
 
   @override
+  String get showScheduled => '已计划';
+
+  @override
+  String showBatchRecord(int count) {
+    return '录制 ($count)';
+  }
+
+  @override
+  String showBatchScheduleSummary(int scheduled, int failed) {
+    String _temp0 = intl.Intl.pluralLogic(
+      failed,
+      locale: localeName,
+      other: '失败 $failed 个。',
+      one: '失败 1 个。',
+      zero: '全部成功。',
+    );
+    return '已安排 $scheduled 个录制。$_temp0';
+  }
+
+  @override
+  String showBatchScheduleFailures(String titles) {
+    return '失败: $titles';
+  }
+
+  @override
   String get showDetailTitle => '节目详情';
 
   @override

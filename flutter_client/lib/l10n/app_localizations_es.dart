@@ -1108,6 +1108,37 @@ class AppLocalizationsEs extends AppLocalizations {
   String get showSeriesRuleActive => 'Regla de serie activa';
 
   @override
+  String get showScheduled => 'Programada';
+
+  @override
+  String showBatchRecord(int count) {
+    return 'Grabar ($count)';
+  }
+
+  @override
+  String showBatchScheduleSummary(int scheduled, int failed) {
+    String _temp0 = intl.Intl.pluralLogic(
+      scheduled,
+      locale: localeName,
+      other: 'Se programaron $scheduled episodios',
+      one: 'Se programó 1 episodio',
+    );
+    String _temp1 = intl.Intl.pluralLogic(
+      failed,
+      locale: localeName,
+      other: 'Fallaron $failed.',
+      one: 'Falló 1.',
+      zero: 'Todos exitosos.',
+    );
+    return '$_temp0. $_temp1';
+  }
+
+  @override
+  String showBatchScheduleFailures(String titles) {
+    return 'Fallaron: $titles';
+  }
+
+  @override
   String get showDetailTitle => 'Detalles del show';
 
   @override

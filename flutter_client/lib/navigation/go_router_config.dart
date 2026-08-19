@@ -308,6 +308,7 @@ GoRouter createGoRouter({
                           onRecordSeries: actions.onRecordSeries,
                           onDeleteSeriesRule: actions.onDeleteSeriesRule,
                           onScheduleEpisode: actions.onScheduleEpisode,
+                          onScheduleEpisodes: actions.onScheduleEpisodes,
                         ),
                       );
                     },

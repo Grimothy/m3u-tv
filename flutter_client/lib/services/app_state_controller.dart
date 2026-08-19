@@ -44,6 +44,24 @@ typedef MediaRequestOwner = ({
   UserCredentials? credentials,
 });
 
+/// Per-episode outcome from [AppStateController.scheduleDvrAirings]. One
+/// entry per input episode, in input order. Per-item failures (e.g.
+/// `XtreamDvrScheduleException` for the 422 concurrent recording limit case)
+/// land here instead of aborting the rest of the batch.
+class DvrAiringScheduleResult {
+  const DvrAiringScheduleResult({
+    required this.episode,
+    required this.success,
+    this.errorMessage,
+  });
+
+  final EpgShowEpisode episode;
+  final bool success;
+
+  /// Server-side error message when [success] is false. Null on success.
+  final String? errorMessage;
+}
+
 class AppStateController extends ChangeNotifier {
   factory AppStateController({
     AuthNotifier? authNotifier,
@@ -1895,6 +1913,78 @@ class AppStateController extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  /// Schedules a batch of one-shot DVR recordings and refreshes the local
+  /// list once, after the whole loop completes. The single-item
+  /// [scheduleDvrAiring] does this per call — applying it per item in a
+  /// batch would mean N `getDvrRecordingsFor` round-trips, N
+  /// `notifyListeners()` rebuilds, and N `refreshDvrStorage()` calls.
+  ///
+  /// Per-item failures (e.g. `XtreamDvrScheduleException` for the 422
+  /// concurrent recording limit case) are captured into each
+  /// [DvrAiringScheduleResult] rather than aborting the rest of the batch.
+  ///
+  /// Throws [StateError] when credentials are not configured — a wholesale
+  /// precondition fail, not a per-item failure. Matches [scheduleDvrAiring].
+  Future<List<DvrAiringScheduleResult>> scheduleDvrAirings(
+    List<EpgShowEpisode> episodes,
+  ) async {
+    final credentials = authNotifier.credentials;
+    if (credentials == null) {
+      throw StateError('Xtream credentials not configured');
+    }
+    final ownsWork = _captureDvrOwnership(credentials);
+    if (!ownsWork()) return const <DvrAiringScheduleResult>[];
+
+    final results = <DvrAiringScheduleResult>[];
+    for (final episode in episodes) {
+      if (!ownsWork()) return results;
+      try {
+        await xtreamService.scheduleDvrFor(
+          credentials,
+          channelId: episode.channelId,
+          title: episode.displayTitle,
+          startTime: episode.startTime,
+          endTime: episode.endTime,
+        );
+        results.add(DvrAiringScheduleResult(episode: episode, success: true));
+      } on XtreamDvrScheduleException catch (error) {
+        results.add(
+          DvrAiringScheduleResult(
+            episode: episode,
+            success: false,
+            errorMessage: error.message,
+          ),
+        );
+      } on Object catch (error, stackTrace) {
+        debugPrint('DVR: batch schedule item failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+        results.add(
+          DvrAiringScheduleResult(
+            episode: episode,
+            success: false,
+            errorMessage: error.toString(),
+          ),
+        );
+      }
+    }
+
+    if (!ownsWork()) return results;
+    try {
+      final recordings = await xtreamService.getDvrRecordingsFor(credentials);
+      if (!ownsWork()) return results;
+      _dvrRecordings = recordings;
+      _recordingChannelIds = _extractRecordingChannelIds(recordings);
+    } on Object catch (error, stackTrace) {
+      if (!ownsWork()) return results;
+      debugPrint('DVR: refresh after batch schedule failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+    if (!ownsWork()) return results;
+    notifyListeners();
+    unawaited(refreshDvrStorage());
+    return results;
   }
 
   static Set<int> _extractRecordingChannelIds(List<DvrRecording> recordings) {

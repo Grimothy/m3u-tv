@@ -2060,6 +2060,30 @@ abstract class AppLocalizations {
   /// **'Series rule active'**
   String get showSeriesRuleActive;
 
+  /// No description provided for @showScheduled.
+  ///
+  /// In en, this message translates to:
+  /// **'Scheduled'**
+  String get showScheduled;
+
+  /// No description provided for @showBatchRecord.
+  ///
+  /// In en, this message translates to:
+  /// **'Record ({count})'**
+  String showBatchRecord(int count);
+
+  /// No description provided for @showBatchScheduleSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{scheduled, plural, =1{Recorded 1 episode} other{Recorded {scheduled} episodes}}. {failed, plural, =0{All succeeded.} =1{1 failed.} other{{failed} failed.}}'**
+  String showBatchScheduleSummary(int scheduled, int failed);
+
+  /// No description provided for @showBatchScheduleFailures.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed: {titles}'**
+  String showBatchScheduleFailures(String titles);
+
   /// No description provided for @showDetailTitle.
   ///
   /// In en, this message translates to:

@@ -560,6 +560,34 @@
     }
   },
   "showSeriesRuleActive": "Series rule active",
+  "showScheduled": "Scheduled",
+  "showBatchRecord": "Record ({count})",
+  "@showBatchRecord": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "showBatchScheduleSummary": "{scheduled, plural, =1{Recorded 1 episode} other{Recorded {scheduled} episodes}}. {failed, plural, =0{All succeeded.} =1{1 failed.} other{{failed} failed.}}",
+  "@showBatchScheduleSummary": {
+    "placeholders": {
+      "scheduled": {
+        "type": "int"
+      },
+      "failed": {
+        "type": "int"
+      }
+    }
+  },
+  "showBatchScheduleFailures": "Failed: {titles}",
+  "@showBatchScheduleFailures": {
+    "placeholders": {
+      "titles": {
+        "type": "String"
+      }
+    }
+  },
   "showDetailTitle": "Show details",
   "showEpisodesCount": "{count, plural, =1{1 episode} other{{count} episodes}}",
   "@showEpisodesCount": {
