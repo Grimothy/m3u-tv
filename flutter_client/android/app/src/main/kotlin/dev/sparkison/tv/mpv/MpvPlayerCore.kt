@@ -57,6 +57,15 @@ class MpvPlayerCore(
     private var readyEmitted = false
     private var disposed = false
 
+    // mpv's EndFileReason enum carries no detail beyond the reason code
+    // (unlike the raw C API's mpv_event_end_file, which also has an error
+    // code) -- dev.jdtech.mpv's Kotlin binding doesn't expose it. Tracking
+    // the most recent log line here (mirroring the Windows/Linux C++ cores'
+    // own `last_log_message` pattern) is the only way to surface mpv's own
+    // diagnostic text (e.g. "No format found, try lowering probescore or
+    // forcing the format") instead of a generic "mpv end-file error".
+    private var lastLogText: String? = null
+
     val surfaceView: SurfaceView = SurfaceView(context)
 
     init {
@@ -115,6 +124,7 @@ class MpvPlayerCore(
                     }
                     player = created
                     collectEvents(created)
+                    collectLogMessages(created)
                     if (surfaceView.holder.surface?.isValid == true) {
                         attachSurfaceLocked(created, surfaceView.holder.surface)
                     }
@@ -169,6 +179,7 @@ class MpvPlayerCore(
             mutex.withLock {
                 val current = player ?: return@withLock
                 readyEmitted = false
+                lastLogText = null
                 try {
                     if (!userAgent.isNullOrEmpty()) {
                         current.setProperty("user-agent", userAgent)
@@ -316,13 +327,29 @@ class MpvPlayerCore(
                     }
                     is MpvEvent.EndFile -> {
                         if (event.reason == EndFileReason.Error) {
-                            emitError("mpv end-file error", "android-mpv-error")
+                            val detail = lastLogText
+                            val message = if (detail.isNullOrEmpty()) {
+                                "mpv end-file error"
+                            } else {
+                                "mpv end-file error: $detail"
+                            }
+                            emitError(message, "android-mpv-error")
                         } else {
                             emit("END_FILE", emptyMap())
                         }
                     }
                     is MpvEvent.Shutdown -> emit("SHUTDOWN", emptyMap())
                 }
+            }
+        }
+    }
+
+    // Tracks the most recent mpv log line so an EndFile.Error above can
+    // report *why* mpv gave up, not just that it did -- see [lastLogText].
+    private fun collectLogMessages(player: MpvPlayer) {
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            player.logFlow.collect { message ->
+                lastLogText = message.text.trim()
             }
         }
     }

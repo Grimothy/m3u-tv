@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:m3u_tv/playback/playback_capabilities.dart';
 import 'package:m3u_tv/playback/player_adapter.dart';
+import 'package:m3u_tv/playback/stream_probe_failure.dart';
 import 'package:m3u_tv/transcoding/transcoding.dart';
 
 abstract class PlaybackTranscodeGateway {
@@ -37,6 +38,15 @@ class PlaybackOrchestrator {
        _transcodeGateway = transcodeGateway,
        _bufferingTimeout = bufferingTimeout,
        _retryDelay = retryDelay;
+
+  /// How many extra attempts to give the same backend when a live source's
+  /// initial load fails with the "stream probe failure" shape (see
+  /// [looksLikeStreamProbeFailure]) before falling through to the next
+  /// backend/server-transcode fallback. This is specifically for upstream
+  /// IPTV provider failures (e.g. a transient 5xx) that a different local
+  /// backend can't route around anyway.
+  static const int _streamUnavailableMaxRetries = 2;
+  static const Duration _streamUnavailableRetryDelay = Duration(seconds: 3);
 
   final PlaybackPlatform _platform;
   final Map<PlaybackBackend, PlayerAdapter> _adapters;
@@ -223,17 +233,34 @@ class PlaybackOrchestrator {
         ).copyWith(status: PlaybackStatus.loading, source: source),
       );
     }
-    try {
-      await adapter.load(source);
-      if (!_isCurrentGeneration(generation)) {
-        // A newer open()/stop() call has since taken over. This adapter
-        // just started playing content nobody asked for anymore — stop it
-        // rather than leaving it running unsupervised, but only touch the
-        // shared fields if they still point at THIS call's own source. A
-        // newer call may reuse the identical adapter+backend (there's only
-        // one adapter instance per backend), so checking adapter/backend
-        // identity alone can't tell the two calls apart — checking source
-        // identity too can, since each call builds its own PlaybackSource.
+    var streamUnavailableAttempt = 0;
+    while (true) {
+      try {
+        await adapter.load(source);
+        break;
+      } on PlaybackException catch (error) {
+        final isStreamUnavailable =
+            source.isLive && looksLikeStreamProbeFailure(error.message);
+        if (isStreamUnavailable &&
+            streamUnavailableAttempt < _streamUnavailableMaxRetries) {
+          streamUnavailableAttempt++;
+          _diagnostics.add(
+            'stream-unavailable-retry:${backend.name}:$streamUnavailableAttempt',
+          );
+          _emitError(
+            PlaybackError(
+              backend: backend,
+              message: 'Stream unavailable. Retrying…',
+              code: 'stream_unavailable_retrying',
+              recoverable: true,
+            ),
+          );
+          if (!_isCurrentGeneration(generation)) return error;
+          await adapter.stop();
+          await Future<void>.delayed(_streamUnavailableRetryDelay);
+          if (!_isCurrentGeneration(generation)) return error;
+          continue;
+        }
         if (identical(_activeAdapter, adapter) &&
             _activeBackend == backend &&
             identical(_activeSource, source)) {
@@ -242,22 +269,49 @@ class PlaybackOrchestrator {
           _activeSource = null;
         }
         if (adapter is PlatformViewProvider) {
-          // Same use-after-free reasoning as the PlaybackException branch
-          // below: this adapter's platform view is about to be unmounted
-          // (the current generation's own adapter is what's now mounted),
-          // and a native platform-view-backed core can hold an unretained
-          // pointer into that view's layer until this finishes.
+          // This adapter's platform view is about to be unmounted (the
+          // caller falls through to a different backend, and PlayerScreen
+          // rebuilds without this adapter once activePlatformViewProvider no
+          // longer resolves to it). A native platform-view-backed core can
+          // hold an unretained pointer into that view's own layer, so it must
+          // finish releasing it before the widget tree unmounts the view --
+          // otherwise the fallback backend's own rebuild can deallocate the
+          // layer while the native core is still attached to it.
           await (adapter as PlatformViewProvider).releaseNativeView();
         }
-        await adapter.stop();
-        return null;
+        final reportedError = isStreamUnavailable
+            ? PlaybackException(
+                message:
+                    "This channel's stream is currently unavailable from "
+                    'your provider. Please try again in a moment.',
+                backend: error.backend,
+                code: 'stream_unavailable',
+                recoverable: error.recoverable,
+              )
+            : error;
+        _diagnostics.add(
+          'load-failed:${backend.name}:${reportedError.code}:${reportedError.message}',
+        );
+        if (reportedError.recoverable) {
+          _diagnostics.add(
+            'fallback-reason:${reportedError.code}:${reportedError.message}',
+          );
+        }
+        if (!reportedError.recoverable) {
+          _emitError(PlaybackError.fromException(reportedError));
+        }
+        return reportedError;
       }
-      _activeSource = source;
-      _diagnostics
-        ..add(successDiagnostic)
-        ..add('active-backend:${backend.name}:ready');
-      return null;
-    } on PlaybackException catch (error) {
+    }
+    if (!_isCurrentGeneration(generation)) {
+      // A newer open()/stop() call has since taken over. This adapter
+      // just started playing content nobody asked for anymore — stop it
+      // rather than leaving it running unsupervised, but only touch the
+      // shared fields if they still point at THIS call's own source. A
+      // newer call may reuse the identical adapter+backend (there's only
+      // one adapter instance per backend), so checking adapter/backend
+      // identity alone can't tell the two calls apart — checking source
+      // identity too can, since each call builds its own PlaybackSource.
       if (identical(_activeAdapter, adapter) &&
           _activeBackend == backend &&
           identical(_activeSource, source)) {
@@ -266,27 +320,21 @@ class PlaybackOrchestrator {
         _activeSource = null;
       }
       if (adapter is PlatformViewProvider) {
-        // This adapter's platform view is about to be unmounted (the
-        // caller falls through to a different backend, and PlayerScreen
-        // rebuilds without this adapter once activePlatformViewProvider no
-        // longer resolves to it). A native platform-view-backed core can
-        // hold an unretained pointer into that view's own layer, so it must
-        // finish releasing it before the widget tree unmounts the view --
-        // otherwise the fallback backend's own rebuild can deallocate the
-        // layer while the native core is still attached to it.
+        // Same use-after-free reasoning as the PlaybackException branch
+        // below: this adapter's platform view is about to be unmounted
+        // (the current generation's own adapter is what's now mounted),
+        // and a native platform-view-backed core can hold an unretained
+        // pointer into that view's layer until this finishes.
         await (adapter as PlatformViewProvider).releaseNativeView();
       }
-      _diagnostics.add(
-        'load-failed:${backend.name}:${error.code}:${error.message}',
-      );
-      if (error.recoverable) {
-        _diagnostics.add('fallback-reason:${error.code}:${error.message}');
-      }
-      if (!error.recoverable) {
-        _emitError(PlaybackError.fromException(error));
-      }
-      return error;
+      await adapter.stop();
+      return null;
     }
+    _activeSource = source;
+    _diagnostics
+      ..add(successDiagnostic)
+      ..add('active-backend:${backend.name}:ready');
+    return null;
   }
 
   Future<void> _openServerTranscode(

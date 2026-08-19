@@ -88,6 +88,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Duration _duration = Duration.zero;
   String? _errorMessage;
   String? _fallbackReason;
+  String? _retryStatusMessage;
   bool _isPlaying = false;
   double _videoAspectRatio = 16 / 9;
 
@@ -243,6 +244,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _duration = Duration.zero;
       _errorMessage = null;
       _fallbackReason = null;
+      _retryStatusMessage = null;
       _isPlaying = false;
       _videoAspectRatio = 16 / 9;
       _audioTracks = const <PlaybackTrack>[];
@@ -641,6 +643,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     setState(() {
       _status = state.status;
+      _retryStatusMessage = null;
       _currentPosition = acceptedPosition;
       if (state.duration != null && state.duration! > Duration.zero) {
         _duration = state.duration!;
@@ -724,6 +727,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _handleError(PlaybackError error) {
     if (_disposed || !mounted) return;
 
+    // A stream-unavailable retry in progress (e.g. the upstream IPTV
+    // provider returning a 5xx that never reaches the client as anything
+    // more specific than "no format found") isn't a failure yet -- the
+    // orchestrator is still retrying the same backend. Surface it as a
+    // status message in place of the generic loading spinner text instead
+    // of the full error screen.
+    if (error.code == 'stream_unavailable_retrying') {
+      setState(() {
+        _retryStatusMessage = error.message;
+      });
+      return;
+    }
+
     _loadingTimer?.cancel();
 
     if (error.recoverable) {
@@ -736,6 +752,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     }
 
+    setState(() {
+      _retryStatusMessage = null;
+    });
     _setErrorMessage(error.message);
   }
 
@@ -1041,18 +1060,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     // Loading indicator
                     if (_status == PlaybackStatus.loading &&
                         _errorMessage == null)
-                      const Center(
+                      Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            CircularProgressIndicator(color: Colors.white),
-                            SizedBox(height: 12),
+                            const CircularProgressIndicator(
+                              color: Colors.white,
+                            ),
+                            const SizedBox(height: 12),
                             Text(
-                              'Loading stream...',
-                              style: TextStyle(
+                              _retryStatusMessage ?? 'Loading stream...',
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,
                               ),
+                              textAlign: TextAlign.center,
                             ),
                           ],
                         ),
