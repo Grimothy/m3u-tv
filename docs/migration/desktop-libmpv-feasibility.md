@@ -16,6 +16,20 @@ Task 7 proves the Flutter desktop path without Electron, external mpv windows, o
 > for its historical record of why the first (software-texture-bridge)
 > prototype was reverted, which still holds -- the *current* native mpv
 > attempt is a different architecture, not a repeat of that one.
+>
+> **Status update (Linux/Windows)**: the "Result matrix" and "Windows
+> packaging" sections below describe the original SW-pixel-buffer-only spike
+> result and are now historical. Both desktop platforms have since gained a
+> real GPU render path with an automatic runtime fallback to that original SW
+> path: Windows renders via ANGLE + `FlutterDesktopGpuSurfaceTexture`
+> (`windows/runner/angle_surface_manager.{h,cc}`, `TryLoadGpuTexture` in
+> `desktop_libmpv_backend.cpp`), confirmed working on real Windows hardware
+> with a large latency improvement; Linux/Wayland renders via a GPU `wl_subsurface`
+> plane (`linux/wayland_video_surface.h/.cc`) with `wp_color_manager_v1` HDR
+> passthrough, confirmed working on real Wayland hardware (HDR passthrough
+> itself not yet verified against a real HDR display). X11 still has no GPU
+> path. See `docs/release/platform-release-matrix.md` and
+> `playback-backend-matrix.md` for current, authoritative status.
 
 ## Result matrix
 
