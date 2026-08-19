@@ -112,6 +112,7 @@ class MpvPlayerPlugin(val context: Context, flutterEngine: FlutterEngine) :
                     core.load(
                         uri = args["uri"] as? String ?: "",
                         startPositionMs = (args["startPositionMs"] as? Number)?.toInt() ?: 0,
+                        isLive = args["isLive"] as? Boolean ?: false,
                         userAgent = args["userAgent"] as? String,
                         headers = headers,
                         externalSubtitles = parseExternalSubtitles(args["externalSubtitles"]),

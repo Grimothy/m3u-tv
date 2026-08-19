@@ -1112,6 +1112,20 @@ bool TryLoadGpuTexture(LibmpvApi& api, HWND hwnd,
   api.set_option_string(gpu_handle, "sub-auto", "fuzzy");
   // See the matching comment on the SW-path handle below.
   api.set_option_string(gpu_handle, "ytdl", "no");
+  // Live sources get a larger demuxer probe budget -- ffmpeg's default
+  // analyzeduration/probesize can be too tight for a live MPEG-TS/HLS
+  // stream under network jitter (VPN hops, slow first-byte), especially at
+  // higher (UHD) bitrates: "No format found, try lowering probescore or
+  // forcing the format" is ffmpeg giving up before enough consistent data
+  // arrived, not a real format mismatch. Deliberately not forcing
+  // demuxer-lavf-format -- live sources vary (raw MPEG-TS vs real HLS
+  // depending on the server/proxy setup), so this only widens ffmpeg's own
+  // auto-probe window rather than assuming a container. VOD is unaffected
+  // (local/well-formed files don't hit this race).
+  if (BoolArg(args, "isLive", false)) {
+    api.set_option_string(gpu_handle, "demuxer-lavf-analyzeduration", "10");
+    api.set_option_string(gpu_handle, "demuxer-lavf-probesize", "10000000");
+  }
   if (!start_value.empty()) api.set_option_string(gpu_handle, "start", start_value.c_str());
   // mpv's own render-API output negotiates the swap chain's color space and
   // HDR metadata itself once the OS display is actually in HDR mode;
@@ -1345,6 +1359,11 @@ ProbeMap Load(const flutter::EncodableMap* args, HWND hwnd,
   api.set_option_string(handle, "sub-auto", "fuzzy");
   // See the matching comment on the GPU-path handle above.
   api.set_option_string(handle, "ytdl", "no");
+  // See the matching comment on the GPU-path handle above.
+  if (BoolArg(args, "isLive", false)) {
+    api.set_option_string(handle, "demuxer-lavf-analyzeduration", "10");
+    api.set_option_string(handle, "demuxer-lavf-probesize", "10000000");
+  }
   if (!start_value.empty()) api.set_option_string(handle, "start", start_value.c_str());
   if (!user_agent.empty()) api.set_option_string(handle, "user-agent", user_agent.c_str());
   if (!headers.empty()) api.set_option_string(handle, "http-header-fields", headers.c_str());

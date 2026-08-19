@@ -142,6 +142,22 @@ final class MpvPlayerCore {
       if let userAgent, !userAgent.isEmpty {
         mpv_set_option_string(handle, "user-agent", userAgent)
       }
+      // Live sources get a larger demuxer probe budget -- ffmpeg's default
+      // analyzeduration/probesize can be too tight for a live MPEG-TS/HLS
+      // stream under network jitter (VPN hops, slow first-byte), especially
+      // at higher (UHD) bitrates: "No format found, try lowering probescore
+      // or forcing the format" is ffmpeg giving up before enough consistent
+      // data arrived, not a real format mismatch. Deliberately not forcing
+      // demuxer-lavf-format -- live sources vary (raw MPEG-TS vs real HLS
+      // depending on the server/proxy setup), so this only widens ffmpeg's
+      // own auto-probe window rather than assuming a container. Always set
+      // explicitly (not just when live) -- this mpv handle persists across
+      // every load (see `attach(to:)`), so a live-set override must not leak
+      // into a subsequent VOD/Series load on the same handle; the non-live
+      // values match ffmpeg's own stock defaults, so this is a no-op for
+      // VOD, not a behavior change.
+      mpv_set_option_string(handle, "demuxer-lavf-analyzeduration", isLive ? "10" : "5")
+      mpv_set_option_string(handle, "demuxer-lavf-probesize", isLive ? "10000000" : "5000000")
       if let headers, !headers.isEmpty {
         let headerString = headers.map { "\($0.key): \($0.value)" }.joined(separator: ",")
         mpv_set_option_string(handle, "http-header-fields", headerString)

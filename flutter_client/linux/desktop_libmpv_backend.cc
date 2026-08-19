@@ -1610,6 +1610,20 @@ FlMethodResponse* Load(FlValue* args) {
   // failed: not found or not enough permissions" end-file error even for
   // plain local/network media.
   api.set_option_string(handle, "ytdl", "no");
+  // Live sources get a larger demuxer probe budget -- ffmpeg's default
+  // analyzeduration/probesize can be too tight for a live MPEG-TS/HLS
+  // stream under network jitter (VPN hops, slow first-byte), especially at
+  // higher (UHD) bitrates: "No format found, try lowering probescore or
+  // forcing the format" is ffmpeg giving up before enough consistent data
+  // arrived, not a real format mismatch. Deliberately not forcing
+  // demuxer-lavf-format -- live sources vary (raw MPEG-TS vs real HLS
+  // depending on the server/proxy setup), so this only widens ffmpeg's own
+  // auto-probe window rather than assuming a container. VOD is unaffected
+  // (local/well-formed files don't hit this race).
+  if (BoolArg(args, "isLive", false)) {
+    api.set_option_string(handle, "demuxer-lavf-analyzeduration", "10");
+    api.set_option_string(handle, "demuxer-lavf-probesize", "10000000");
+  }
   std::string user_agent = StringArg(args, "userAgent");
   if (!user_agent.empty()) api.set_option_string(handle, "user-agent", user_agent.c_str());
   std::string headers = HeaderString(args);

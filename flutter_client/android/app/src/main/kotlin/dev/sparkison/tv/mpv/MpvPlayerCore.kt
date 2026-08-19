@@ -160,6 +160,7 @@ class MpvPlayerCore(
     fun load(
         uri: String,
         startPositionMs: Int,
+        isLive: Boolean,
         userAgent: String?,
         headers: Map<String, String>?,
         externalSubtitles: List<Triple<String, String?, String?>>,
@@ -176,6 +177,25 @@ class MpvPlayerCore(
                         val headerString = headers.entries.joinToString(",") { "${it.key}: ${it.value}" }
                         current.setProperty("http-header-fields", headerString)
                     }
+                    // Live sources get a larger demuxer probe budget -- ffmpeg's
+                    // default analyzeduration/probesize can be too tight for a
+                    // live MPEG-TS/HLS stream under network jitter (VPN hops,
+                    // slow first-byte), especially at higher (UHD) bitrates:
+                    // "No format found, try lowering probescore or forcing the
+                    // format" is ffmpeg giving up before enough consistent data
+                    // arrived, not a real format mismatch. Deliberately not
+                    // forcing demuxer-lavf-format -- live sources vary (raw
+                    // MPEG-TS vs real HLS depending on the server/proxy setup),
+                    // so this only widens ffmpeg's own auto-probe window rather
+                    // than assuming a container. Always set explicitly (not
+                    // just when live) -- unlike the desktop backends, this mpv
+                    // handle is a process-wide singleton reused across every
+                    // load, so a live-set override must not leak into a
+                    // subsequent VOD/Series load on the same handle; the
+                    // non-live values below match ffmpeg's own stock defaults,
+                    // so this is a no-op for VOD, not a behavior change.
+                    current.setProperty("demuxer-lavf-analyzeduration", if (isLive) "10" else "5")
+                    current.setProperty("demuxer-lavf-probesize", if (isLive) "10000000" else "5000000")
 
                     val args = mutableListOf("loadfile", uri, "replace")
                     if (startPositionMs > 0) {
