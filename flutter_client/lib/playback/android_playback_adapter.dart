@@ -13,13 +13,11 @@ class AndroidPlaybackProbe {
   const AndroidPlaybackProbe({
     required this.hardwareCodecs,
     required this.passthroughAudioCodecs,
-    required this.mpvAvailable,
     required this.serverTranscodeAvailable,
   });
 
   final Set<VideoCodec> hardwareCodecs;
   final Set<AudioCodec> passthroughAudioCodecs;
-  final bool mpvAvailable;
   final bool serverTranscodeAvailable;
 }
 
@@ -100,10 +98,8 @@ class AndroidPlaybackAdapter
       PlaybackBackend.androidMpv => PlaybackCapabilities.androidMpv,
       PlaybackBackend.serverTranscode => PlaybackCapabilities.serverTranscode,
       PlaybackBackend.appleMpvNative ||
-      PlaybackBackend.appleMediaKit ||
       PlaybackBackend.appleAvKit ||
       PlaybackBackend.desktopLibmpv ||
-      PlaybackBackend.desktopMediaKit ||
       PlaybackBackend.macMpvNative => PlaybackCapabilities.androidExoPlayer,
     };
   }
@@ -141,8 +137,6 @@ class AndroidPlaybackAdapter
         throw exception;
       }
       return;
-    } else {
-      _recordMpvFutureGate(fallbackReason);
     }
 
     if (androidCapabilities.probe.serverTranscodeAvailable) {
@@ -313,11 +307,6 @@ class AndroidPlaybackAdapter
   void _emit(PlaybackState state) {
     _state = state;
     _stateController.add(state);
-  }
-
-  void _recordMpvFutureGate(String fallbackReason) {
-    if (!androidCapabilities.probe.mpvAvailable) return;
-    _decisionLog.add('android-mpv:disabled-future-gated:$fallbackReason');
   }
 
   void _handleNativeEvent(AndroidMedia3Event event) {

@@ -21,10 +21,10 @@ import 'package:m3u_tv/services/comskip_settings.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/epg_service.dart';
 import 'package:m3u_tv/services/trakt_service.dart';
+import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
-import 'package:media_kit_video/media_kit_video.dart' as mkv;
 
 const bool _showPlaybackDiagnostics = bool.fromEnvironment(
   'M3U_TV_SHOW_PLAYBACK_DIAGNOSTICS',
@@ -51,6 +51,7 @@ class PlayerScreen extends StatefulWidget {
     this.onRecordProgram,
     this.onTrackDialogVisibilityChanged,
     this.isRecordingCurrentChannel = false,
+    this.viewSettingsService,
     super.key,
   });
 
@@ -64,6 +65,7 @@ class PlayerScreen extends StatefulWidget {
   final TraktService? traktService;
   final WakelockController wakelockController;
   final String viewerId;
+  final ViewSettingsService? viewSettingsService;
   final VoidCallback? onClose;
   final VoidCallback? onPlaybackFailure;
   final VoidCallback? onNextChannel;
@@ -95,6 +97,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   String? _selectedSubtitleTrackId;
   bool _isAudioTrackSelectionKnown = false;
   bool _isSubtitleTrackSelectionKnown = false;
+  late bool _hdrEnabled = widget.viewSettingsService?.hdrEnabledSync ?? true;
 
   EpgCurrentNext? _epgData;
 
@@ -557,8 +560,23 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _openAndSeek(PlaybackSource source) async {
     try {
       await widget.orchestrator.open(source);
+      // Native backends default to HDR on; only push an explicit call when
+      // the persisted setting disagrees, so backends without the capability
+      // (and the common case of it already being on) skip the round trip.
+      if (!_hdrEnabled) {
+        unawaited(
+          widget.orchestrator.activeHdrToggleProvider?.setHdrEnabled(false),
+        );
+      }
       if (_disposed || !mounted || source.isLive) return;
-      if (source.startPosition > Duration.zero) {
+      // A non-recoverable load failure lets open() return normally (the
+      // failure is reported asynchronously via onError/_handleError instead
+      // of being thrown here) but leaves no active adapter behind. Without
+      // this guard, seek() below throws a bare StateError that this
+      // function's own catch clause then shows via _setErrorMessage,
+      // clobbering the real error _handleError already surfaced.
+      if (source.startPosition > Duration.zero &&
+          widget.orchestrator.activeBackend != null) {
         await widget.orchestrator.seek(source.startPosition);
       }
     } on Object catch (error) {
@@ -871,6 +889,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
     unawaited(widget.orchestrator.setSubtitleTrack(trackId));
   }
 
+  bool get _supportsHdrToggle =>
+      widget.orchestrator.activeHdrToggleProvider != null;
+
+  void _handleHdrEnabledChanged(bool enabled) {
+    setState(() => _hdrEnabled = enabled);
+    unawaited(widget.viewSettingsService?.setHdrEnabled(enabled));
+    unawaited(
+      widget.orchestrator.activeHdrToggleProvider?.setHdrEnabled(enabled),
+    );
+  }
+
   void _showOverlay() {
     setState(() => _overlayVisible = true);
     _scheduleOverlayHide();
@@ -1003,18 +1032,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         textureId: widget.orchestrator.activeTextureId,
                         platformView:
                             widget.orchestrator.activePlatformViewProvider,
+                        nativePlane:
+                            widget.orchestrator.activeNativePlaneProvider,
                         aspectRatio: _videoAspectRatio,
                       ),
                     ),
-
-                    if (widget.orchestrator.activeSubtitleController != null)
-                      Positioned.fill(
-                        child: mkv.SubtitleView(
-                          controller:
-                              widget.orchestrator.activeSubtitleController!,
-                          configuration: const mkv.SubtitleViewConfiguration(),
-                        ),
-                      ),
 
                     // Loading indicator
                     if (_status == PlaybackStatus.loading &&
@@ -1113,6 +1135,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             onAudioTrackSelected: _handleAudioTrackSelected,
                             onSubtitleTrackSelected:
                                 _handleSubtitleTrackSelected,
+                            supportsHdrToggle: _supportsHdrToggle,
+                            hdrEnabled: _hdrEnabled,
+                            onHdrEnabledChanged: _handleHdrEnabledChanged,
                             onTrackDialogVisibilityChanged:
                                 _handleTrackDialogVisibilityChanged,
                             fallbackReason: _showPlaybackDiagnostics
@@ -1259,11 +1284,6 @@ class _PlaybackDiagnosticsPanel extends StatelessWidget {
         _DiagnosticsRow(label: 'Transcode', value: snapshot.transcodeSession!),
       if (snapshot.cleanupStatus != null)
         _DiagnosticsRow(label: 'Cleanup', value: snapshot.cleanupStatus!),
-      if (snapshot.androidMpvStatus != null)
-        _DiagnosticsRow(
-          label: 'Android mpv/libmpv',
-          value: snapshot.androidMpvStatus!,
-        ),
     ];
 
     return IgnorePointer(
@@ -1343,7 +1363,6 @@ class _PlaybackDiagnosticsSnapshot {
     this.codecDecision,
     this.transcodeSession,
     this.cleanupStatus,
-    this.androidMpvStatus,
   });
 
   final String backendLabel;
@@ -1351,7 +1370,6 @@ class _PlaybackDiagnosticsSnapshot {
   final String? codecDecision;
   final String? transcodeSession;
   final String? cleanupStatus;
-  final String? androidMpvStatus;
 
   static _PlaybackDiagnosticsSnapshot from({
     required PlaybackBackend? activeBackend,
@@ -1362,7 +1380,6 @@ class _PlaybackDiagnosticsSnapshot {
     String? codecDecision;
     String? transcodeSession;
     String? cleanupStatus;
-    String? androidMpvStatus;
 
     for (final item in diagnostics) {
       if (item.startsWith('active-backend:')) {
@@ -1384,11 +1401,6 @@ class _PlaybackDiagnosticsSnapshot {
           'cleanup:server-transcode:stopped:'.length,
         );
         cleanupStatus = 'server transcode stopped ($payload)';
-      } else if (item.startsWith('android-mpv:disabled-future-gated:')) {
-        final reason = item.substring(
-          'android-mpv:disabled-future-gated:'.length,
-        );
-        androidMpvStatus = 'disabled/future-gated ($reason)';
       }
     }
 
@@ -1398,7 +1410,6 @@ class _PlaybackDiagnosticsSnapshot {
       codecDecision: codecDecision,
       transcodeSession: transcodeSession,
       cleanupStatus: cleanupStatus,
-      androidMpvStatus: androidMpvStatus,
     );
   }
 
@@ -1422,10 +1433,8 @@ class _PlaybackDiagnosticsSnapshot {
       'androidExoPlayer' => PlaybackBackend.androidExoPlayer,
       'androidMpv' => PlaybackBackend.androidMpv,
       'appleMpvNative' => PlaybackBackend.appleMpvNative,
-      'appleMediaKit' => PlaybackBackend.appleMediaKit,
       'appleAvKit' => PlaybackBackend.appleAvKit,
       'desktopLibmpv' => PlaybackBackend.desktopLibmpv,
-      'desktopMediaKit' => PlaybackBackend.desktopMediaKit,
       'macMpvNative' => PlaybackBackend.macMpvNative,
       'serverTranscode' => PlaybackBackend.serverTranscode,
       _ => null,
@@ -1435,12 +1444,10 @@ class _PlaybackDiagnosticsSnapshot {
   static String _backendLabel(PlaybackBackend? backend) {
     return switch (backend) {
       PlaybackBackend.androidExoPlayer => 'Android ExoPlayer',
-      PlaybackBackend.androidMpv => 'Android mpv/libmpv disabled',
+      PlaybackBackend.androidMpv => 'Android native mpv',
       PlaybackBackend.appleMpvNative => 'Apple native mpv',
-      PlaybackBackend.appleMediaKit => 'Apple Media Kit',
       PlaybackBackend.appleAvKit => 'Apple AVKit fallback',
       PlaybackBackend.desktopLibmpv => 'Desktop libmpv',
-      PlaybackBackend.desktopMediaKit => 'Desktop Media Kit',
       PlaybackBackend.macMpvNative => 'macOS native mpv',
       PlaybackBackend.serverTranscode => 'Server transcode fallback',
       null => 'Selecting backend',

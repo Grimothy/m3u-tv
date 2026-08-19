@@ -45,6 +45,46 @@ abstract class PlatformViewProvider {
   Future<void> releaseNativeView();
 }
 
+/// A [PlayerAdapter] that renders through a native platform surface Flutter's
+/// own compositor knows nothing about (currently: `DesktopLibmpvBackend`'s
+/// Wayland `wl_subsurface` video plane on Linux, used when the GPU render
+/// path is available -- see `linux/wayland_video_surface.h`). Unlike
+/// [PlatformViewProvider], there is no Flutter-managed view to size or
+/// position: the widget hosting this backend must report its own on-screen
+/// rect explicitly via [reportVideoRect] on every layout, and the native
+/// side positions its surface to match.
+abstract class NativePlaneProvider {
+  /// True once the native backend has confirmed (via its `load` response)
+  /// that it is actually rendering through the native plane rather than
+  /// falling back to [VideoTextureProvider]. Until a load completes this is
+  /// `false`, so callers should keep rendering the [VideoTextureProvider]
+  /// path (or a black placeholder) until it flips.
+  bool get usesNativePlane;
+
+  /// Reports the widget's current on-screen rect, in physical pixels within
+  /// the native window, plus the current device pixel ratio.
+  void reportVideoRect(
+    double x,
+    double y,
+    double width,
+    double height,
+    double devicePixelRatio,
+  );
+}
+
+/// A [PlayerAdapter] that exposes a user-facing HDR on/off override, mirroring
+/// the same `hdr-enabled` control the open-source Plezy player exposes.
+/// Implemented by `DesktopLibmpvBackend` (Linux/Windows) only -- Apple's mpv
+/// backends and ExoPlayer decide HDR automatically from the source and
+/// display, with no equivalent override.
+// ignore: one_member_abstracts
+abstract class HdrToggleProvider {
+  Future<void> setHdrEnabled(
+    // ignore: avoid_positional_boolean_parameters
+    bool enabled,
+  );
+}
+
 /// A [PlayerAdapter] that Multiview can drive: one concurrently playable
 /// instance per grid tile, rendered via either [VideoTextureProvider] or
 /// [PlatformViewProvider]. [setVolume] mutes/unmutes a tile by audio focus
@@ -165,6 +205,7 @@ class PlaybackSource {
     this.userAgent,
     this.headers = const <String, String>{},
     this.metadata = const <String, Object?>{},
+    this.externalSubtitles = const <ExternalSubtitle>[],
   });
 
   final String uri;
@@ -176,6 +217,11 @@ class PlaybackSource {
   final String? userAgent;
   final Map<String, String> headers;
   final Map<String, Object?> metadata;
+
+  /// Sidecar subtitle files (e.g. `.srt`/`.vtt`) to load alongside [uri],
+  /// in addition to whatever tracks are embedded in the container. A native
+  /// mpv backend adds each of these via mpv's `sub-add` command on load.
+  final List<ExternalSubtitle> externalSubtitles;
 
   double? get videoAspectRatio => playbackAspectRatioFromMetadata(metadata);
 }
@@ -219,6 +265,16 @@ class PlaybackTrack {
 
   final String id;
   final String label;
+  final String? language;
+}
+
+/// A sidecar subtitle file to load alongside a [PlaybackSource]'s main
+/// [PlaybackSource.uri], e.g. a `.srt`/`.vtt` found next to a VOD file.
+class ExternalSubtitle {
+  const ExternalSubtitle({required this.uri, this.title, this.language});
+
+  final String uri;
+  final String? title;
   final String? language;
 }
 

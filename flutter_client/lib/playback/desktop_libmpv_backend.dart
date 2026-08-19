@@ -27,7 +27,12 @@ Stream<DesktopLibmpvEvent> _libmpvEvents(EventChannel channel) {
 }
 
 class DesktopLibmpvBackend
-    implements PlayerAdapter, VideoTextureProvider, MultiviewBackend {
+    implements
+        PlayerAdapter,
+        VideoTextureProvider,
+        NativePlaneProvider,
+        HdrToggleProvider,
+        MultiviewBackend {
   DesktopLibmpvBackend({MethodChannel? channel, EventChannel? eventChannel})
     : _channel = channel ?? const MethodChannel(_methodChannelName),
       _eventChannel = eventChannel ?? const EventChannel(_eventChannelName) {
@@ -52,6 +57,7 @@ class DesktopLibmpvBackend
   );
   int? _handle;
   int? _textureId;
+  bool _usesNativePlane = false;
   int _lastSequence = -1;
   int _loadGeneration = 0;
   bool _errorEmitted = false;
@@ -65,6 +71,31 @@ class DesktopLibmpvBackend
 
   @override
   int? get textureId => _textureId;
+
+  @override
+  bool get usesNativePlane => _usesNativePlane;
+
+  @override
+  void reportVideoRect(
+    double x,
+    double y,
+    double width,
+    double height,
+    double devicePixelRatio,
+  ) {
+    final handle = _handle;
+    if (handle == null || !_usesNativePlane) return;
+    unawaited(
+      _channel.invokeMethod<void>('setVideoRect', <String, Object?>{
+        'handle': handle,
+        'x': x.round(),
+        'y': y.round(),
+        'width': width.round(),
+        'height': height.round(),
+        'scale': devicePixelRatio.round().clamp(1, 1 << 30),
+      }),
+    );
+  }
 
   @override
   PlaybackCapabilities get capabilities => PlaybackCapabilities.desktopLibmpv;
@@ -113,10 +144,20 @@ class DesktopLibmpvBackend
         'isLive': source.isLive,
         'userAgent': source.userAgent,
         'headers': source.headers,
+        'externalSubtitles': source.externalSubtitles
+            .map(
+              (subtitle) => <String, Object?>{
+                'uri': subtitle.uri,
+                'title': subtitle.title,
+                'language': subtitle.language,
+              },
+            )
+            .toList(),
       });
 
       final handle = response?['handle'] as int?;
       final textureId = response?['textureId'] as int?;
+      final usesNativePlane = response?['usesNativePlane'] == true;
       final ok = response?['ok'] == true;
       if (!_isActiveLoad(generation)) {
         if (handle != null) await _disposeNativeHandle(handle);
@@ -129,7 +170,7 @@ class DesktopLibmpvBackend
         _clearLoading(ready);
         throw preResponseFailure;
       }
-      if (!ok || handle == null || textureId == null) {
+      if (!ok || handle == null || (textureId == null && !usesNativePlane)) {
         final message = response?['error'] as String? ?? 'libmpv load failed';
         final code =
             response?['code'] as String? ?? 'desktop-libmpv-load-failed';
@@ -147,6 +188,7 @@ class DesktopLibmpvBackend
 
       _handle = handle;
       _textureId = textureId;
+      _usesNativePlane = usesNativePlane;
       _lastSequence = -1;
       _errorEmitted = false;
 
@@ -252,6 +294,13 @@ class DesktopLibmpvBackend
   @override
   Future<void> setPlaybackSpeed(double speed) async {
     await _invokeControl('setPlaybackSpeed', <String, Object?>{'speed': speed});
+  }
+
+  @override
+  Future<void> setHdrEnabled(bool enabled) async {
+    await _invokeControl('setHdrEnabled', <String, Object?>{
+      'enabled': enabled,
+    });
   }
 
   @override
@@ -450,6 +499,7 @@ class DesktopLibmpvBackend
   void _resetHandleState() {
     _handle = null;
     _textureId = null;
+    _usesNativePlane = false;
     _lastSequence = -1;
     _errorEmitted = false;
     _pendingEvents.clear();

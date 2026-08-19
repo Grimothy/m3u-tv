@@ -4,9 +4,7 @@ import 'dart:async';
 
 import 'package:m3u_tv/playback/playback_capabilities.dart';
 import 'package:m3u_tv/playback/player_adapter.dart';
-import 'package:m3u_tv/playback/subtitle_controller_provider.dart';
 import 'package:m3u_tv/transcoding/transcoding.dart';
-import 'package:media_kit_video/media_kit_video.dart' as mkv;
 
 abstract class PlaybackTranscodeGateway {
   Future<TranscodeResponse> startServerTranscode(StreamRequest request);
@@ -74,16 +72,22 @@ class PlaybackOrchestrator {
     return (adapter! as VideoTextureProvider).textureId;
   }
 
-  mkv.VideoController? get activeSubtitleController {
-    final adapter = _activeAdapter;
-    if (adapter == null || adapter is! SubtitleControllerProvider) return null;
-    return (adapter as SubtitleControllerProvider).subtitleController;
-  }
-
   PlatformViewProvider? get activePlatformViewProvider {
     final adapter = _activeAdapter;
     if (adapter is! PlatformViewProvider) return null;
     return adapter! as PlatformViewProvider;
+  }
+
+  NativePlaneProvider? get activeNativePlaneProvider {
+    final adapter = _activeAdapter;
+    if (adapter is! NativePlaneProvider) return null;
+    return adapter! as NativePlaneProvider;
+  }
+
+  HdrToggleProvider? get activeHdrToggleProvider {
+    final adapter = _activeAdapter;
+    if (adapter is! HdrToggleProvider) return null;
+    return adapter! as HdrToggleProvider;
   }
 
   List<String> get diagnostics => List<String>.unmodifiable(_diagnostics);
@@ -124,10 +128,6 @@ class PlaybackOrchestrator {
       if (!_isCurrentGeneration(generation)) return;
       attempt += 1;
       if (failure == null) return;
-      if (_platform == PlaybackPlatform.android &&
-          backend == PlaybackBackend.androidExoPlayer) {
-        _diagnostics.add('android-mpv:disabled-future-gated:${failure.code}');
-      }
       previousBackend = backend;
       if (!failure.recoverable) return;
       lastRecoverableFailure = failure;
@@ -185,10 +185,6 @@ class PlaybackOrchestrator {
   Iterable<PlaybackBackend> _nativeBackends() sync* {
     for (final capabilities in PlaybackCapabilities.forPlatform(_platform)) {
       if (capabilities.backend == PlaybackBackend.serverTranscode) {
-        continue;
-      }
-      if (_platform == PlaybackPlatform.android &&
-          capabilities.backend == PlaybackBackend.androidMpv) {
         continue;
       }
       if (_adapters.containsKey(capabilities.backend)) {

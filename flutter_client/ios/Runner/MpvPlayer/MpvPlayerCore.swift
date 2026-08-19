@@ -65,6 +65,17 @@ final class MpvPlayerCore {
       mpv_set_option_string(handle, "hwdec-software-fallback", "yes")
       mpv_set_option_string(handle, "keep-open", "yes")
       mpv_set_option_string(handle, "vd-lavc-dr", "yes")
+      // `fuzzy` auto-loads sidecar subtitle files (`.srt`/`.vtt`) next to a
+      // local/network URI whose filename fuzzily matches, in addition to
+      // whatever `sub-add` calls `load(subtitles:)` issues explicitly below.
+      mpv_set_option_string(handle, "sub-auto", "fuzzy")
+      // This app only ever plays direct/proxy/server URLs, never generic
+      // web pages, and never bundles a youtube-dl/yt-dlp binary -- mpv's
+      // built-in ytdl_hook script would otherwise try (and fail to find)
+      // one on every URL load, surfacing as an opaque "ytdl_hook:
+      // youtube-dl failed: not found or not enough permissions" end-file
+      // error even for plain local/network media.
+      mpv_set_option_string(handle, "ytdl", "no")
       // Deliberately no `force-seekable` -- see file header.
 
       let observed: [(String, mpv_format)] = [
@@ -106,7 +117,8 @@ final class MpvPlayerCore {
     startPositionMs: Int,
     isLive: Bool,
     userAgent: String?,
-    headers: [String: String]?
+    headers: [String: String]?,
+    externalSubtitles: [(uri: String, title: String?, language: String?)] = []
   ) {
     queue.async { [weak self] in
       guard let self, let handle = self.mpv else { return }
@@ -126,6 +138,20 @@ final class MpvPlayerCore {
         args.append("start=\(startPositionMs / 1000)")
       }
       self.command(handle, args.compactMap { $0 })
+
+      // Queued right after `loadfile` -- mpv processes commands in order, so
+      // each sidecar subtitle is attached to the file that was just queued
+      // rather than whatever was previously playing.
+      for subtitle in externalSubtitles {
+        var subArgs = ["sub-add", subtitle.uri, "auto"]
+        if let title = subtitle.title, !title.isEmpty {
+          subArgs.append(title)
+          if let language = subtitle.language, !language.isEmpty {
+            subArgs.append(language)
+          }
+        }
+        self.command(handle, subArgs)
+      }
     }
   }
 

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:m3u_tv/playback/android_mpv_backend.dart';
 import 'package:m3u_tv/playback/android_playback_adapter.dart';
 import 'package:m3u_tv/playback/apple_avkit_backend.dart';
 import 'package:m3u_tv/playback/apple_mpv_native_backend.dart';
@@ -121,11 +122,19 @@ PlaybackOrchestrator buildPlaybackOrchestrator() {
   final adapters = <PlaybackBackend, PlayerAdapter>{};
 
   if (platform == PlaybackPlatform.android) {
+    // Native mpv via a Flutter PlatformView (`AndroidView` hosting a
+    // `SurfaceView`, `vo=gpu-next` + `gpu-context=android` +
+    // `hwdec=mediacodec`), registered as primary -- same architecture as
+    // `MacMpvNativeBackend`/`AppleMpvNativeBackend` above, modeled on the
+    // open-source Plezy player. `AndroidPlaybackAdapter` (ExoPlayer) stays
+    // registered as an automatic fallback via `PlaybackOrchestrator`'s own
+    // native multi-backend fallback -- do not wrap it in
+    // `FallbackPlayerAdapter`, see the desktop branch below for why.
+    adapters[PlaybackBackend.androidMpv] = AndroidMpvBackend();
     adapters[PlaybackBackend.androidExoPlayer] = AndroidPlaybackAdapter(
       probe: const AndroidPlaybackProbe(
         hardwareCodecs: <VideoCodec>{VideoCodec.h264},
         passthroughAudioCodecs: <AudioCodec>{AudioCodec.aac, AudioCodec.mp3},
-        mpvAvailable: false,
         serverTranscodeAvailable: false,
       ),
     );
@@ -138,56 +147,58 @@ PlaybackOrchestrator buildPlaybackOrchestrator() {
     // tvOS) stays registered as an automatic fallback via
     // `PlaybackOrchestrator`'s own native multi-backend fallback -- do not
     // wrap it in `FallbackPlayerAdapter`, see the desktop branch below for
-    // why.
-    // `MediaKitIosAdapter` (media_kit) is no longer registered here --
-    // media_kit_libs_ios_video was removed because it vendored a second,
-    // independently-versioned ffmpeg/libmpv build that collided at link
-    // time with MPVKit's, corrupting native mpv's own library-version
-    // check. `AppleAvKitBackend` remains the sole automatic fallback.
+    // why. `AppleAvKitBackend` is the sole automatic fallback; `media_kit`
+    // is not a dependency of this project at all (see the desktop branch
+    // below for why).
     adapters[PlaybackBackend.appleMpvNative] = AppleMpvNativeBackend();
     adapters[PlaybackBackend.appleAvKit] = AppleAvKitBackend();
   } else if (platform == PlaybackPlatform.desktop) {
-    // Use the in-process C++ libmpv backend (`linux/desktop_libmpv_backend.cc`,
-    // `windows/runner/desktop_libmpv_backend.cpp`) rather than `media_kit_video`
-    // on Linux/Windows. The `media_kit_video` plugin's H/W render path requires
-    // a current EGL context on the platform thread; starting with Flutter 3.38
-    // the EGL context lives exclusively on the raster thread, so
-    // `eglGetCurrentDisplay()` returns `EGL_NO_DISPLAY` and playback falls back
-    // to software texture upload (media-kit/media-kit#1404). The in-process
-    // libmpv backend uses `MPV_RENDER_API_TYPE_SW` with `FlPixelBufferTexture`
-    // and `hwdec=auto-safe`, sidestepping the EGL dependency entirely while
-    // keeping hardware video decode. macOS never hits #1404 (it renders
-    // through Metal, not EGL), so that specific bug never justified a swap
-    // there.
-    //
-    // macOS instead now registers two backends: `MacMpvNativeBackend`
-    // (native mpv via a Flutter PlatformView, `vo=gpu-next` +
-    // `gpu-context=moltenvk` + `hwdec=videotoolbox`, bypassing the texture
-    // bridge entirely -- modeled on the open-source Plezy player) as
-    // primary, with `MediaKitDesktopAdapter` (media_kit) registered as an
-    // automatic fallback. `PlaybackOrchestrator._nativeBackends()` walks
+    // `media_kit`/`media_kit_video`/`media_kit_libs_*` are not a dependency
+    // of this project at all -- removed entirely (not just left
+    // unregistered) after it turned out to be dead weight on every
+    // platform: each vendored its own independently-versioned ffmpeg/libmpv
+    // build, which collided with this project's own native mpv builds
+    // (MPVKit on Apple, the fetched gpu-next/D3D11 build on Windows) at
+    // link time or, on Windows, by silently overwriting the fetched DLL at
+    // build time since both builds used the same output filename (see
+    // windows/runner/desktop_libmpv_backend.cpp's `kMpvDllNames` comment).
+    // No adapter anywhere ever actually registered a MediaKit backend as an
+    // automatic fallback in the shipped orchestrator wiring, so nothing
+    // here changed behavior -- it only removed a build-time hazard.
+    // `PlaybackOrchestrator._nativeBackends()` walks
     // `PlaybackCapabilities.forPlatform` in order and falls through to the
     // next registered backend on a recoverable `PlaybackException`, so no
-    // wrapper adapter is needed here -- and none should be added: wrapping
-    // these in `FallbackPlayerAdapter` would break rendering, since it does
-    // not forward `PlatformViewProvider`/`VideoTextureProvider`/
-    // `SubtitleControllerProvider`, so `PlaybackOrchestrator`'s `is` checks
-    // against `_activeAdapter` need the literal registered instance. A
-    // different, SW-texture-bridge macOS backend was prototyped and
-    // reverted previously -- see docs/migration/desktop-libmpv-feasibility.md
-    // ("macOS: not planned" and its follow-up note) for why this attempt is
-    // architecturally different, not a repeat.
+    // wrapper adapter is needed for any backend registered here -- and none
+    // should be added: wrapping these in `FallbackPlayerAdapter` would break
+    // rendering, since it does not forward
+    // `PlatformViewProvider`/`VideoTextureProvider`, so
+    // `PlaybackOrchestrator`'s `is` checks against `_activeAdapter` need the
+    // literal registered instance.
+    //
+    // macOS registers `MacMpvNativeBackend` (native mpv via a Flutter
+    // PlatformView, `vo=gpu-next` + `gpu-context=moltenvk` +
+    // `hwdec=videotoolbox`, bypassing the texture bridge entirely --
+    // modeled on the open-source Plezy player) with no automatic fallback:
+    // a recoverable load failure surfaces directly to the user via
+    // `_openServerTranscode`'s `lastFailure` path in
+    // playback_orchestrator.dart, since no server-transcode adapter is
+    // registered either.
+    //
+    // Linux/Windows use the in-process C++ libmpv backend
+    // (`linux/desktop_libmpv_backend.cc`,
+    // `windows/runner/desktop_libmpv_backend.cpp`) instead of `media_kit`'s
+    // H/W render path, which requires a current EGL context on the
+    // platform thread; starting with Flutter 3.38 the EGL context lives
+    // exclusively on the raster thread, so `eglGetCurrentDisplay()` returns
+    // `EGL_NO_DISPLAY` and playback would fall back to software texture
+    // upload (media-kit/media-kit#1404) even if it were still a dependency.
+    // The in-process libmpv backend uses `MPV_RENDER_API_TYPE_SW` with
+    // `FlPixelBufferTexture` and `hwdec=auto-safe` on the software path (and
+    // a native GPU window on Windows), sidestepping the EGL dependency
+    // entirely while keeping hardware video decode. macOS never hits #1404
+    // (it renders through Metal, not EGL), so that specific bug never
+    // applied there.
     if (Platform.isMacOS) {
-      // `MediaKitDesktopAdapter` (media_kit) is no longer registered here --
-      // media_kit_libs_macos_video was removed because it vendored a
-      // second, independently-versioned ffmpeg/libmpv build that collided
-      // at link time with MPVKit's, corrupting native mpv's own
-      // library-version check.
-      // `MacMpvNativeBackend` has no automatic fallback on macOS until a
-      // replacement is chosen -- a recoverable load failure surfaces
-      // directly to the user via `_openServerTranscode`'s `lastFailure`
-      // path in playback_orchestrator.dart, since no server-transcode
-      // adapter is registered either.
       adapters[PlaybackBackend.macMpvNative] = MacMpvNativeBackend();
     } else {
       adapters[PlaybackBackend.desktopLibmpv] = DesktopLibmpvBackend();
@@ -234,7 +245,6 @@ buildMultiviewTilePlayer(String playerId) {
             AudioCodec.aac,
             AudioCodec.mp3,
           },
-          mpvAvailable: false,
           serverTranscodeAvailable: false,
         ),
       );

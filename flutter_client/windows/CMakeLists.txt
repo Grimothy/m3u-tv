@@ -6,6 +6,111 @@ project(m3u_tv LANGUAGES CXX)
 # the on-disk name of your application.
 set(BINARY_NAME "m3u_tv")
 
+# gpu-next/D3D11-capable libmpv, fetched the same way the open-source Plezy
+# player (github.com/edde746/plezy, GPL-3.0, windows/CMakeLists.txt) fetches
+# it, since that is the reference this project's native mpv backend
+# (windows/runner/desktop_libmpv_backend.cpp) is modeled on. Only the DLL is
+# consumed (windows/runner/CMakeLists.txt copies it into the runner output
+# directory as "libmpv-gpu-2.dll", not "libmpv-2.dll" -- see the comment
+# beside that copy step for why) -- unlike Plezy, this project deliberately
+# does not link against libmpv.dll.a or include mpv/client.h at build time
+# (see the ABI structs hand-declared in desktop_libmpv_backend.cpp); it
+# dlopens the DLL at runtime instead, so MPV_INCLUDE_DIR is unused here.
+set(MPV_VERSION "20260809")
+set(MPV_GIT_HASH "dd5d17d328")
+if(CMAKE_SYSTEM_PROCESSOR STREQUAL "ARM64")
+  set(MPV_FILENAME "mpv-dev-aarch64-${MPV_VERSION}-git-${MPV_GIT_HASH}.7z")
+  set(MPV_URL "https://sourceforge.net/projects/mpv-player-windows/files/libmpv/${MPV_FILENAME}/download")
+  set(MPV_DOWNLOAD_DIR "${CMAKE_BINARY_DIR}/mpv-dev-arm64")
+  set(MPV_ARCHIVE "${MPV_DOWNLOAD_DIR}/${MPV_FILENAME}")
+
+  if(NOT EXISTS "${MPV_DOWNLOAD_DIR}/libmpv-2.dll")
+    message(STATUS "Downloading MPV for ARM64...")
+    file(DOWNLOAD "${MPV_URL}" "${MPV_ARCHIVE}" SHOW_PROGRESS STATUS MPV_DL_STATUS)
+    list(GET MPV_DL_STATUS 0 MPV_DL_RESULT)
+    if(NOT MPV_DL_RESULT EQUAL 0)
+      message(FATAL_ERROR "Failed to download MPV: ${MPV_DL_STATUS}")
+    endif()
+
+    # CMake's built-in libarchive can't handle LZMA2 on ARM64.
+    find_program(7Z_EXECUTABLE 7z REQUIRED HINTS "C:/Program Files/7-Zip")
+    message(STATUS "Extracting MPV with ${7Z_EXECUTABLE}...")
+    execute_process(
+      COMMAND "${7Z_EXECUTABLE}" x "${MPV_ARCHIVE}" "-o${MPV_DOWNLOAD_DIR}" -y
+      RESULT_VARIABLE MPV_EXTRACT_RESULT
+    )
+    if(NOT MPV_EXTRACT_RESULT EQUAL 0)
+      message(FATAL_ERROR "Failed to extract MPV archive")
+    endif()
+    file(REMOVE "${MPV_ARCHIVE}")
+  endif()
+
+  set(MPV_LIB_DIR "${MPV_DOWNLOAD_DIR}")
+else()
+  include(FetchContent)
+  FetchContent_Declare(
+    mpv_dev
+    URL https://sourceforge.net/projects/mpv-player-windows/files/libmpv/mpv-dev-x86_64-${MPV_VERSION}-git-${MPV_GIT_HASH}.7z/download
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  )
+  FetchContent_MakeAvailable(mpv_dev)
+
+  set(MPV_LIB_DIR "${mpv_dev_SOURCE_DIR}")
+endif()
+
+# ANGLE (GL->D3D11 translation), fetched for the GPU-texture rendering path
+# (windows/runner/angle_surface_manager.{h,cc}): mpv renders through its
+# OpenGL render API into a D3D11 texture via ANGLE, which is then handed to
+# Flutter as a real FlutterDesktopGpuSurfaceTexture. This is the same
+# pre-packaged ANGLE release the (now fully removed from this project, see
+# docs/release/platform-release-matrix.md) media_kit_libs_windows_video
+# package used to fetch -- a known-good, previously-shipping artifact, not a
+# new unpinned dependency. MD5-verified like media_kit's own fetch, since
+# unlike the libmpv fetch above this is a third-party mirror, not a project
+# release feed.
+set(ANGLE_FILENAME "ANGLE.7z")
+set(ANGLE_URL "https://github.com/alexmercerind/flutter-windows-ANGLE-OpenGL-ES/releases/download/v1.0.1/${ANGLE_FILENAME}")
+set(ANGLE_MD5 "e866f13e8d552348058afaafe869b1ed")
+set(ANGLE_ARCHIVE "${CMAKE_BINARY_DIR}/${ANGLE_FILENAME}")
+set(ANGLE_LIB_DIR "${CMAKE_BINARY_DIR}/angle")
+
+if(EXISTS "${ANGLE_ARCHIVE}")
+  file(MD5 "${ANGLE_ARCHIVE}" ANGLE_ARCHIVE_MD5)
+  if(NOT ANGLE_MD5 STREQUAL ANGLE_ARCHIVE_MD5)
+    file(REMOVE "${ANGLE_ARCHIVE}")
+  endif()
+endif()
+
+if(NOT EXISTS "${ANGLE_ARCHIVE}")
+  message(STATUS "Downloading ANGLE...")
+  file(DOWNLOAD "${ANGLE_URL}" "${ANGLE_ARCHIVE}" SHOW_PROGRESS STATUS ANGLE_DL_STATUS)
+  list(GET ANGLE_DL_STATUS 0 ANGLE_DL_RESULT)
+  if(NOT ANGLE_DL_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to download ANGLE: ${ANGLE_DL_STATUS}")
+  endif()
+  file(MD5 "${ANGLE_ARCHIVE}" ANGLE_ARCHIVE_MD5)
+  if(NOT ANGLE_MD5 STREQUAL ANGLE_ARCHIVE_MD5)
+    message(FATAL_ERROR "ANGLE archive integrity check failed, please try to re-build project again.")
+  endif()
+endif()
+
+if(NOT EXISTS "${ANGLE_LIB_DIR}/libEGL.dll")
+  message(STATUS "Extracting ANGLE...")
+  make_directory("${ANGLE_LIB_DIR}")
+  # CMake's built-in tar handles this archive fine (unlike the ARM64 libmpv
+  # archive above, which needs 7z.exe for its LZMA2 compression) -- verified
+  # against media_kit_libs_windows_video's own equivalent extraction step,
+  # which uses the same command for the same archive.
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" -E tar xzf "${ANGLE_ARCHIVE}"
+    WORKING_DIRECTORY "${ANGLE_LIB_DIR}"
+    RESULT_VARIABLE ANGLE_EXTRACT_RESULT
+  )
+  if(NOT ANGLE_EXTRACT_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to extract ANGLE archive")
+  endif()
+endif()
+
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
 cmake_policy(VERSION 3.14...3.25)
