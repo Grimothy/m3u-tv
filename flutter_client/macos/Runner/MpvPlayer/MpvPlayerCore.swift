@@ -16,6 +16,14 @@
 // 900% CPU spike (full-stream probing) in a prior, reverted macOS prototype.
 // See docs/migration/desktop-libmpv-feasibility.md, "macOS: not planned",
 // for that history.
+//
+// Requests EDR (Extended Dynamic Range) rendering on the Metal layer when
+// the source signals HDR (`video-params/sig-peak > 1.0`) and this display
+// actually supports it -- ported from Plezy's `updateEDRMode`
+// (macos/Runner/MpvPlayer/MpvPlayerCore.swift). Simplified relative to that
+// reference: no user-facing HDR toggle, since this app applies HDR
+// automatically per source everywhere (matching the Windows/Linux/tvOS HDR
+// paths).
 
 import AppKit
 import Libmpv
@@ -51,6 +59,10 @@ final class MpvPlayerCore {
   private var metalLayer: MpvMetalLayer?
   private var frameObserver: NSObjectProtocol?
 
+  // Set once from `attach(to:)` so `updateEDRMode` can check the actual
+  // display's EDR headroom via `hostView.window?.screen`.
+  private weak var hostView: NSView?
+
   init(viewId: Int) {
     self.viewId = viewId
     self.queue = DispatchQueue(label: "m3u_tv.mac_mpv.\(viewId)")
@@ -62,6 +74,7 @@ final class MpvPlayerCore {
   func attach(to view: NSView) {
     // Layer/view mutation is AppKit UI work and must happen on the main
     // thread -- everything else below is safe to do on the mpv queue.
+    self.hostView = view
     view.wantsLayer = true
     let metalLayer = MpvMetalLayer()
     metalLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
@@ -131,6 +144,9 @@ final class MpvPlayerCore {
         ("sid", MPV_FORMAT_STRING),
         ("track-list", MPV_FORMAT_NODE),
         ("video-params/aspect", MPV_FORMAT_DOUBLE),
+        // EDR input -- appended rather than interleaved so the indices
+        // above (relied on by trackRelatedPropertyIndices) don't shift.
+        ("video-params/sig-peak", MPV_FORMAT_DOUBLE),
       ]
       for (index, entry) in observed.enumerated() {
         mpv_observe_property(handle, UInt64(index), entry.0, entry.1)
@@ -325,6 +341,13 @@ final class MpvPlayerCore {
     case MPV_EVENT_PLAYBACK_RESTART:
       emit(kind: "PLAYBACK_RESTART", extra: snapshot(includeTracks: true))
     case MPV_EVENT_PROPERTY_CHANGE:
+      if event.reply_userdata == Self.sigPeakPropertyIndex {
+        var sigPeak: Double = 0
+        if let handle = mpv, mpv_get_property(handle, "video-params/sig-peak", MPV_FORMAT_DOUBLE, &sigPeak) >= 0
+        {
+          DispatchQueue.main.async { [weak self] in self?.updateEDRMode(sigPeak: sigPeak) }
+        }
+      }
       if readyEmitted {
         // Most property-change events are `time-pos` ticks (essentially
         // every frame during playback); only re-walk the track list when
@@ -355,6 +378,26 @@ final class MpvPlayerCore {
   /// properties whose change should trigger a `track-list` re-walk in
   /// `snapshot(includeTracks:)` -- `aid`, `sid`, `track-list`.
   private static let trackRelatedPropertyIndices: Set<UInt64> = [6, 7, 8]
+
+  /// Index of `video-params/sig-peak` in the `observed` array in `attach(to:)`.
+  private static let sigPeakPropertyIndex: UInt64 = 10
+
+  /// Toggles EDR rendering on the Metal layer based on the source's HDR
+  /// peak signal and this display's actual EDR headroom. Must run on main
+  /// (layer property mutation). Ported from Plezy's `updateEDRMode` -- see
+  /// file header for what was left out.
+  private func updateEDRMode(sigPeak: Double) {
+    guard let metalLayer else { return }
+
+    let screen = hostView?.window?.screen ?? NSScreen.main
+    let potentialHeadroom = screen?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1.0
+    let shouldEnableEDR = sigPeak > 1.0 && potentialHeadroom > 1.0
+
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    metalLayer.wantsExtendedDynamicRangeContent = shouldEnableEDR
+    CATransaction.commit()
+  }
 
   private func snapshot(includeTracks: Bool) -> [String: Any] {
     guard let handle = mpv else { return [:] }

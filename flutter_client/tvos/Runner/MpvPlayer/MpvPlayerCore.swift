@@ -11,22 +11,36 @@
 // Deliberately does NOT set `force-seekable=yes` -- see the macOS core's
 // header comment and docs/migration/desktop-libmpv-feasibility.md for why.
 //
-// KNOWN GAP (follow-up, not implemented here): Plezy's tvOS core gates HDR
-// output through app-level HDMI display-mode-switch coordination, since
-// `target-colorspace-hint` is inert on the avfoundation VO and tvOS EDR/HDR
-// requires the TV to actually switch HDMI modes -- unlike iOS, where EDR is
-// requested more directly. This core does not yet implement that
-// coordination; HDR playback should be verified on real Apple TV hardware
-// before being advertised as supported, and the display-mode-switch logic
-// added if it proves necessary (see PiPController/ExternalDisplayManager
-// analogues in Plezy for the pattern to port next).
+// HDR playback requests an actual HDMI display-mode switch on the TV via
+// `AVDisplayManager`/`AVDisplayCriteria` (tvOS 17+) -- `target-colorspace-hint`
+// (the option that works for Windows/Linux) is inert on the avfoundation VO,
+// since tvOS EDR requires switching the physical HDMI link, not just the
+// render surface. Ported from Plezy's `updateDisplayCriteria`
+// (ios/Runner/MpvPlayer/MpvPlayerCore.swift, `#if os(tvOS)` branches) and
+// `validateSideDataDimensions` (shared/apple/MpvPlayer/MpvPlayerCoreBase.swift).
+// Deliberately simplified relative to that reference: no user-facing HDR
+// toggle (this app applies HDR automatically per source everywhere, matching
+// the Windows/Linux HDR paths), no `ServerDisplayCriteria` metadata-hint-server
+// integration (not applicable to this app's architecture), and no
+// `DisplayModeSwitchWaiter` mode-switch-completion choreography -- a momentary
+// flash during the HDMI switch is a cosmetic risk worth deferring until real
+// Apple TV/HDR-display testing shows it's actually needed, not a functional
+// blocker to build around up front.
 
 import AVFoundation
+import AVKit
 import Libmpv
 import UIKit
 
 protocol MpvPlayerCoreDelegate: AnyObject {
   func mpvPlayerCore(_ core: MpvPlayerCore, didEmit event: [String: Any])
+}
+
+private enum DisplayDynamicRange: String {
+  case sdr = "SDR"
+  case hdr10 = "HDR10"
+  case hlg = "HLG"
+  case dolbyVision = "Dolby Vision"
 }
 
 final class MpvPlayerCore {
@@ -39,14 +53,26 @@ final class MpvPlayerCore {
   private var readyEmitted = false
   private var disposed = false
 
+  // Set once from `attach(to:hostView:)` so `updateDisplayCriteria` can
+  // resolve `.window` later -- the view isn't in the hierarchy yet (and has
+  // no window) at attach time, so this can't be resolved up front.
+  private weak var hostView: UIView?
+  private var activeDisplayCriteriaKey: String?
+
+  private static let maximumSideDataDimension: Int64 = 16384
+  private static let maximumSideDataPixels: Int64 = 16384 * 16384
+
   init(viewId: Int) {
     self.viewId = viewId
     self.queue = DispatchQueue(label: "m3u_tv.apple_mpv.tvos.\(viewId)")
   }
 
   /// Creates and initializes the mpv handle, targeting `displayLayer` as the
-  /// render surface. Must be called once, before `load`.
-  func attach(to displayLayer: AVSampleBufferDisplayLayer) {
+  /// render surface. `hostView` is the layer's containing view, retained
+  /// weakly so HDR display-criteria updates can resolve its `.window` once
+  /// it's actually in the view hierarchy. Must be called once, before `load`.
+  func attach(to displayLayer: AVSampleBufferDisplayLayer, hostView: UIView) {
+    self.hostView = hostView
     queue.async { [weak self] in
       guard let self, self.mpv == nil else { return }
 
@@ -94,6 +120,18 @@ final class MpvPlayerCore {
         ("sid", MPV_FORMAT_STRING),
         ("track-list", MPV_FORMAT_NODE),
         ("video-params/aspect", MPV_FORMAT_DOUBLE),
+        // HDR display-criteria inputs -- appended rather than interleaved so
+        // the indices above (relied on by trackRelatedPropertyIndices) don't
+        // shift. See resolveBaseDisplayDynamicRange/updateDisplayCriteria.
+        ("video-params/sig-peak", MPV_FORMAT_DOUBLE),
+        ("width", MPV_FORMAT_DOUBLE),
+        ("height", MPV_FORMAT_DOUBLE),
+        ("current-tracks/video/dolby-vision-profile", MPV_FORMAT_INT64),
+        ("current-tracks/video/dolby-vision-level", MPV_FORMAT_INT64),
+        ("container-fps", MPV_FORMAT_DOUBLE),
+        ("video-params/gamma", MPV_FORMAT_STRING),
+        ("video-params/primaries", MPV_FORMAT_STRING),
+        ("video-params/colormatrix", MPV_FORMAT_STRING),
       ]
       for (index, entry) in observed.enumerated() {
         mpv_observe_property(handle, UInt64(index), entry.0, entry.1)
@@ -227,6 +265,18 @@ final class MpvPlayerCore {
   /// debugger/watchdog. `completion` gives callers the same "don't proceed
   /// until mpv is actually done" guarantee without blocking anything.
   func dispose(completion: @escaping () -> Void) {
+    // Reset the HDMI display-mode hint on main before mpv tears down --
+    // otherwise the TV stays switched into whatever range the last clip
+    // requested even after playback stops. Safe to fire-and-forget async
+    // here (unlike Plezy's synchronous version): `completion` and this
+    // core's removal from MpvPlayerPlugin's `cores` dictionary only happen
+    // after the `queue.async` block below finishes, so `self` stays alive
+    // for this to run against.
+    DispatchQueue.main.async { [weak self] in
+      guard let self, let window = self.hostView?.window else { return }
+      self.clearDisplayCriteria(window.avDisplayManager, reason: "dispose")
+    }
+
     // Captures `self` strongly, deliberately -- not `[weak self]`. mpv holds
     // an *unretained* raw pointer to this instance (`wid`, and the wakeup
     // callback below via `Unmanaged.passUnretained`) for as long as the mpv
@@ -272,6 +322,9 @@ final class MpvPlayerCore {
     case MPV_EVENT_PLAYBACK_RESTART:
       emit(kind: "PLAYBACK_RESTART", extra: snapshot(includeTracks: true))
     case MPV_EVENT_PROPERTY_CHANGE:
+      if Self.displayCriteriaPropertyIndices.contains(event.reply_userdata) {
+        scheduleDisplayCriteriaUpdate()
+      }
       if readyEmitted {
         // Most property-change events are `time-pos` ticks (essentially
         // every frame during playback); only re-walk the track list when
@@ -298,10 +351,15 @@ final class MpvPlayerCore {
     }
   }
 
-  /// Indices passed to `mpv_observe_property` in `attach(to:)` for
+  /// Indices passed to `mpv_observe_property` in `attach(to:hostView:)` for
   /// properties whose change should trigger a `track-list` re-walk in
   /// `snapshot(includeTracks:)` -- `aid`, `sid`, `track-list`.
   private static let trackRelatedPropertyIndices: Set<UInt64> = [6, 7, 8]
+
+  /// Indices of the HDR display-criteria inputs appended to `observed` in
+  /// `attach(to:hostView:)` (sig-peak, width, height, Dolby Vision
+  /// profile/level, container-fps, gamma, primaries, colormatrix).
+  private static let displayCriteriaPropertyIndices: Set<UInt64> = [10, 11, 12, 13, 14, 15, 16, 17, 18]
 
   private func snapshot(includeTracks: Bool) -> [String: Any] {
     guard let handle = mpv else { return [:] }
@@ -435,5 +493,297 @@ final class MpvPlayerCore {
       "code": code,
       "recoverable": true,
     ])
+  }
+
+  // MARK: - HDR display-mode switching
+
+  /// Reads the current HDR-relevant mpv properties (on `queue`, where mpv
+  /// access is safe) and hands them to `updateDisplayCriteria` on main
+  /// (where `AVDisplayManager` must be touched). Called on every change to
+  /// any property in `displayCriteriaPropertyIndices`.
+  private func scheduleDisplayCriteriaUpdate() {
+    guard let handle = mpv else { return }
+
+    var sigPeak: Double = 0
+    _ = mpv_get_property(handle, "video-params/sig-peak", MPV_FORMAT_DOUBLE, &sigPeak)
+    var width: Double = 0
+    _ = mpv_get_property(handle, "width", MPV_FORMAT_DOUBLE, &width)
+    var height: Double = 0
+    _ = mpv_get_property(handle, "height", MPV_FORMAT_DOUBLE, &height)
+    var doviProfile: Int64 = 0
+    _ = mpv_get_property(handle, "current-tracks/video/dolby-vision-profile", MPV_FORMAT_INT64, &doviProfile)
+    var doviLevel: Int64 = 0
+    _ = mpv_get_property(handle, "current-tracks/video/dolby-vision-level", MPV_FORMAT_INT64, &doviLevel)
+    var fps: Double = 0
+    _ = mpv_get_property(handle, "container-fps", MPV_FORMAT_DOUBLE, &fps)
+    let gamma = stringProperty(handle, "video-params/gamma")
+    let primaries = stringProperty(handle, "video-params/primaries")
+    let colorMatrix = stringProperty(handle, "video-params/colormatrix")
+
+    DispatchQueue.main.async { [weak self] in
+      self?.updateDisplayCriteria(
+        doviProfile: doviProfile,
+        doviLevel: doviLevel,
+        fps: fps,
+        width: Int32(width),
+        height: Int32(height),
+        sigPeak: sigPeak,
+        gamma: gamma,
+        primaries: primaries,
+        colorMatrix: colorMatrix
+      )
+    }
+  }
+
+  /// Requests an HDMI display-mode switch matching the current source's
+  /// dynamic range via `AVDisplayManager`/`AVDisplayCriteria`. Must run on
+  /// main. Ported from Plezy's tvOS `updateDisplayCriteria` -- see file
+  /// header for what was deliberately left out.
+  @discardableResult
+  private func updateDisplayCriteria(
+    doviProfile: Int64,
+    doviLevel: Int64,
+    fps: Double,
+    width: Int32,
+    height: Int32,
+    sigPeak: Double,
+    gamma: String?,
+    primaries: String?,
+    colorMatrix: String?
+  ) -> Bool {
+    guard let window = hostView?.window else { return false }
+    let displayManager = window.avDisplayManager
+
+    guard Self.validateSideDataDimensions(width: Int64(width), height: Int64(height)) else {
+      clearDisplayCriteria(displayManager, reason: "invalid video dimensions")
+      return false
+    }
+
+    let refreshRate = Float(fps > 0 ? fps : 0)
+    let sourceHasDolbyVision = doviProfile > 0
+    guard
+      refreshRate > 0 || sourceHasDolbyVision || sigPeak > 0 || gamma != nil || primaries != nil
+        || colorMatrix != nil
+    else {
+      clearDisplayCriteria(displayManager, reason: "no display metadata")
+      return false
+    }
+
+    guard displayManager.isDisplayCriteriaMatchingEnabled else {
+      clearDisplayCriteria(displayManager, reason: "matching disabled")
+      return false
+    }
+    guard #available(tvOS 17.0, *) else {
+      clearDisplayCriteria(displayManager, reason: "display criteria unavailable")
+      return false
+    }
+
+    let sourceBaseRange = Self.resolveBaseDisplayDynamicRange(
+      sigPeak: sigPeak, gamma: gamma, primaries: primaries, colorMatrix: colorMatrix)
+    var displayRange: DisplayDynamicRange =
+      sourceHasDolbyVision ? .dolbyVision : Self.supportedDisplayDynamicRange(for: sourceBaseRange)
+
+    var formatDescription = Self.makeDisplayFormatDescription(
+      dynamicRange: displayRange, width: width, height: height,
+      doviProfile: doviProfile, doviLevel: doviLevel)
+    if formatDescription == nil, sourceHasDolbyVision {
+      // Profile/level didn't yield a usable Dolby Vision format description
+      // (e.g. mpv hasn't resolved them yet) -- fall back to the base HDR10/
+      // HLG/SDR range derived from color tags alone rather than requesting
+      // nothing.
+      displayRange = sourceBaseRange
+      formatDescription = Self.makeDisplayFormatDescription(
+        dynamicRange: displayRange, width: width, height: height,
+        doviProfile: doviProfile, doviLevel: doviLevel)
+    }
+
+    guard let formatDescription else {
+      clearDisplayCriteria(displayManager, reason: "format description failed")
+      return false
+    }
+
+    let criteriaKey = "\(displayRange.rawValue)|\(refreshRate)|\(width)x\(height)|\(doviProfile)|\(doviLevel)"
+    if activeDisplayCriteriaKey == criteriaKey && displayManager.preferredDisplayCriteria != nil {
+      return true
+    }
+
+    displayManager.preferredDisplayCriteria = AVDisplayCriteria(
+      refreshRate: refreshRate, formatDescription: formatDescription)
+    activeDisplayCriteriaKey = criteriaKey
+    NSLog(
+      "[MpvPlayerCore] preferredDisplayCriteria set to %@ (fps: %@, %dx%d, DV profile: %@, level: %@)",
+      displayRange.rawValue, String(refreshRate), width, height, String(doviProfile), String(doviLevel)
+    )
+    return true
+  }
+
+  private func clearDisplayCriteria(_ displayManager: AVDisplayManager, reason: String) {
+    guard activeDisplayCriteriaKey != nil || displayManager.preferredDisplayCriteria != nil else { return }
+    displayManager.preferredDisplayCriteria = nil
+    activeDisplayCriteriaKey = nil
+    NSLog("[MpvPlayerCore] preferredDisplayCriteria cleared (%@)", reason)
+  }
+
+  /// Sanity bounds check before touching CoreMedia APIs -- guards against
+  /// nonsensical/overflowing dimensions from malformed video-params.
+  private static func validateSideDataDimensions(width: Int64, height: Int64) -> Bool {
+    guard width > 0, height > 0, width <= maximumSideDataDimension, height <= maximumSideDataDimension
+    else { return false }
+    let (pixels, overflow) = width.multipliedReportingOverflow(by: height)
+    return !overflow && pixels <= maximumSideDataPixels
+  }
+
+  private static func normalizeColorTag(_ value: String?) -> String {
+    value?.lowercased().filter { $0.isLetter || $0.isNumber } ?? ""
+  }
+
+  private static func resolveBaseDisplayDynamicRange(
+    sigPeak: Double,
+    gamma: String?,
+    primaries: String?,
+    colorMatrix: String?
+  ) -> DisplayDynamicRange {
+    let normalizedGamma = normalizeColorTag(gamma)
+    let normalizedPrimaries = normalizeColorTag(primaries)
+    let normalizedColorMatrix = normalizeColorTag(colorMatrix)
+
+    if normalizedGamma.contains("hlg") || normalizedGamma.contains("arib") {
+      return .hlg
+    }
+    if normalizedGamma.contains("pq") || normalizedGamma.contains("smpte2084")
+      || normalizedGamma.contains("st2084") || sigPeak > 1.0
+      || normalizedPrimaries.contains("bt2020") || normalizedColorMatrix.contains("bt2020")
+    {
+      return .hdr10
+    }
+    return .sdr
+  }
+
+  /// Clamps to what the connected TV actually supports (`AVPlayer.availableHDRModes`)
+  /// so we never request a display mode the hardware can't do.
+  private static func supportedDisplayDynamicRange(for range: DisplayDynamicRange) -> DisplayDynamicRange {
+    let availableModes = AVPlayer.availableHDRModes
+    switch range {
+    case .dolbyVision:
+      if availableModes.contains(.dolbyVision) { return .dolbyVision }
+      if availableModes.contains(.hdr10) { return .hdr10 }
+      if availableModes.contains(.hlg) { return .hlg }
+      return .sdr
+    case .hdr10:
+      return availableModes.contains(.hdr10) ? .hdr10 : .sdr
+    case .hlg:
+      return availableModes.contains(.hlg) ? .hlg : .sdr
+    case .sdr:
+      return .sdr
+    }
+  }
+
+  private static func makeDisplayFormatDescription(
+    dynamicRange: DisplayDynamicRange,
+    width: Int32,
+    height: Int32,
+    doviProfile: Int64,
+    doviLevel: Int64
+  ) -> CMVideoFormatDescription? {
+    if dynamicRange == .dolbyVision {
+      return makeDolbyVisionFormatDescription(
+        width: width, height: height,
+        profile: UInt8(truncatingIfNeeded: doviProfile),
+        level: UInt8(truncatingIfNeeded: doviLevel))
+    }
+
+    let extensions: [CFString: Any]
+    switch dynamicRange {
+    case .hdr10:
+      extensions = [
+        kCMFormatDescriptionExtension_ColorPrimaries: kCMFormatDescriptionColorPrimaries_ITU_R_2020,
+        kCMFormatDescriptionExtension_TransferFunction:
+          kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ,
+        kCMFormatDescriptionExtension_YCbCrMatrix: kCMFormatDescriptionYCbCrMatrix_ITU_R_2020,
+      ]
+    case .hlg:
+      extensions = [
+        kCMFormatDescriptionExtension_ColorPrimaries: kCMFormatDescriptionColorPrimaries_ITU_R_2020,
+        kCMFormatDescriptionExtension_TransferFunction: kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG,
+        kCMFormatDescriptionExtension_YCbCrMatrix: kCMFormatDescriptionYCbCrMatrix_ITU_R_2020,
+      ]
+    case .sdr:
+      extensions = [
+        kCMFormatDescriptionExtension_ColorPrimaries: kCMFormatDescriptionColorPrimaries_ITU_R_709_2,
+        kCMFormatDescriptionExtension_TransferFunction: kCMFormatDescriptionTransferFunction_ITU_R_709_2,
+        kCMFormatDescriptionExtension_YCbCrMatrix: kCMFormatDescriptionYCbCrMatrix_ITU_R_709_2,
+      ]
+    case .dolbyVision:
+      return nil
+    }
+
+    var fd: CMVideoFormatDescription?
+    let status = CMVideoFormatDescriptionCreate(
+      allocator: kCFAllocatorDefault,
+      codecType: kCMVideoCodecType_HEVC,
+      width: width,
+      height: height,
+      extensions: extensions as CFDictionary,
+      formatDescriptionOut: &fd
+    )
+    return status == noErr ? fd : nil
+  }
+
+  /// Build a synthetic 'dvh1' `CMVideoFormatDescription` from the Dolby
+  /// Vision metadata mpv exposes. Used solely as a hint object for
+  /// `AVDisplayCriteria(refreshRate:formatDescription:)` -- it is never
+  /// enqueued onto the sample-buffer layer. mpv does not expose the
+  /// compatibility id, so profile 8 (which always carries one) assumes
+  /// bl_signal_compatibility_id = 1 (HDR10 base), by far the most common
+  /// case; profile 5 has none, so 0.
+  private static func makeDolbyVisionFormatDescription(
+    width: Int32,
+    height: Int32,
+    profile: UInt8,
+    level: UInt8
+  ) -> CMVideoFormatDescription? {
+    let compatibility: UInt8 = profile == 8 ? 1 : 0
+
+    // 24-byte Dolby Vision configuration record (dvcC <= profile 7, dvvC >=
+    // 8). Layout from ETSI TS 103 572 Section 7.1.1:
+    //   [0]     dv_version_major (= 1)
+    //   [1]     dv_version_minor (= 0)
+    //   [2..3]  big-endian uint16: profile<<9 | level<<3 | rpu<<2 | el<<1 | bl
+    //   [4]     compatibility<<4 | md_compression<<2
+    //   [5..23] reserved zero
+    var dovi = [UInt8](repeating: 0, count: 24)
+    dovi[0] = 1
+    dovi[1] = 0
+    let flags: UInt16 =
+      (UInt16(profile) & 0x7f) << 9
+      | (UInt16(level) & 0x3f) << 3
+      | (1 << 2)  // rpu_present_flag
+      | (1 << 0)  // bl_present_flag
+    dovi[2] = UInt8((flags >> 8) & 0xff)
+    dovi[3] = UInt8(flags & 0xff)
+    dovi[4] = (compatibility & 0x0f) << 4
+
+    // CoreMedia carries codec-specific boxes under
+    // kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms.
+    let recordKey: CFString = (profile > 7 ? "dvvC" : "dvcC") as CFString
+    let atoms: [CFString: Any] = [recordKey: Data(dovi) as CFData]
+
+    let extensions: [CFString: Any] = [
+      kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms: atoms as CFDictionary,
+      kCMFormatDescriptionExtension_ColorPrimaries: kCMFormatDescriptionColorPrimaries_ITU_R_2020,
+      kCMFormatDescriptionExtension_TransferFunction: kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ,
+      kCMFormatDescriptionExtension_YCbCrMatrix: kCMFormatDescriptionYCbCrMatrix_ITU_R_2020,
+    ]
+
+    var fd: CMVideoFormatDescription?
+    let status = CMVideoFormatDescriptionCreate(
+      allocator: kCFAllocatorDefault,
+      codecType: kCMVideoCodecType_DolbyVisionHEVC,  // 'dvh1'
+      width: width,
+      height: height,
+      extensions: extensions as CFDictionary,
+      formatDescriptionOut: &fd
+    )
+    return status == noErr ? fd : nil
   }
 }

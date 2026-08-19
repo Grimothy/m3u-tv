@@ -14,6 +14,14 @@
 //
 // Deliberately does NOT set `force-seekable=yes` -- see the macOS core's
 // header comment and docs/migration/desktop-libmpv-feasibility.md for why.
+//
+// Requests EDR (Extended Dynamic Range) rendering on the display layer when
+// the source signals HDR (`video-params/sig-peak > 1.0`) -- ported from
+// Plezy's `updateEDRMode` (ios/Runner/MpvPlayer/MpvPlayerCore.swift).
+// Simplified relative to that reference: no user-facing HDR toggle, since
+// this app applies HDR automatically per source everywhere (matching the
+// Windows/Linux/tvOS HDR paths). Unlike tvOS, iOS EDR is requested directly
+// on the render surface -- no HDMI display-mode switch is needed.
 
 import AVFoundation
 import Libmpv
@@ -33,6 +41,9 @@ final class MpvPlayerCore {
   private var readyEmitted = false
   private var disposed = false
 
+  // Set once from `attach(to:)` so `updateEDRMode` can toggle EDR on it.
+  private weak var videoLayer: AVSampleBufferDisplayLayer?
+
   init(viewId: Int) {
     self.viewId = viewId
     self.queue = DispatchQueue(label: "m3u_tv.apple_mpv.\(viewId)")
@@ -41,6 +52,7 @@ final class MpvPlayerCore {
   /// Creates and initializes the mpv handle, targeting `displayLayer` as the
   /// render surface. Must be called once, before `load`.
   func attach(to displayLayer: AVSampleBufferDisplayLayer) {
+    self.videoLayer = displayLayer
     queue.async { [weak self] in
       guard let self, self.mpv == nil else { return }
 
@@ -89,6 +101,9 @@ final class MpvPlayerCore {
         ("sid", MPV_FORMAT_STRING),
         ("track-list", MPV_FORMAT_NODE),
         ("video-params/aspect", MPV_FORMAT_DOUBLE),
+        // EDR input -- appended rather than interleaved so the indices
+        // above (relied on by trackRelatedPropertyIndices) don't shift.
+        ("video-params/sig-peak", MPV_FORMAT_DOUBLE),
       ]
       for (index, entry) in observed.enumerated() {
         mpv_observe_property(handle, UInt64(index), entry.0, entry.1)
@@ -260,6 +275,13 @@ final class MpvPlayerCore {
     case MPV_EVENT_PLAYBACK_RESTART:
       emit(kind: "PLAYBACK_RESTART", extra: snapshot(includeTracks: true))
     case MPV_EVENT_PROPERTY_CHANGE:
+      if event.reply_userdata == Self.sigPeakPropertyIndex {
+        var sigPeak: Double = 0
+        if let handle = mpv, mpv_get_property(handle, "video-params/sig-peak", MPV_FORMAT_DOUBLE, &sigPeak) >= 0
+        {
+          DispatchQueue.main.async { [weak self] in self?.updateEDRMode(sigPeak: sigPeak) }
+        }
+      }
       if readyEmitted {
         // Most property-change events are `time-pos` ticks (essentially
         // every frame during playback); only re-walk the track list when
@@ -290,6 +312,26 @@ final class MpvPlayerCore {
   /// properties whose change should trigger a `track-list` re-walk in
   /// `snapshot(includeTracks:)` -- `aid`, `sid`, `track-list`.
   private static let trackRelatedPropertyIndices: Set<UInt64> = [6, 7, 8]
+
+  /// Index of `video-params/sig-peak` in the `observed` array in `attach(to:)`.
+  private static let sigPeakPropertyIndex: UInt64 = 10
+
+  /// Toggles EDR rendering on the display layer based on the source's HDR
+  /// peak signal. Must run on main (layer property mutation). Ported from
+  /// Plezy's `updateEDRMode` -- see file header for what was left out.
+  private func updateEDRMode(sigPeak: Double) {
+    guard let videoLayer else { return }
+
+    let shouldEnableEDR = sigPeak > 1.0
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    if #available(iOS 26.0, *) {
+      videoLayer.preferredDynamicRange = shouldEnableEDR ? .high : .standard
+    } else if #available(iOS 17.0, *) {
+      videoLayer.wantsExtendedDynamicRangeContent = shouldEnableEDR
+    }
+    CATransaction.commit()
+  }
 
   private func snapshot(includeTracks: Bool) -> [String: Any] {
     guard let handle = mpv else { return [:] }
