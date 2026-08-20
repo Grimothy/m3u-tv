@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:m3u_tv/services/domain_models.dart';
+import 'package:m3u_tv/shared/cached_media_thumbnail.dart';
 
 /// Continue Watching screen showing resume-able content.
 ///
@@ -169,11 +170,13 @@ class _ContinueWatchingCard extends StatelessWidget {
               // Cover image
               Expanded(
                 child: coverUrl != null && coverUrl!.isNotEmpty
-                    ? Image.network(
-                        coverUrl!,
+                    ? CachedMediaThumbnail(
+                        url: coverUrl!,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) =>
-                            const Icon(Icons.play_circle_outline, size: 48),
+                        fallback: const Icon(
+                          Icons.play_circle_outline,
+                          size: 48,
+                        ),
                       )
                     : const Icon(Icons.play_circle_outline, size: 48),
               ),

@@ -2134,6 +2134,7 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
         .toList(growable: false);
     final continueWatchingSection = MediaPreviewSection(
       title: l.homeContinueWatching,
+      titleIcon: Icons.history,
       emptyLabel: l.homeNoContinueWatching,
       items: continueWatchingItems,
       landscapeStyle: true,
@@ -2169,12 +2170,14 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
 
     final liveSection = MediaPreviewSection(
       title: favoriteChannels.isEmpty ? l.navLiveTv : l.homeFavoriteChannels,
+      titleIcon: favoriteChannels.isEmpty ? Icons.live_tv : Icons.star,
       emptyLabel: l.homeNoLiveTv,
       items: liveSectionChannels.map(liveChannelItem).toList(growable: false),
       onSidebarActivate: widget.onSidebarActivate,
     );
     final moviesSection = MediaPreviewSection(
       title: l.navVod,
+      titleIcon: Icons.movie,
       emptyLabel: l.homeNoMovies,
       posterStyle: true,
       items: vodItems
@@ -2198,6 +2201,7 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
     );
     final seriesSection = MediaPreviewSection(
       title: l.navSeries,
+      titleIcon: Icons.tv,
       emptyLabel: l.homeNoSeries,
       posterStyle: true,
       items: seriesList
@@ -2223,6 +2227,7 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
     );
     final recordingsSection = MediaPreviewSection(
       title: 'DVR',
+      titleIcon: Icons.video_library,
       emptyLabel: 'No DVR recordings available',
       items: [
         MediaPreviewItem(

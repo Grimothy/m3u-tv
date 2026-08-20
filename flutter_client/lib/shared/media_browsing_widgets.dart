@@ -385,6 +385,19 @@ class ResilientMediaImage extends StatelessWidget {
       title: fallbackTitle,
     );
     final url = imageUrl;
+    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final cacheWidth = width == null
+        ? null
+        : (width! * devicePixelRatio).round();
+    final cacheHeight = height == null
+        ? null
+        : (height! * devicePixelRatio).round();
+    final provider = url == null || url.isEmpty
+        ? null
+        : CachedNetworkImageProvider(
+            url,
+            cacheManager: MediaImageCacheManager(),
+          );
 
     final image = ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
@@ -395,13 +408,16 @@ class ResilientMediaImage extends StatelessWidget {
           decoration: BoxDecoration(
             color: backgroundColor ?? colorScheme.surfaceContainerHighest,
           ),
-          child: url == null || url.isEmpty
+          child: provider == null
               ? fallback
               : Image(
-                  image: CachedNetworkImageProvider(
-                    url,
-                    cacheManager: MediaImageCacheManager(),
-                  ),
+                  image: cacheWidth == null && cacheHeight == null
+                      ? provider
+                      : ResizeImage(
+                          provider,
+                          width: cacheWidth,
+                          height: cacheHeight,
+                        ),
                   fit: fit,
                   width: width,
                   height: height,
@@ -770,6 +786,7 @@ class MediaPreviewSection extends StatefulWidget {
     required this.title,
     required this.emptyLabel,
     required this.items,
+    this.titleIcon,
     this.posterStyle = false,
     this.landscapeStyle = false,
     this.onSidebarActivate,
@@ -777,6 +794,7 @@ class MediaPreviewSection extends StatefulWidget {
   });
 
   final String title;
+  final IconData? titleIcon;
   final String emptyLabel;
   final List<MediaPreviewItem> items;
   final bool posterStyle;
@@ -822,9 +840,24 @@ class _MediaPreviewSectionState extends State<MediaPreviewSection> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                widget.title,
-                style: Theme.of(context).textTheme.titleLarge,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.titleIcon != null) ...[
+                    Icon(
+                      widget.titleIcon,
+                      size: 20,
+                      color: Theme.of(context).textTheme.titleLarge?.color,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Text(
+                    widget.title,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.titleLarge?.copyWith(fontSize: 18),
+                  ),
+                ],
               ),
               const SizedBox(height: MediaBrowsingMetrics.chipGap),
               if (visibleItems.isEmpty)

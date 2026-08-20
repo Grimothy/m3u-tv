@@ -527,6 +527,7 @@ class _AIOStreamsHomeScreenState extends State<AIOStreamsHomeScreen> {
             if (continueWatching.isNotEmpty)
               MediaPreviewSection(
                 title: l.aiostreamsContinueWatching,
+                titleIcon: Icons.history,
                 emptyLabel: '',
                 landscapeStyle: true,
                 items: continueWatching
@@ -751,7 +752,10 @@ class _CatalogRowSkeleton extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: theme.textTheme.titleLarge),
+          Text(
+            title,
+            style: theme.textTheme.titleLarge?.copyWith(fontSize: 18),
+          ),
           const SizedBox(height: MediaBrowsingMetrics.chipGap),
           LayoutBuilder(
             builder: (context, constraints) {

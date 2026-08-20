@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/epg_service.dart';
+import 'package:m3u_tv/shared/cached_media_thumbnail.dart';
 import 'package:m3u_tv/shared/catchup_badge.dart';
 
 /// EPG screen showing current/next program info for live channels.
@@ -112,11 +113,11 @@ class _EpgScreenState extends State<EpgScreen> {
                 if (channel.logoUrl != null && channel.logoUrl!.isNotEmpty)
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: Image.network(
-                      channel.logoUrl!,
+                    child: CachedMediaThumbnail(
+                      url: channel.logoUrl!,
                       width: 48,
                       height: 48,
-                      errorBuilder: (_, _, _) => const Icon(Icons.tv, size: 48),
+                      fallback: const Icon(Icons.tv, size: 48),
                     ),
                   )
                 else

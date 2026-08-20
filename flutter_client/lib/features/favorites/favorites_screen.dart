@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
+import 'package:m3u_tv/shared/cached_media_thumbnail.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/dpad_tab_bar.dart';
 
@@ -209,11 +210,10 @@ class _FavoritesScreenState extends State<FavoritesScreen>
                   children: [
                     Expanded(
                       child: item.logoUrl != null && item.logoUrl!.isNotEmpty
-                          ? Image.network(
-                              item.logoUrl!,
+                          ? CachedMediaThumbnail(
+                              url: item.logoUrl!,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) =>
-                                  const Icon(Icons.movie, size: 48),
+                              fallback: const Icon(Icons.movie, size: 48),
                             )
                           : const Icon(Icons.movie, size: 48),
                     ),
@@ -281,11 +281,10 @@ class _FavoritesScreenState extends State<FavoritesScreen>
                   children: [
                     Expanded(
                       child: item.coverUrl != null && item.coverUrl!.isNotEmpty
-                          ? Image.network(
-                              item.coverUrl!,
+                          ? CachedMediaThumbnail(
+                              url: item.coverUrl!,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) =>
-                                  const Icon(Icons.tv, size: 48),
+                              fallback: const Icon(Icons.tv, size: 48),
                             )
                           : const Icon(Icons.tv, size: 48),
                     ),

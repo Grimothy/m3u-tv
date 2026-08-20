@@ -11,6 +11,7 @@ import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/epg_service.dart';
 import 'package:m3u_tv/services/view_settings_service.dart'
     show ChannelColumnLayout, EpgStartView;
+import 'package:m3u_tv/shared/cached_media_thumbnail.dart';
 import 'package:m3u_tv/shared/catchup_badge.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/epg_icon_pill.dart';
@@ -876,12 +877,12 @@ class _ChannelCell extends StatelessWidget {
 
   Widget _logo({required double size}) {
     if (channel.logoUrl != null && channel.logoUrl!.isNotEmpty) {
-      return Image.network(
-        channel.logoUrl!,
+      return CachedMediaThumbnail(
+        url: channel.logoUrl!,
         width: size,
         height: size,
         fit: BoxFit.contain,
-        errorBuilder: (_, _, _) => Icon(Icons.tv, size: size - 4),
+        fallback: Icon(Icons.tv, size: size - 4),
       );
     }
     return Icon(Icons.tv, size: size - 4);

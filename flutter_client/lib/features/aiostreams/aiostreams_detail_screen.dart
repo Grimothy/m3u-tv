@@ -10,6 +10,7 @@ import 'package:m3u_tv/services/aiostreams_api_service.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/shared/cached_backdrop_image.dart';
+import 'package:m3u_tv/shared/cached_media_thumbnail.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
@@ -889,11 +890,12 @@ class _AIOEpisodeTileState extends State<_AIOEpisodeTile> {
                       width: 120,
                       height: 68,
                       child: video.thumbnail != null
-                          ? Image.network(
-                              video.thumbnail!,
+                          ? CachedMediaThumbnail(
+                              url: video.thumbnail!,
+                              width: 120,
+                              height: 68,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) =>
-                                  _episodeNumberBadge(colorScheme),
+                              fallback: _episodeNumberBadge(colorScheme),
                             )
                           : _episodeNumberBadge(colorScheme),
                     ),
