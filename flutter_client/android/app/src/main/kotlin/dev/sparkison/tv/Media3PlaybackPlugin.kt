@@ -48,6 +48,15 @@ import io.flutter.plugin.common.MethodChannel
  * on its own schedule) and registered via [attachSurfaceView]; `load` calls
  * that arrive first wait for it via [waitForSurfaceView], mirroring
  * MpvPlayerPlugin.kt's `waitForCore`.
+ *
+ * All ExoPlayer creation/control here runs on Flutter's platform (main/UI)
+ * thread, the default `MethodChannel` dispatch thread -- an attempt to move
+ * this to a dedicated background thread via `ExoPlayer.Builder.setLooper`
+ * (to fix a real main-thread Choreographer-skipped-frames jank on `load`)
+ * caused a black screen on real Shield hardware instead (HDR display-mode
+ * switching still fired, so frames were reaching SurfaceFlinger, but nothing
+ * rendered) -- reverted pending a correctly-targeted fix backed by real
+ * diagnostic evidence rather than another blind attempt.
  */
 class Media3PlaybackPlugin(
     private val context: Context,

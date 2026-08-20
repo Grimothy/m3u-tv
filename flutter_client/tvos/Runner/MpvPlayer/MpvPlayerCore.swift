@@ -62,6 +62,20 @@ final class MpvPlayerCore {
   private static let maximumSideDataDimension: Int64 = 16384
   private static let maximumSideDataPixels: Int64 = 16384 * 16384
 
+  // `UIWindow.avDisplayManager` throws `doesNotRecognizeSelector:` when
+  // touched on the tvOS Simulator -- the class doesn't implement it there,
+  // unlike `isDisplayCriteriaMatchingEnabled`-style flags that just report a
+  // safe default. HDMI display-mode switching is meaningless in Simulator
+  // anyway, so skip the whole AVDisplayManager path there instead of
+  // depending on any one property being safe to call.
+  private static let isSimulator: Bool = {
+    #if targetEnvironment(simulator)
+      return true
+    #else
+      return false
+    #endif
+  }()
+
   init(viewId: Int) {
     self.viewId = viewId
     self.queue = DispatchQueue(label: "m3u_tv.apple_mpv.tvos.\(viewId)")
@@ -289,7 +303,7 @@ final class MpvPlayerCore {
     // after the `queue.async` block below finishes, so `self` stays alive
     // for this to run against.
     DispatchQueue.main.async { [weak self] in
-      guard let self, let window = self.hostView?.window else { return }
+      guard let self, !Self.isSimulator, let window = self.hostView?.window else { return }
       self.clearDisplayCriteria(window.avDisplayManager, reason: "dispose")
     }
 
@@ -567,7 +581,7 @@ final class MpvPlayerCore {
     primaries: String?,
     colorMatrix: String?
   ) -> Bool {
-    guard let window = hostView?.window else { return false }
+    guard !Self.isSimulator, let window = hostView?.window else { return false }
     let displayManager = window.avDisplayManager
 
     guard Self.validateSideDataDimensions(width: Int64(width), height: Int64(height)) else {
@@ -634,6 +648,7 @@ final class MpvPlayerCore {
   }
 
   private func clearDisplayCriteria(_ displayManager: AVDisplayManager, reason: String) {
+    guard displayManager.isDisplayCriteriaMatchingEnabled else { return }
     guard activeDisplayCriteriaKey != nil || displayManager.preferredDisplayCriteria != nil else { return }
     displayManager.preferredDisplayCriteria = nil
     activeDisplayCriteriaKey = nil
