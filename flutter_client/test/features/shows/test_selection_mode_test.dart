@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -84,7 +86,7 @@ void main() {
         onScheduleEpisodes: (_) async => [],
       );
 
-      // Initially no action bar — the user is in normal mode.
+      // Initially no action bar; the user is in normal mode.
       expect(cancelButton(tester), findsNothing);
 
       await tester.longPress(find.text('Ep 1'));
@@ -171,7 +173,7 @@ void main() {
       await pumpScreen(
         tester,
         show: testShow(episodes: [ep(1)]),
-        // onScheduleEpisodes left null — selection mode is unavailable.
+        // onScheduleEpisodes left null; selection mode is unavailable.
       );
 
       await tester.longPress(find.text('Ep 1'));
@@ -186,7 +188,7 @@ void main() {
   testWidgets(
     'already-scheduled rows are excluded from selection (long-press is a no-op)',
     (tester) async {
-      // A recording that covers Ep 1's window — Ep 1 should be excluded.
+      // A recording that covers Ep 1's window: Ep 1 should be excluded.
       final recording = DvrRecording(
         uuid: 'uuid-scheduled',
         title: 'Ep 1',
@@ -204,16 +206,108 @@ void main() {
         onScheduleEpisodes: (_) async => [],
       );
 
-      // Long-press Ep 1 (already-scheduled) — should not enter mode.
+      // Long-press Ep 1 (already-scheduled): should not enter mode.
       await tester.longPress(find.text('Ep 1'));
       await tester.pumpAndSettle();
       expect(cancelButton(tester), findsNothing);
 
-      // Long-press Ep 2 (selectable) — should enter mode.
+      // Long-press Ep 2 (selectable): should enter mode.
       await tester.longPress(find.text('Ep 2'));
       await tester.pumpAndSettle();
       expect(cancelButton(tester), findsOneWidget);
       expect(recordButtonLabel(tester, 1), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'an already-ended episode cannot be long-pressed into selection mode',
+    (tester) async {
+      final endedEpisode = EpgShowEpisode(
+        channelId: 8,
+        channelName: 'Channel Eight',
+        title: 'Ep Past',
+        startTime: DateTime.now().subtract(const Duration(hours: 2)),
+        endTime: DateTime.now().subtract(const Duration(hours: 1)),
+      );
+
+      await pumpScreen(
+        tester,
+        show: testShow(episodes: [endedEpisode, ep(1)]),
+        onScheduleEpisodes: (_) async => [],
+      );
+
+      // The single-item Record button already hides for ended episodes; this
+      // asserts the batch entry point (long-press) respects the same rule.
+      await tester.longPress(find.text('Ep Past'));
+      await tester.pumpAndSettle();
+      expect(cancelButton(tester), findsNothing);
+
+      await tester.longPress(find.text('Ep 1'));
+      await tester.pumpAndSettle();
+      expect(cancelButton(tester), findsOneWidget);
+      expect(recordButtonLabel(tester, 1), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'a recording that only touches (does not overlap) an episode does not '
+    'mark it already-scheduled',
+    (tester) async {
+      // Recording for Ep 1 ends exactly when Ep 2 starts (back-to-back
+      // airings on the same channel). Ep 2 must remain selectable.
+      final recording = DvrRecording(
+        uuid: 'uuid-back-to-back',
+        title: 'Ep 1',
+        status: DvrRecordingStatus.scheduled,
+        channelId: 8,
+        channelName: 'Channel Eight',
+        scheduledStart: ep(1).startTime,
+        scheduledEnd: ep(2).startTime,
+      );
+
+      await pumpScreen(
+        tester,
+        show: testShow(episodes: [ep(1), ep(2)]),
+        recordings: [recording],
+        onScheduleEpisodes: (_) async => [],
+      );
+
+      await tester.longPress(find.text('Ep 2'));
+      await tester.pumpAndSettle();
+      expect(cancelButton(tester), findsOneWidget);
+      expect(recordButtonLabel(tester, 1), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'double-tapping Record (N) only fires onScheduleEpisodes once',
+    (tester) async {
+      var callCount = 0;
+      final completer = Completer<List<DvrAiringScheduleResult>>();
+      await pumpScreen(
+        tester,
+        show: testShow(episodes: [ep(1)]),
+        onScheduleEpisodes: (eps) {
+          callCount++;
+          return completer.future;
+        },
+      );
+
+      await tester.longPress(find.text('Ep 1'));
+      await tester.pumpAndSettle();
+
+      // Tap twice before the handler resolves.
+      await tester.tap(recordButtonLabel(tester, 1));
+      await tester.pump();
+      await tester.tap(recordButtonLabel(tester, 1));
+      await tester.pump();
+
+      expect(callCount, 1);
+
+      completer.complete([
+        DvrAiringScheduleResult(episode: ep(1), success: true),
+      ]);
+      await tester.pumpAndSettle();
     },
   );
 
@@ -315,7 +409,7 @@ void main() {
 
       // 1 scheduled + 2 failed (≤ 3) → failure titles listed inline.
       // The SnackBar text is summary + "\n" + failure-line, so use
-      // `find.textContaining` — `find.text` is an exact-match against
+      // `find.textContaining`; `find.text` is an exact-match against
       // the full multi-line string.
       expect(
         find.textContaining(

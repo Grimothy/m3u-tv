@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:m3u_tv/features/dvr/dvr_series_rule_options_screen.dart';
+import 'package:m3u_tv/features/epg/epg_recording_index.dart';
+import 'package:m3u_tv/features/epg/epg_recording_state.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
@@ -69,8 +71,8 @@ class ShowDetailScreen extends ConsumerStatefulWidget {
   /// Schedules a batch of DVR airings for the user-selected episodes in
   /// selection mode. Wired by AppShell against
   /// `AppStateController.scheduleDvrAirings`. Null means selection mode is
-  /// unavailable entirely (no long-press affordance, no action bar) — a mode
-  /// with no exit would trap the user.
+  /// unavailable entirely (no long-press affordance, no action bar), since a
+  /// mode with no exit would trap the user.
   final Future<List<DvrAiringScheduleResult>> Function(
     List<EpgShowEpisode>,
   )?
@@ -100,6 +102,11 @@ class _ShowDetailScreenState extends ConsumerState<ShowDetailScreen> {
   /// so the two sets stay disjoint in their semantics.
   final Set<String> _selectedEpisodeKeys = {};
 
+  /// True while a batch schedule request is in flight. Guards "Record (N)"
+  /// against a double-tap firing two concurrent batch submissions of the
+  /// same selection (mirrors [_submittingEpisodeKeys]'s per-row guard).
+  bool _batchSubmitting = false;
+
   Future<void> _scheduleEpisode(EpgShowEpisode episode) async {
     final handler = widget.onScheduleEpisode;
     if (handler == null) return;
@@ -122,7 +129,7 @@ class _ShowDetailScreenState extends ConsumerState<ShowDetailScreen> {
   /// Enters selection mode with [episode] as the initially-selected row.
   /// Caller guards `onScheduleEpisodes != null` (the long-press affordance is
   /// wired conditionally so this method is never called when the handler is
-  /// missing — but the guard is defensive in case the entry point changes).
+  /// missing, but the guard is defensive in case the entry point changes).
   void _enterSelectionMode(EpgShowEpisode episode) {
     if (widget.onScheduleEpisodes == null) return;
     setState(() {
@@ -156,41 +163,53 @@ class _ShowDetailScreenState extends ConsumerState<ShowDetailScreen> {
 
   /// Runs the batch schedule handler for the user's selected episodes, then
   /// exits selection mode and surfaces a single summary SnackBar.
+  ///
+  /// Re-entrancy is guarded by [_batchSubmitting] (mirrors
+  /// [_submittingEpisodeKeys] for the single-row path) so a double-tap on
+  /// "Record (N)" can't fire two concurrent batches for the same selection.
+  /// Selected episodes that became already-scheduled since the user picked
+  /// them (e.g. scheduled from another device, or by a series rule, while
+  /// selection mode was open) are dropped before submitting rather than
+  /// resubmitted.
   Future<void> _scheduleSelected() async {
     final handler = widget.onScheduleEpisodes;
-    if (handler == null || _selectedEpisodeKeys.isEmpty) return;
-    final selectedEpisodes = widget.show.recentEpisodes
-        .where((e) => _selectedEpisodeKeys.contains(_episodeRecordKey(e)))
-        .toList(growable: false);
+    if (handler == null || _selectedEpisodeKeys.isEmpty || _batchSubmitting) {
+      return;
+    }
+    final recordingIndex = EpgRecordingIndex.fromRecordings(
+      ref.read(dvrRecordingsProvider),
+    );
+    final selectedEpisodes = [
+      for (final episode in widget.show.recentEpisodes)
+        if (_selectedEpisodeKeys.contains(_episodeRecordKey(episode)) &&
+            !_isAlreadyScheduled(episode, recordingIndex))
+          episode,
+    ];
+    if (selectedEpisodes.isEmpty) {
+      _exitSelectionMode();
+      return;
+    }
 
-    // Capture the messenger + l10n BEFORE the await — `context` becomes
-    // invalid if the widget unmounts while the batch is in flight.
-    final messenger = ScaffoldMessenger.of(context);
-    final l10n = AppLocalizations.of(context);
-
+    setState(() => _batchSubmitting = true);
     try {
-      final results = await handler(selectedEpisodes);
-      if (!mounted) return;
-      final scheduled = results.where((r) => r.success).length;
-      final failed = results.length - scheduled;
-      final failureTitles = [
-        for (final r in results)
-          if (!r.success) r.episode.displayTitle,
-      ];
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            _buildBatchSummary(l10n, scheduled, failed, failureTitles),
-          ),
-        ),
-      );
-    } on Object catch (error) {
-      if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.appRecordingFailed(error.toString()))),
+      await scheduleDvrWithFeedback<List<DvrAiringScheduleResult>>(
+        context,
+        schedule: () => handler(selectedEpisodes),
+        successMessage: (results, l10n) {
+          final scheduled = results.where((r) => r.success).length;
+          final failed = results.length - scheduled;
+          final failureTitles = [
+            for (final r in results)
+              if (!r.success) r.episode.displayTitle,
+          ];
+          return _buildBatchSummary(l10n, scheduled, failed, failureTitles);
+        },
       );
     } finally {
-      if (mounted) _exitSelectionMode();
+      if (mounted) {
+        setState(() => _batchSubmitting = false);
+        _exitSelectionMode();
+      }
     }
   }
 
@@ -198,7 +217,7 @@ class _ShowDetailScreenState extends ConsumerState<ShowDetailScreen> {
   ///
   /// Per the plan's judgment call (state in Worker status), failed-episode
   /// titles are listed inline only when [failed] is between 1 and 3
-  /// inclusive — beyond that the line would overrun the SnackBar width.
+  /// inclusive (beyond that the line would overrun the SnackBar width).
   /// failed == 0 collapses to the summary alone ("All succeeded.").
   String _buildBatchSummary(
     AppLocalizations l10n,
@@ -207,7 +226,7 @@ class _ShowDetailScreenState extends ConsumerState<ShowDetailScreen> {
     List<String> failureTitles,
   ) {
     final summary = l10n.showBatchScheduleSummary(scheduled, failed);
-    if (failed > 0 && failed <= 3 && failureTitles.isNotEmpty) {
+    if (failed > 0 && failed <= 3) {
       return '$summary\n${l10n.showBatchScheduleFailures(failureTitles.join(', '))}';
     }
     return summary;
@@ -349,6 +368,7 @@ class _ShowDetailScreenState extends ConsumerState<ShowDetailScreen> {
     // Watching so a freshly-scheduled airing (single tap or batch) flips
     // the per-row "Scheduled" badge without a full route re-push.
     final recordings = ref.watch(dvrRecordingsProvider);
+    final recordingIndex = EpgRecordingIndex.fromRecordings(recordings);
 
     return Scaffold(
       appBar: AppBar(
@@ -404,7 +424,8 @@ class _ShowDetailScreenState extends ConsumerState<ShowDetailScreen> {
             if (_selectionMode) ...[
               _SelectionActionsBar(
                 selectedCount: _selectedEpisodeKeys.length,
-                onRecord: _selectedEpisodeKeys.isEmpty
+                onRecord:
+                    _selectedEpisodeKeys.isEmpty || _batchSubmitting
                     ? null
                     : _scheduleSelected,
                 onCancel: _exitSelectionMode,
@@ -423,10 +444,18 @@ class _ShowDetailScreenState extends ConsumerState<ShowDetailScreen> {
                 (episode) {
                   final alreadyScheduled = _isAlreadyScheduled(
                     episode,
-                    recordings,
+                    recordingIndex,
                   );
                   final episodeKey = _episodeRecordKey(episode);
-                  final rowSelectable = !alreadyScheduled;
+                  // Matches the single-row `canSchedule` gate in
+                  // _EpisodeRowState: an airing that has already ended can't
+                  // be recorded, in batch mode any more than single-row mode.
+                  final rowSelectable =
+                      !alreadyScheduled &&
+                      episode.endTime.isAfter(DateTime.now());
+                  final toggleSelection = _selectionMode && rowSelectable
+                      ? () => _toggleSelection(episode)
+                      : null;
                   return Padding(
                     padding: const EdgeInsets.only(
                       bottom: MediaBrowsingMetrics.itemGap,
@@ -437,21 +466,17 @@ class _ShowDetailScreenState extends ConsumerState<ShowDetailScreen> {
                       alreadyScheduled: alreadyScheduled,
                       selectionMode: _selectionMode,
                       selected: _selectedEpisodeKeys.contains(episodeKey),
-                      // Long-press: enter mode (normal mode) or toggle (in mode).
-                      // Only available when selection mode is reachable AND
-                      // this row is selectable.
+                      // Long-press: enter mode (normal mode) or toggle (in
+                      // mode). Only available when selection mode is
+                      // reachable AND this row is selectable.
                       onLongTap:
                           (widget.onScheduleEpisodes != null &&
                               !_selectionMode &&
                               rowSelectable)
                           ? () => _enterSelectionMode(episode)
-                          : (_selectionMode && rowSelectable
-                                ? () => _toggleSelection(episode)
-                                : null),
+                          : toggleSelection,
                       // Tap: only meaningful in selection mode (toggle).
-                      onTap: _selectionMode && rowSelectable
-                          ? () => _toggleSelection(episode)
-                          : null,
+                      onTap: toggleSelection,
                       onScheduleEpisode:
                           !_selectionMode &&
                               widget.onScheduleEpisode != null &&
@@ -652,7 +677,7 @@ class _EpisodeRow extends StatefulWidget {
   final Future<void> Function(EpgShowEpisode episode)? onScheduleEpisode;
 
   /// Row tap handler. In selection mode, toggles this row's selection. In
-  /// normal mode, null (rows aren't tappable — the Record icon is).
+  /// normal mode, null (rows aren't tappable; the Record icon is).
   final VoidCallback? onTap;
 
   /// Row long-press handler. In normal mode, enters selection mode (with
@@ -845,23 +870,16 @@ String _episodeRecordKey(EpgShowEpisode episode) =>
 
 /// True when [episode] is already covered by an existing DVR recording.
 ///
-/// Uses time-window overlap rather than start-time equality so it still
-/// matches recordings whose `scheduledStart` has been padded backward by
-/// the server's `start_early_seconds` (which commonly exceeds the 60s
-/// tolerance the single-row `scheduleDvrAiring` uses for its return match).
-///
-/// Null `scheduledStart`/`scheduledEnd` on the recording means "can't
-/// confirm" — such rows aren't marked as duplicates, so a recording still
-/// being seeded server-side isn't prematurely locked out of rescheduling.
-bool _isAlreadyScheduled(
-  EpgShowEpisode episode,
-  List<DvrRecording> recordings,
-) {
-  return recordings.any((recording) {
-    if (recording.channelId != episode.channelId) return false;
-    final start = recording.scheduledStart;
-    final end = recording.scheduledEnd;
-    if (start == null || end == null) return false;
-    return !start.isAfter(episode.endTime) && !end.isBefore(episode.startTime);
-  });
+/// Delegates to [EpgRecordingIndex], which the EPG timeline grid also uses
+/// for the same "does this programme have a recording" question: coverage-
+/// based overlap (not naive boundary overlap, which false-matches adjacent
+/// back-to-back airings on the same channel) plus channel-bucketed lookup
+/// and terminal-status filtering.
+bool _isAlreadyScheduled(EpgShowEpisode episode, EpgRecordingIndex index) {
+  return index.stateFor(
+        channelId: episode.channelId,
+        programStart: episode.startTime,
+        programEnd: episode.endTime,
+      ) !=
+      EpgRecordingState.none;
 }

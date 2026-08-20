@@ -1917,16 +1917,16 @@ class AppStateController extends ChangeNotifier {
 
   /// Schedules a batch of one-shot DVR recordings and refreshes the local
   /// list once, after the whole loop completes. The single-item
-  /// [scheduleDvrAiring] does this per call — applying it per item in a
+  /// [scheduleDvrAiring] does this per call (applying it per item in a
   /// batch would mean N `getDvrRecordingsFor` round-trips, N
-  /// `notifyListeners()` rebuilds, and N `refreshDvrStorage()` calls.
+  /// `notifyListeners()` rebuilds, and N `refreshDvrStorage()` calls).
   ///
   /// Per-item failures (e.g. `XtreamDvrScheduleException` for the 422
   /// concurrent recording limit case) are captured into each
   /// [DvrAiringScheduleResult] rather than aborting the rest of the batch.
   ///
-  /// Throws [StateError] when credentials are not configured — a wholesale
-  /// precondition fail, not a per-item failure. Matches [scheduleDvrAiring].
+  /// Throws [StateError] when credentials are not configured (a wholesale
+  /// precondition fail, not a per-item failure). Matches [scheduleDvrAiring].
   Future<List<DvrAiringScheduleResult>> scheduleDvrAirings(
     List<EpgShowEpisode> episodes,
   ) async {
@@ -1939,7 +1939,7 @@ class AppStateController extends ChangeNotifier {
 
     final results = <DvrAiringScheduleResult>[];
     for (final episode in episodes) {
-      if (!ownsWork()) return results;
+      if (!ownsWork()) break;
       try {
         await xtreamService.scheduleDvrFor(
           credentials,
@@ -1968,6 +1968,19 @@ class AppStateController extends ChangeNotifier {
           ),
         );
       }
+    }
+
+    // Ownership was lost partway through the loop above: report the
+    // untried episodes as failed instead of silently dropping them from
+    // the caller's success/failure count.
+    for (final episode in episodes.skip(results.length)) {
+      results.add(
+        DvrAiringScheduleResult(
+          episode: episode,
+          success: false,
+          errorMessage: 'Cancelled: DVR ownership changed mid-batch',
+        ),
+      );
     }
 
     if (!ownsWork()) return results;

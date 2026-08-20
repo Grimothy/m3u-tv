@@ -779,7 +779,7 @@ class AppShellState extends ConsumerState<AppShell>
 
   /// Schedules a batch of DVR airings for one Shows-search selection.
   /// Per-item failures land inside the returned list (the screen turns that
-  /// into a single summary SnackBar) — no per-item SnackBars here, mirroring
+  /// into a single summary SnackBar), no per-item SnackBars here, mirroring
   /// the single-item `_scheduleDvrAiring`'s "screen owns feedback" rule.
   Future<List<DvrAiringScheduleResult>> _scheduleDvrAirings(
     List<EpgShowEpisode> episodes,
