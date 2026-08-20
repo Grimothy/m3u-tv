@@ -7,19 +7,31 @@ import 'package:m3u_tv/l10n/app_localizations.dart';
 /// (`ShowDetailScreen._scheduleEpisode`) so both surfaces report the same
 /// way. Returns the scheduled result, or null if scheduling failed or the
 /// context was unmounted by the time the call completed.
+///
+/// [title] drives the default single-item success message
+/// (`l10n.appRecordingScheduled(title)`). Pass [successMessage] instead when
+/// the caller needs a different success message shape (e.g. a batch
+/// summary) — it receives the captured [AppLocalizations] so it can be
+/// built after the same mounted-check this helper already does.
 Future<T?> scheduleDvrWithFeedback<T>(
   BuildContext context, {
   required Future<T> Function() schedule,
-  required String title,
+  String? title,
+  String Function(T result, AppLocalizations l10n)? successMessage,
 }) async {
+  assert(
+    title != null || successMessage != null,
+    'scheduleDvrWithFeedback requires either title or successMessage',
+  );
   final messenger = ScaffoldMessenger.of(context);
   final l10n = AppLocalizations.of(context);
   try {
     final result = await schedule();
     if (!context.mounted) return null;
-    messenger.showSnackBar(
-      SnackBar(content: Text(l10n.appRecordingScheduled(title))),
-    );
+    final message = successMessage != null
+        ? successMessage(result, l10n)
+        : l10n.appRecordingScheduled(title!);
+    messenger.showSnackBar(SnackBar(content: Text(message)));
     return result;
   } on Object catch (error) {
     if (!context.mounted) return null;

@@ -559,6 +559,34 @@
     }
   },
   "showSeriesRuleActive": "剧集规则已启用",
+  "showScheduled": "已计划",
+  "showBatchRecord": "录制 ({count})",
+  "@showBatchRecord": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "showBatchScheduleSummary": "已安排 {scheduled} 个录制。{failed, plural, =0{全部成功。} =1{失败 1 个。} other{失败 {failed} 个。}}",
+  "@showBatchScheduleSummary": {
+    "placeholders": {
+      "scheduled": {
+        "type": "int"
+      },
+      "failed": {
+        "type": "int"
+      }
+    }
+  },
+  "showBatchScheduleFailures": "失败: {titles}",
+  "@showBatchScheduleFailures": {
+    "placeholders": {
+      "titles": {
+        "type": "String"
+      }
+    }
+  },
   "showDetailTitle": "节目详情",
   "showEpisodesCount": "{count, plural, =1{1 集} other{{count} 集}}",
   "@showEpisodesCount": {

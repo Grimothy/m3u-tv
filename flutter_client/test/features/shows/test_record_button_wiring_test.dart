@@ -44,7 +44,10 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [dvrSeriesRulesProvider.overrideWith((_) => const [])],
+          overrides: [
+            dvrSeriesRulesProvider.overrideWith((_) => const []),
+            dvrRecordingsProvider.overrideWith((_) => const []),
+          ],
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
@@ -116,7 +119,10 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [dvrSeriesRulesProvider.overrideWith((_) => const [])],
+          overrides: [
+            dvrSeriesRulesProvider.overrideWith((_) => const []),
+            dvrRecordingsProvider.overrideWith((_) => const []),
+          ],
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,

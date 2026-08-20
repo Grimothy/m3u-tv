@@ -559,6 +559,34 @@
     }
   },
   "showSeriesRuleActive": "Regla de serie activa",
+  "showScheduled": "Programada",
+  "showBatchRecord": "Grabar ({count})",
+  "@showBatchRecord": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "showBatchScheduleSummary": "{scheduled, plural, =1{Se programó 1 episodio} other{Se programaron {scheduled} episodios}}. {failed, plural, =0{Todos exitosos.} =1{Falló 1.} other{Fallaron {failed}.}}",
+  "@showBatchScheduleSummary": {
+    "placeholders": {
+      "scheduled": {
+        "type": "int"
+      },
+      "failed": {
+        "type": "int"
+      }
+    }
+  },
+  "showBatchScheduleFailures": "Fallaron: {titles}",
+  "@showBatchScheduleFailures": {
+    "placeholders": {
+      "titles": {
+        "type": "String"
+      }
+    }
+  },
   "showDetailTitle": "Detalles del show",
   "showEpisodesCount": "{count, plural, =1{1 episodio} other{{count} episodios}}",
   "@showEpisodesCount": {
