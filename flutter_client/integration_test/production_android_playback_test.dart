@@ -27,7 +27,6 @@ void main() {
         probe: const AndroidPlaybackProbe(
           hardwareCodecs: <VideoCodec>{VideoCodec.h264},
           passthroughAudioCodecs: <AudioCodec>{AudioCodec.aac},
-          mpvAvailable: false,
           serverTranscodeAvailable: true,
         ),
       );
