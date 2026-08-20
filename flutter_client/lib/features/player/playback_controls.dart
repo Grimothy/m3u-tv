@@ -51,6 +51,7 @@ class PlaybackControls extends StatelessWidget {
     this.onPreviousChannel,
     this.onRecordNow,
     this.isRecording = false,
+    this.skipPrompt,
     super.key,
   });
 
@@ -81,6 +82,15 @@ class PlaybackControls extends StatelessWidget {
   final VoidCallback? onRecordNow;
   final bool isRecording;
 
+  /// A comskip/TheIntroDB skip prompt (see `_SkipSegmentPrompt` in
+  /// `player_screen.dart`), rendered above the controls bar, left-aligned.
+  /// Placed inside this widget's own [DpadRegion] (rather than as a
+  /// separate overlay in the parent's Stack) so D-pad up/down can actually
+  /// reach it — the region's `stop` edge behavior otherwise keeps focus
+  /// confined to this subtree and would skip right over an external sibling
+  /// widget entirely.
+  final Widget? skipPrompt;
+
   static const Duration seekStep = Duration(seconds: 10);
 
   @override
@@ -110,6 +120,10 @@ class PlaybackControls extends StatelessWidget {
               children: [
                 _buildHeader(colorScheme),
                 const Spacer(),
+                if (skipPrompt != null) ...[
+                  Align(alignment: Alignment.centerLeft, child: skipPrompt),
+                  const SizedBox(height: 14),
+                ],
                 _buildControlsBar(context, colorScheme),
               ],
             ),

@@ -189,6 +189,7 @@ class AppButton extends StatelessWidget {
     this.focusNode,
     this.loading = false,
     this.autoScroll = true,
+    this.footer,
   });
 
   final String label;
@@ -208,6 +209,14 @@ class AppButton extends StatelessWidget {
   /// Shows a spinner in place of the label/icon and disables the button —
   /// for in-flight async actions (e.g. connecting, creating).
   final bool loading;
+
+  /// Optional content stacked below the label/icon row, inside the same
+  /// pill (e.g. a countdown bar for a timed skip prompt) instead of hanging
+  /// below it as a separate element. Width-matched to the label row via
+  /// [IntrinsicWidth] — build [footer] to fill the width it's given (e.g. a
+  /// bare [LinearProgressIndicator], which stretches on its own). Ignored
+  /// while [loading] is true.
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -255,7 +264,7 @@ class AppButton extends StatelessWidget {
       button = isPrimary
           ? ElevatedButton(style: style, onPressed: null, child: child)
           : FilledButton.tonal(style: style, onPressed: null, child: child);
-    } else if (icon == null) {
+    } else if (icon == null && footer == null) {
       button = isPrimary
           ? ElevatedButton(
               style: style,
@@ -267,7 +276,7 @@ class AppButton extends StatelessWidget {
               onPressed: effectiveOnPressed,
               child: Text(label),
             );
-    } else {
+    } else if (footer == null) {
       button = isPrimary
           ? ElevatedButton.icon(
               style: style,
@@ -280,6 +289,46 @@ class AppButton extends StatelessWidget {
               onPressed: effectiveOnPressed,
               icon: Icon(icon),
               label: Text(label),
+            );
+    } else {
+      // [footer] present: build the label/icon row by hand (rather than the
+      // `.icon` convenience constructors above, which own their own Row
+      // internally with no seam to attach anything below it) and stack it
+      // over the footer inside one `IntrinsicWidth` column, so the footer —
+      // typically a bare `LinearProgressIndicator`, which otherwise wants
+      // infinite width — matches the label row's natural width exactly.
+      final labelRow = icon == null
+          ? Text(label)
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 18),
+                const SizedBox(width: 8),
+                Text(label),
+              ],
+            );
+      final child = IntrinsicWidth(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(child: labelRow),
+            const SizedBox(height: 8),
+            footer!,
+          ],
+        ),
+      );
+      button = isPrimary
+          ? ElevatedButton(
+              style: style,
+              onPressed: effectiveOnPressed,
+              child: child,
+            )
+          : FilledButton.tonal(
+              style: style,
+              onPressed: effectiveOnPressed,
+              child: child,
             );
     }
 

@@ -38,10 +38,6 @@ enum _IntroDbSegmentKind { intro, credits }
 /// countdown bar showing the time remaining).
 const _kIntroDbPromptCountdown = Duration(seconds: 5);
 
-/// How long a skip prompt takes to slide between its "overlay visible"
-/// and "overlay hidden" resting positions.
-const _kSkipPromptSlideDuration = Duration(milliseconds: 220);
-
 /// Full-screen player screen with playback controls, EPG overlay,
 /// resume prompt, backend fallback display, and progress reporting.
 class PlayerScreen extends StatefulWidget {
@@ -135,10 +131,36 @@ class _PlayerScreenState extends State<PlayerScreen> {
   // imdb-style aio_item_id) with community-submitted timestamps.
   final IntroDbService _introDbService = IntroDbService();
   IntroDbSegments? _introDbSegments;
-  _IntroDbSegmentKind? _activeIntroDbPrompt;
-  DateTime? _introDbPromptShownAt;
+  // The segment kind the play-head is currently inside, independent of
+  // whether the prompt is actually on screen right now.
+  _IntroDbSegmentKind? _introDbMatchedKind;
+  // True only during the one-time 5s countdown window that plays the moment
+  // a segment is entered. Once it elapses this goes false for good (for that
+  // segment) — the prompt then only shows/hides in lockstep with the OSD via
+  // `_introDbPromptVisible` below, with no further auto-hide timer.
+  bool _introDbCountdownActive = false;
+  DateTime? _introDbCountdownShownAt;
   Timer? _introDbPromptTimer;
-  final Set<_IntroDbSegmentKind> _skippedIntroDbSegments = {};
+  // Segments are matched purely by current position, not remembered forever
+  // — scrubbing back into an already-watched (or already-skipped) segment's
+  // range re-offers its prompt. The one exception is right after the user
+  // taps Skip: the orchestrator's seek is async, so `_currentPosition` can
+  // still read as "inside the segment" for a tick or two afterward. This
+  // guard excludes that one kind from matching until the seek's target
+  // position is actually reached (or, as a safety net if it never confirms,
+  // until this timer fires) — mirrors comskip's `_pendingComskipSeekTarget`.
+  _IntroDbSegmentKind? _introDbPendingSkipKind;
+  int? _introDbPendingSkipEndMs;
+  Timer? _introDbPendingSkipTimer;
+
+  /// Whether the skip prompt should be on screen right now: either the
+  /// one-time countdown is still running, or the OSD is up and the play-head
+  /// is still inside an unskipped segment. Purely derived — bringing the OSD
+  /// back up after the countdown has already elapsed re-shows the prompt
+  /// without restarting the countdown, and hiding the OSD hides it again.
+  bool get _introDbPromptVisible =>
+      _introDbMatchedKind != null &&
+      (_introDbCountdownActive || _overlayVisible);
 
   bool _overlayVisible = true;
   bool _trackDialogVisible = false;
@@ -261,6 +283,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _epgFetch = null;
     _comskipBadgeTimer?.cancel();
     _introDbPromptTimer?.cancel();
+    _introDbPendingSkipTimer?.cancel();
 
     setState(() {
       _status = PlaybackStatus.idle;
@@ -281,9 +304,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _activeComskipSegment = null;
       _showComskipSkippedBadge = false;
       _introDbSegments = null;
-      _activeIntroDbPrompt = null;
-      _introDbPromptShownAt = null;
-      _skippedIntroDbSegments.clear();
+      _introDbMatchedKind = null;
+      _introDbCountdownActive = false;
+      _introDbCountdownShownAt = null;
+      _introDbPendingSkipKind = null;
+      _introDbPendingSkipEndMs = null;
     });
 
     _openSource(widget.args);
@@ -558,16 +583,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   /// Picks whichever segment kind (intro takes priority over credits, since
   /// their windows never overlap in practice) the current position falls
-  /// inside, skipping kinds already dismissed/passed this session.
+  /// inside. Purely position-based — scrubbing back into a segment you've
+  /// already watched through (or already tapped Skip on) re-matches it, so
+  /// its prompt is offered again, not just on the way forward. The one
+  /// exception is `_introDbPendingSkipKind`, a short-lived guard (see its
+  /// field doc) for the moment right after tapping Skip.
   _IntroDbSegmentKind? _matchingIntroDbSegment(int positionMs) {
     final segments = _introDbSegments;
     if (segments == null) return null;
-    if (!_skippedIntroDbSegments.contains(_IntroDbSegmentKind.intro) &&
+    if (_introDbPendingSkipKind != _IntroDbSegmentKind.intro &&
         segments.intro != null &&
         _isWithinIntroDbSegment(segments.intro!, positionMs)) {
       return _IntroDbSegmentKind.intro;
     }
-    if (!_skippedIntroDbSegments.contains(_IntroDbSegmentKind.credits) &&
+    if (_introDbPendingSkipKind != _IntroDbSegmentKind.credits &&
         segments.credits != null &&
         _isWithinIntroDbSegment(segments.credits!, positionMs)) {
       return _IntroDbSegmentKind.credits;
@@ -576,54 +605,63 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   /// Checks the current position against the fetched intro/credits ranges.
-  /// Called after every position update, mirroring `_checkComskip`. Once
-  /// the play-head exits a segment naturally (the user watched through it),
-  /// that segment is marked skipped so its prompt won't reappear.
+  /// Called after every position update, mirroring `_checkComskip`. Entering
+  /// a segment (from outside it, in either direction) starts its one-time
+  /// countdown; `_overlayVisible` changes alone are handled entirely by the
+  /// `_introDbPromptVisible` getter, not here.
   void _checkIntroDb() {
     if (_introDbSegments == null || _disposed || !mounted) return;
 
+    final pendingEnd = _introDbPendingSkipEndMs;
+    if (pendingEnd != null && _currentPosition.inMilliseconds >= pendingEnd) {
+      _introDbPendingSkipTimer?.cancel();
+      _introDbPendingSkipTimer = null;
+      _introDbPendingSkipKind = null;
+      _introDbPendingSkipEndMs = null;
+    }
+
     final matched = _matchingIntroDbSegment(_currentPosition.inMilliseconds);
     if (matched == null) {
-      final active = _activeIntroDbPrompt;
-      if (active != null) {
-        _skippedIntroDbSegments.add(active);
-        _hideIntroDbPrompt();
-      }
+      if (_introDbMatchedKind != null) _resetIntroDbPromptState();
       return;
     }
 
-    if (_activeIntroDbPrompt != matched) _showIntroDbPrompt(matched);
+    if (_introDbMatchedKind != matched) _startIntroDbCountdown(matched);
   }
 
-  /// Re-offers the current segment's prompt (fresh 5s countdown) when the
-  /// user brings the overlay back up while still inside an unskipped
-  /// segment's window — the "show it again if the intro isn't passed" ask.
-  void _maybeReshowIntroDbPrompt() {
-    final matched = _matchingIntroDbSegment(_currentPosition.inMilliseconds);
-    if (matched != null) _showIntroDbPrompt(matched);
-  }
-
-  void _showIntroDbPrompt(_IntroDbSegmentKind kind) {
+  /// Enters a new segment kind and plays its one-time 5s countdown. After it
+  /// elapses, `_introDbCountdownActive` simply goes false — the prompt then
+  /// only shows/hides in lockstep with the OSD (`_introDbPromptVisible`),
+  /// with no further timer and no restart on subsequent OSD toggles.
+  void _startIntroDbCountdown(_IntroDbSegmentKind kind) {
     _introDbPromptTimer?.cancel();
     setState(() {
-      _activeIntroDbPrompt = kind;
-      _introDbPromptShownAt = DateTime.now();
+      _introDbMatchedKind = kind;
+      _introDbCountdownActive = true;
+      _introDbCountdownShownAt = DateTime.now();
     });
-    _introDbPromptTimer = Timer(_kIntroDbPromptCountdown, _hideIntroDbPrompt);
+    _introDbPromptTimer = Timer(_kIntroDbPromptCountdown, () {
+      if (_disposed || !mounted) return;
+      setState(() {
+        _introDbCountdownActive = false;
+        _introDbCountdownShownAt = null;
+      });
+    });
   }
 
-  void _hideIntroDbPrompt() {
+  void _resetIntroDbPromptState() {
     _introDbPromptTimer?.cancel();
     _introDbPromptTimer = null;
-    if (_activeIntroDbPrompt == null || _disposed || !mounted) return;
+    if (_introDbMatchedKind == null && !_introDbCountdownActive) return;
     setState(() {
-      _activeIntroDbPrompt = null;
-      _introDbPromptShownAt = null;
+      _introDbMatchedKind = null;
+      _introDbCountdownActive = false;
+      _introDbCountdownShownAt = null;
     });
   }
 
   void _confirmIntroDbSkip() {
-    final kind = _activeIntroDbPrompt;
+    final kind = _introDbMatchedKind;
     final segments = _introDbSegments;
     if (kind == null || segments == null) return;
     final segment = kind == _IntroDbSegmentKind.intro
@@ -631,9 +669,46 @@ class _PlayerScreenState extends State<PlayerScreen> {
         : segments.credits;
     if (segment == null) return;
     final endMs = segment.endMs ?? _duration.inMilliseconds;
-    _skippedIntroDbSegments.add(kind);
-    _hideIntroDbPrompt();
+
+    _introDbPendingSkipKind = kind;
+    _introDbPendingSkipEndMs = endMs;
+    _introDbPendingSkipTimer?.cancel();
+    _introDbPendingSkipTimer = Timer(const Duration(seconds: 5), () {
+      if (_disposed || !mounted) return;
+      _introDbPendingSkipKind = null;
+      _introDbPendingSkipEndMs = null;
+    });
+
+    _resetIntroDbPromptState();
     unawaited(widget.orchestrator.seek(Duration(milliseconds: endMs)));
+  }
+
+  /// The one active skip prompt (comskip or TheIntroDB — the two never
+  /// overlap since comskip is DVR-only and TheIntroDB is VOD/series-only),
+  /// or null when neither is active. `context` is only needed for
+  /// localized labels.
+  Widget? _buildSkipPrompt(BuildContext context) {
+    if (_activeComskipSegment != null) {
+      return _SkipSegmentPrompt(
+        label: AppLocalizations.of(context).playerSkipCommercial,
+        onSkip: _confirmComskipSkip,
+      );
+    }
+    if (_introDbPromptVisible) {
+      return _SkipSegmentPrompt(
+        label: _introDbMatchedKind == _IntroDbSegmentKind.intro
+            ? AppLocalizations.of(context).playerSkipIntro
+            : AppLocalizations.of(context).playerSkipCredits,
+        onSkip: _confirmIntroDbSkip,
+        countdownShownAt: _introDbCountdownActive
+            ? _introDbCountdownShownAt
+            : null,
+        countdownDuration: _introDbCountdownActive
+            ? _kIntroDbPromptCountdown
+            : null,
+      );
+    }
+    return null;
   }
 
   void _scrobble(String action) => _scrobbleFor(widget.args, action);
@@ -682,6 +757,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _comskipBadgeTimer?.cancel();
     _pendingComskipSeekTimer?.cancel();
     _introDbPromptTimer?.cancel();
+    _introDbPendingSkipTimer?.cancel();
     _screenFocusNode.dispose();
     _controlsFocusNode.dispose();
     _errorButtonFocusNode.dispose();
@@ -1075,9 +1151,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _showOverlay() {
+    // No extra intro-db handling needed here — `_introDbPromptVisible` is
+    // derived from `_overlayVisible`, so this setState alone re-shows the
+    // prompt (without restarting its countdown) if one is still pending.
     setState(() => _overlayVisible = true);
     _scheduleOverlayHide();
-    _maybeReshowIntroDbPrompt();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _overlayVisible) _controlsFocusNode.requestFocus();
     });
@@ -1199,6 +1277,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 final overlayWidth = isCompact
                     ? mediaQuery.size.width - overlayLeft * 2
                     : 420.0;
+                final skipPrompt = _buildSkipPrompt(context);
 
                 return Stack(
                   children: [
@@ -1332,6 +1411,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                       widget.onRecordProgram!(_epgData!.current)
                                 : null,
                             isRecording: widget.isRecordingCurrentChannel,
+                            skipPrompt: skipPrompt,
                           ),
                         ),
                       ),
@@ -1396,8 +1476,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     // Comskip: brief auto-skip indicator (DVR recordings only)
                     if (_showComskipSkippedBadge)
                       Positioned(
-                        top: 40,
-                        left: 40,
+                        top: overlayEdgePadding,
+                        left: overlayEdgePadding,
                         child: _ComskipSkippedBadge(
                           label: AppLocalizations.of(
                             context,
@@ -1405,42 +1485,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         ),
                       ),
 
-                    // Comskip: confirm-to-skip prompt (auto-skip disabled).
-                    // Floats above the controls bar while it's visible and
-                    // settles lower once it hides, animating between the two.
-                    if (_activeComskipSegment != null)
-                      AnimatedPositioned(
-                        duration: _kSkipPromptSlideDuration,
-                        curve: Curves.easeOut,
-                        left: 40,
-                        bottom: _overlayVisible ? 140 : 40,
-                        child: _SkipSegmentPrompt(
-                          label: AppLocalizations.of(
-                            context,
-                          ).playerSkipCommercial,
-                          onSkip: _confirmComskipSkip,
-                        ),
-                      ),
-
-                    // TheIntroDB: confirm-to-skip prompt with countdown
-                    // (intro or credits, whichever the play-head is inside).
-                    if (_activeIntroDbPrompt != null &&
-                        _introDbPromptShownAt != null)
-                      AnimatedPositioned(
-                        duration: _kSkipPromptSlideDuration,
-                        curve: Curves.easeOut,
-                        left: 40,
-                        bottom: _overlayVisible ? 140 : 40,
-                        child: _SkipSegmentPrompt(
-                          key: ValueKey(_introDbPromptShownAt),
-                          label:
-                              _activeIntroDbPrompt == _IntroDbSegmentKind.intro
-                              ? AppLocalizations.of(context).playerSkipIntro
-                              : AppLocalizations.of(context).playerSkipCredits,
-                          onSkip: _confirmIntroDbSkip,
-                          countdownShownAt: _introDbPromptShownAt,
-                          countdownDuration: _kIntroDbPromptCountdown,
-                        ),
+                    // Comskip/TheIntroDB skip prompt while the OSD is
+                    // hidden — e.g. TheIntroDB's initial one-time countdown,
+                    // which fires the moment a segment is entered regardless
+                    // of OSD state. Once the OSD is up, the very same prompt
+                    // instead renders inside [PlaybackControls] (see
+                    // `skipPrompt:` above) so it's reachable by D-pad
+                    // alongside the back button and seek bar — a `DpadRegion`
+                    // with `stop` edges otherwise can't be entered from an
+                    // external sibling widget like this one. Left/bottom
+                    // match `overlayEdgePadding` so it lines up with the
+                    // controls' own back-button corner once the OSD appears.
+                    if (!_overlayVisible && skipPrompt != null)
+                      Positioned(
+                        left: overlayEdgePadding,
+                        bottom: overlayEdgePadding,
+                        child: skipPrompt,
                       ),
                   ],
                 );
@@ -1722,7 +1782,6 @@ class _ComskipSkippedBadge extends StatelessWidget {
 /// bar is simply omitted.
 class _SkipSegmentPrompt extends StatelessWidget {
   const _SkipSegmentPrompt({
-    super.key,
     required this.label,
     required this.onSkip,
     this.countdownShownAt,
@@ -1736,47 +1795,38 @@ class _SkipSegmentPrompt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final button = AppButton(
+    final shownAt = countdownShownAt;
+    final total = countdownDuration;
+    Widget? footer;
+    if (shownAt != null && total != null) {
+      final remaining = total - DateTime.now().difference(shownAt);
+      final startFraction = remaining.isNegative
+          ? 0.0
+          : remaining.inMilliseconds / total.inMilliseconds;
+      footer = ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: SizedBox(
+          height: 3,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: startFraction, end: 0),
+            duration: remaining.isNegative ? Duration.zero : remaining,
+            builder: (context, value, _) => LinearProgressIndicator(
+              value: value,
+              backgroundColor: Colors.black12,
+              valueColor: const AlwaysStoppedAnimation(Colors.black87),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return AppButton(
       label: label,
       icon: Icons.fast_forward,
       variant: AppButtonVariant.primaryInverted,
       autofocus: true,
       onPressed: onSkip,
-    );
-
-    final shownAt = countdownShownAt;
-    final total = countdownDuration;
-    if (shownAt == null || total == null) return button;
-
-    final remaining = total - DateTime.now().difference(shownAt);
-    final startFraction = remaining.isNegative
-        ? 0.0
-        : remaining.inMilliseconds / total.inMilliseconds;
-
-    return IntrinsicWidth(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          button,
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: SizedBox(
-              height: 3,
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: startFraction, end: 0),
-                duration: remaining.isNegative ? Duration.zero : remaining,
-                builder: (context, value, _) => LinearProgressIndicator(
-                  value: value,
-                  backgroundColor: Colors.white24,
-                  valueColor: const AlwaysStoppedAnimation(Colors.white),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+      footer: footer,
     );
   }
 }
