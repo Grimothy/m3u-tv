@@ -266,6 +266,14 @@ class Media3PlaybackPlugin(
     private fun releasePlayer(playerId: String) {
         val state = states.remove(playerId) ?: return
         state.mediaSession?.release()
+        // Detach the surface before release() instead of letting release()
+        // discover and tear it down itself: ACodec's disconnectFromSurface
+        // then folds into the same synchronous call as decoder/renderer
+        // teardown, and on this NVIDIA decoder that combined path is what
+        // shows up as multi-second main-thread Davey frames right at
+        // teardown (see Media3PlaybackPlugin's class doc for why release()
+        // must stay on the main thread rather than move off it).
+        state.player.clearVideoSurfaceView(surfaceViews[playerId])
         state.player.release()
         emit(playerId, "disposed")
     }
