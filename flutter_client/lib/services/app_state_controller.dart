@@ -2734,8 +2734,13 @@ class AppStateController extends ChangeNotifier {
               // after the local entry was cached.
               episodeTitle: r.episodeTitle ?? l.episodeTitle,
               seriesName: l.seriesName ?? r.seriesName,
-              thumbnailUrl: l.thumbnailUrl ?? r.thumbnailUrl,
-              backdropUrl: l.backdropUrl ?? r.backdropUrl,
+              // Prefer server value for thumbnail/backdrop — like
+              // episodeTitle below, the image URL may have been backfilled
+              // or regenerated after the local entry was cached, and unlike
+              // title/seriesName a stale image URL can silently 404 forever
+              // since nothing else ever re-syncs it.
+              thumbnailUrl: r.thumbnailUrl ?? l.thumbnailUrl,
+              backdropUrl: r.backdropUrl ?? l.backdropUrl,
               rating: r.rating ?? l.rating,
               runtime: r.runtime ?? l.runtime,
               plot: r.plot ?? l.plot,
