@@ -424,8 +424,7 @@ class _ShowDetailScreenState extends ConsumerState<ShowDetailScreen> {
             if (_selectionMode) ...[
               _SelectionActionsBar(
                 selectedCount: _selectedEpisodeKeys.length,
-                onRecord:
-                    _selectedEpisodeKeys.isEmpty || _batchSubmitting
+                onRecord: _selectedEpisodeKeys.isEmpty || _batchSubmitting
                     ? null
                     : _scheduleSelected,
                 onCancel: _exitSelectionMode,
