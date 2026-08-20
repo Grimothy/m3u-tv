@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/features/continue_watching/continue_watching_screen.dart';
+import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/services/domain_models.dart';
+import 'package:m3u_tv/shared/dpad_ink_well.dart';
 
 void main() {
   group('ContinueWatchingScreen', () {
@@ -40,15 +42,15 @@ void main() {
               containerExtension: 'mp4',
             ),
           ],
-          seriesList: const [
-            Series(id: 5, name: 'Breaking Bad'),
-          ],
+          seriesList: const [Series(id: 5, name: 'Breaking Bad')],
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('The Matrix'), findsOneWidget);
-      expect(find.text('Breaking Bad'), findsOneWidget);
+      // Untestable network images fall back to an icon tile that also shows
+      // the title text, so the title legitimately appears more than once.
+      expect(find.text('The Matrix'), findsAtLeastNWidgets(1));
+      expect(find.text('Breaking Bad'), findsAtLeastNWidgets(1));
     });
 
     testWidgets('shows progress bar for items', (tester) async {
@@ -63,9 +65,7 @@ void main() {
               containerExtension: 'mp4',
             ),
           ],
-          seriesList: const [
-            Series(id: 5, name: 'Breaking Bad'),
-          ],
+          seriesList: const [Series(id: 5, name: 'Breaking Bad')],
         ),
       );
       await tester.pumpAndSettle();
@@ -76,37 +76,17 @@ void main() {
 
     testWidgets('shows empty state when no progress items', (tester) async {
       await tester.pumpWidget(
-        const _TestApp(
-          progressList: [],
-          vodItems: [],
-          seriesList: [],
-        ),
+        const _TestApp(progressList: [], vodItems: [], seriesList: []),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('No continue watching items'), findsOneWidget);
+      final l = AppLocalizations.of(tester.element(find.byType(Scaffold)));
+      expect(find.text(l.homeNoContinueWatching), findsOneWidget);
     });
 
-    testWidgets('shows not configured message when not connected', (
+    testWidgets('tapping item triggers onProgressSelect callback', (
       tester,
     ) async {
-      await tester.pumpWidget(
-        _TestApp(
-          progressList: testProgress,
-          vodItems: const [],
-          seriesList: const [],
-          isConfigured: false,
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(
-        find.text('Please connect to your service in Settings'),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('tapping item triggers onResume callback', (tester) async {
       Progress? selectedProgress;
       await tester.pumpWidget(
         _TestApp(
@@ -120,19 +100,26 @@ void main() {
             ),
           ],
           seriesList: const [],
-          onResume: (progress) => selectedProgress = progress,
+          onProgressSelect: (progress) => selectedProgress = progress,
         ),
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('The Matrix'));
+      await tester.tap(
+        find.ancestor(
+          of: find.text('The Matrix').first,
+          matching: find.byType(DpadInkWell),
+        ),
+      );
       await tester.pumpAndSettle();
 
       expect(selectedProgress, isNotNull);
       expect(selectedProgress!.streamId, 10);
     });
 
-    testWidgets('only shows items with position > 30 seconds', (tester) async {
+    testWidgets('only shows items with position > 30 seconds', (
+      tester,
+    ) async {
       final shortProgress = [
         const Progress(
           viewerId: 'v1',
@@ -158,8 +145,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Should show empty state since position < 30 seconds
-      expect(find.text('No continue watching items'), findsOneWidget);
+      final l = AppLocalizations.of(tester.element(find.byType(Scaffold)));
+      expect(find.text(l.homeNoContinueWatching), findsOneWidget);
     });
   });
 }
@@ -169,26 +156,25 @@ class _TestApp extends StatelessWidget {
     required this.progressList,
     required this.vodItems,
     required this.seriesList,
-    this.isConfigured = true,
-    this.onResume,
+    this.onProgressSelect,
   });
 
   final List<Progress> progressList;
   final List<VodItem> vodItems;
   final List<Series> seriesList;
-  final bool isConfigured;
-  final void Function(Progress)? onResume;
+  final void Function(Progress)? onProgressSelect;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       theme: ThemeData.dark(useMaterial3: true),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: ContinueWatchingScreen(
         progressList: progressList,
         vodItems: vodItems,
         seriesList: seriesList,
-        isConfigured: isConfigured,
-        onResume: onResume ?? (_) {},
+        onProgressSelect: onProgressSelect ?? (_) {},
       ),
     );
   }

@@ -247,6 +247,16 @@
   "pairingPendingWaiting": "Waiting for approval…",
   "homeContinueWatching": "Continue Watching",
   "homeNoContinueWatching": "No Continue Watching available",
+  "homeContinueWatchingSeeAll": "See All",
+  "homeContinueWatchingMoreCount": "{count, plural, =1{+1 more} other{+{count} more}}",
+  "@homeContinueWatchingMoreCount": {
+    "description": "Subtitle on the Continue Watching row's overflow tile, showing how many additional resumable titles exist beyond the ones shown directly in the row.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "homeNoLiveTv": "No Live TV available",
   "homeFavoriteChannels": "Favorite Channels",
   "homeNoFavoriteChannels": "No favorite channels available",

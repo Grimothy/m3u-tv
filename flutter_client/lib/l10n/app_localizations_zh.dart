@@ -531,6 +531,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeNoContinueWatching => '暂无可继续观看的内容';
 
   @override
+  String get homeContinueWatchingSeeAll => '查看全部';
+
+  @override
+  String homeContinueWatchingMoreCount(int count) {
+    return '+$count 更多';
+  }
+
+  @override
   String get homeNoLiveTv => '暂无直播电视';
 
   @override

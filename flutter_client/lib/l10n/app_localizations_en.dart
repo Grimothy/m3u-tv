@@ -548,6 +548,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeNoContinueWatching => 'No Continue Watching available';
 
   @override
+  String get homeContinueWatchingSeeAll => 'See All';
+
+  @override
+  String homeContinueWatchingMoreCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '+$count more',
+      one: '+1 more',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get homeNoLiveTv => 'No Live TV available';
 
   @override

@@ -921,6 +921,66 @@ void main() {
   });
 
   testWidgets(
+    'Home continue watching row caps at 4 items with a See All overflow tile',
+    (tester) async {
+      // The default test surface is too narrow to lay out 5 landscape cards
+      // in the row without scrolling, which would leave the later ones
+      // unbuilt (ListView.separated is lazy) and unfindable by find.text.
+      await tester.binding.setSurfaceSize(const Size(1920, 1080));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final progressList = [
+        for (var i = 0; i < 5; i += 1)
+          Progress(
+            viewerId: 'viewer-1',
+            contentType: ContentType.vod,
+            streamId: 300 + i,
+            positionSeconds: 60,
+            durationSeconds: 600,
+            title: 'Overflow Movie $i',
+          ),
+      ];
+      final appState = _testAppState(
+        xtreamService: _NavigationXtreamService(recentlyWatched: progressList),
+      );
+      addTearDown(appState.dispose);
+      await appState.connectXtream(
+        const UserCredentials(
+          server: 'http://example.com',
+          username: 'user',
+          password: 'pass',
+        ),
+      );
+
+      await tester.pumpWidget(
+        _TestApp(deviceType: DeviceType.tv, appState: appState),
+      );
+      await _pumpAppFrame(tester);
+      await _waitForText(tester, 'Overflow Movie 0');
+
+      // Only the first 4 items render as real cards on the Home row.
+      for (var i = 0; i < 4; i += 1) {
+        expect(_mediaPreviewCardWithText('Overflow Movie $i'), findsOneWidget);
+      }
+      expect(find.text('Overflow Movie 4'), findsNothing);
+
+      // The overflow tile shows the remaining count.
+      expect(find.text('See All'), findsOneWidget);
+      expect(find.text('+1 more'), findsOneWidget);
+
+      // Tapping it navigates to the full list, which shows every item.
+      await tester.tap(_dpadInkWellWithText('See All'));
+      await _pumpAppFrame(tester);
+      await _waitForText(tester, 'Overflow Movie 4');
+
+      for (var i = 0; i < 5; i += 1) {
+        expect(_mediaPreviewCardWithText('Overflow Movie $i'), findsOneWidget);
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
     'selecting movie from app shell opens details then player route',
     (tester) async {
       final appState = _testAppState(xtreamService: _NavigationXtreamService());

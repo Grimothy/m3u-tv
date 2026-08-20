@@ -1100,6 +1100,18 @@ abstract class AppLocalizations {
   /// **'No Continue Watching available'**
   String get homeNoContinueWatching;
 
+  /// No description provided for @homeContinueWatchingSeeAll.
+  ///
+  /// In en, this message translates to:
+  /// **'See All'**
+  String get homeContinueWatchingSeeAll;
+
+  /// Subtitle on the Continue Watching row's overflow tile, showing how many additional resumable titles exist beyond the ones shown directly in the row.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{+1 more} other{+{count} more}}'**
+  String homeContinueWatchingMoreCount(int count);
+
   /// No description provided for @homeNoLiveTv.
   ///
   /// In en, this message translates to:

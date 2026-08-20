@@ -5,6 +5,7 @@ import 'package:m3u_tv/app/device_type_resolver.dart';
 import 'package:m3u_tv/app/system_ui_policy.dart';
 import 'package:m3u_tv/features/aiostreams/aiostreams_detail_screen.dart';
 import 'package:m3u_tv/features/aiostreams/aiostreams_search_screen.dart';
+import 'package:m3u_tv/features/continue_watching/continue_watching_screen.dart';
 import 'package:m3u_tv/features/requests/request_detail_screen.dart';
 import 'package:m3u_tv/features/series/series_details_screen.dart';
 import 'package:m3u_tv/features/shows/show_detail_screen.dart';
@@ -76,6 +77,26 @@ GoRouter createGoRouter({
                 pageBuilder: (context, state) => NoTransitionPage(
                   child: _withGradient(_tabScreen(context, RouteNames.home)),
                 ),
+                routes: [
+                  GoRoute(
+                    path: 'continue-watching',
+                    pageBuilder: (context, state) {
+                      final actions = ContentActions.of(context);
+                      return _slidePage(
+                        ListenableBuilder(
+                          listenable: actions.appState,
+                          builder: (ctx, _) => ContinueWatchingScreen(
+                            progressList: actions.appState.progressList,
+                            vodItems: actions.appState.vodItems,
+                            seriesList: actions.appState.seriesList,
+                            onProgressSelect: actions.onProgressSelect,
+                            onSidebarActivate: actions.onSidebarActivate,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
               ),
             ],
           ),

@@ -35,6 +35,7 @@ import 'package:m3u_tv/services/tv_notification_service.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/app_background.dart';
 import 'package:m3u_tv/shared/app_callout.dart';
+import 'package:m3u_tv/shared/continue_watching_items.dart';
 import 'package:m3u_tv/shared/dvr_action_dialogs.dart';
 import 'package:m3u_tv/shared/dvr_schedule_feedback.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
@@ -1073,6 +1074,9 @@ class AppShellState extends ConsumerState<AppShell>
         onVodSelect: _openVod,
         onSeriesSelect: _openSeries,
         onProgressSelect: _openProgress,
+        onContinueWatchingMore: () => unawaited(
+          _pushDetail(RouteNames.continueWatchingPath, fullScreen: true),
+        ),
         onRecordingsSelect: () => _navigateToRoute(RouteNames.dvr),
         onAioStreamsItemSelect: (item, integrationId) => unawaited(
           _pushDetail(
@@ -2037,6 +2041,7 @@ class _HomeScreen extends ConsumerStatefulWidget {
     required this.onVodSelect,
     required this.onSeriesSelect,
     required this.onProgressSelect,
+    required this.onContinueWatchingMore,
     required this.onRecordingsSelect,
     required this.onAioStreamsItemSelect,
     this.onSidebarActivate,
@@ -2047,6 +2052,7 @@ class _HomeScreen extends ConsumerStatefulWidget {
   final void Function(VodItem) onVodSelect;
   final void Function(Series) onSeriesSelect;
   final void Function(Progress) onProgressSelect;
+  final VoidCallback onContinueWatchingMore;
   final VoidCallback onRecordingsSelect;
   final void Function(AIOStreamsItem, int integrationId) onAioStreamsItemSelect;
   final VoidCallback? onSidebarActivate;
@@ -2127,16 +2133,31 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
     }
 
     final l = AppLocalizations.of(context);
-    final continueWatchingItems = progressList
-        .where(_isResumeEligible)
-        .map((p) => _resumePreviewItem(p, vodItems, seriesList))
-        .whereType<MediaPreviewItem>()
-        .toList(growable: false);
+    final continueWatchingItems = continueWatchingPreviewItems(
+      context,
+      progressList: progressList,
+      vodItems: vodItems,
+      seriesList: seriesList,
+      onProgressSelect: widget.onProgressSelect,
+    );
+    const continueWatchingRowLimit = 4;
+    final continueWatchingOverflow =
+        continueWatchingItems.length - continueWatchingRowLimit;
+    final continueWatchingRowItems = [
+      ...continueWatchingItems.take(continueWatchingRowLimit),
+      if (continueWatchingOverflow > 0)
+        MediaPreviewItem(
+          title: l.homeContinueWatchingSeeAll,
+          subtitle: l.homeContinueWatchingMoreCount(continueWatchingOverflow),
+          fallbackIcon: Icons.history,
+          onTap: widget.onContinueWatchingMore,
+        ),
+    ];
     final continueWatchingSection = MediaPreviewSection(
       title: l.homeContinueWatching,
       titleIcon: Icons.history,
       emptyLabel: l.homeNoContinueWatching,
-      items: continueWatchingItems,
+      items: continueWatchingRowItems,
       landscapeStyle: true,
       onSidebarActivate: widget.onSidebarActivate,
     );
@@ -2257,141 +2278,6 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
         ],
       ),
     );
-  }
-
-  bool _isResumeEligible(Progress progress) {
-    return progress.contentType != ContentType.live &&
-        progress.positionSeconds >= 30 &&
-        !progress.completed;
-  }
-
-  MediaPreviewItem? _resumePreviewItem(
-    Progress progress,
-    List<VodItem> vodItems,
-    List<Series> seriesList,
-  ) {
-    if (progress.contentType == ContentType.vod) {
-      if (progress.title != null) {
-        final hasBackdrop = progress.backdropUrl != null;
-        final fraction =
-            (progress.durationSeconds != null && progress.durationSeconds! > 0)
-            ? (progress.positionSeconds / progress.durationSeconds!).clamp(
-                0.0,
-                1.0,
-              )
-            : null;
-        final plot = progress.plot;
-        final subtitle = plot != null
-            ? (plot.length > 120 ? '${plot.substring(0, 117)}…' : plot)
-            : null;
-        final vodFallbackLogo = (!hasBackdrop && progress.thumbnailUrl == null)
-            ? vodItems
-                  .firstWhereOrNull((v) => v.id == progress.streamId)
-                  ?.logoUrl
-            : null;
-        return MediaPreviewItem(
-          title: progress.title!,
-          subtitle: subtitle,
-          imageUrl:
-              progress.backdropUrl ?? progress.thumbnailUrl ?? vodFallbackLogo,
-          fallbackIcon: Icons.movie,
-          imageFit: hasBackdrop ? BoxFit.cover : BoxFit.contain,
-          imageBackgroundColor: hasBackdrop ? null : Colors.black,
-          fallbackTitle: progress.title,
-          progressFraction: fraction,
-          overlayLabel: progress.year,
-          overlayBadges: <String>[
-            if (progress.rating != null) '★ ${progress.rating}',
-            if (progress.runtime != null) progress.runtime!,
-          ],
-          onTap: () => widget.onProgressSelect(progress),
-        );
-      }
-      final item = vodItems.firstWhereOrNull(
-        (item) => item.id == progress.streamId,
-      );
-      if (item == null) return null;
-      final fraction =
-          (progress.durationSeconds != null && progress.durationSeconds! > 0)
-          ? (progress.positionSeconds / progress.durationSeconds!).clamp(
-              0.0,
-              1.0,
-            )
-          : null;
-      return MediaPreviewItem(
-        title: item.name,
-        imageUrl: item.logoUrl,
-        fallbackIcon: Icons.movie,
-        imageFit: BoxFit.contain,
-        imageBackgroundColor: Colors.black,
-        fallbackTitle: item.name,
-        progressFraction: fraction,
-        overlayBadges: <String>[
-          if (item.rating != null) '★ ${item.rating!.toStringAsFixed(1)}',
-        ],
-        onTap: () => widget.onProgressSelect(progress),
-      );
-    }
-
-    if (progress.contentType == ContentType.episode) {
-      if (progress.seriesId != null &&
-          (progress.seriesName != null || progress.title != null)) {
-        final displayTitle = progress.seriesName ?? progress.title!;
-        final fraction =
-            (progress.durationSeconds != null && progress.durationSeconds! > 0)
-            ? (progress.positionSeconds / progress.durationSeconds!).clamp(
-                0.0,
-                1.0,
-              )
-            : null;
-        final episodeSubtitle =
-            progress.episodeTitle ??
-            (progress.seasonNumber != null
-                ? 'Season ${progress.seasonNumber}'
-                : null);
-        final seriesFallback = seriesList.firstWhereOrNull(
-          (s) => s.id == progress.seriesId,
-        );
-        return MediaPreviewItem(
-          title: displayTitle,
-          subtitle: episodeSubtitle,
-          imageUrl:
-              progress.thumbnailUrl ??
-              progress.backdropUrl ??
-              seriesFallback?.backdropUrl ??
-              seriesFallback?.coverUrl,
-          fallbackIcon: Icons.tv,
-          fallbackTitle: displayTitle,
-          progressFraction: fraction,
-          overlayLabel: progress.seasonNumber != null
-              ? 'S${progress.seasonNumber}${progress.episodeNumber != null ? ' E${progress.episodeNumber}' : ''}'
-              : null,
-          overlayBadges: <String>[
-            if (progress.rating != null) '★ ${progress.rating}',
-            if (progress.runtime != null) progress.runtime!,
-          ],
-          onTap: () => widget.onProgressSelect(progress),
-        );
-      }
-      if (progress.seriesId != null) {
-        final series = seriesList.firstWhereOrNull(
-          (series) => series.id == progress.seriesId,
-        );
-        if (series == null) return null;
-        return MediaPreviewItem(
-          title: series.name,
-          imageUrl: series.backdropUrl ?? series.coverUrl,
-          subtitle: progress.seasonNumber != null
-              ? AppLocalizations.of(context).homeSeason(progress.seasonNumber!)
-              : AppLocalizations.of(context).navSeries,
-          fallbackIcon: Icons.tv,
-          fallbackTitle: series.name,
-          onTap: () => widget.onProgressSelect(progress),
-        );
-      }
-    }
-
-    return null;
   }
 }
 

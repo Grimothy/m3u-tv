@@ -554,6 +554,20 @@ class AppLocalizationsFr extends AppLocalizations {
   String get homeNoContinueWatching => 'Rien à reprendre';
 
   @override
+  String get homeContinueWatchingSeeAll => 'Tout afficher';
+
+  @override
+  String homeContinueWatchingMoreCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '+$count autres',
+      one: '+1 autre',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get homeNoLiveTv => 'Pas de Télévision en direct disponible';
 
   @override

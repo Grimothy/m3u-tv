@@ -57,6 +57,7 @@ class RouteNames {
   static const String aiostreamsDetailsPath =
       '/aiostreams/details/:integrationId/:type/:id';
   static const String aiostreamsSearchPath = '/aiostreams/search';
+  static const String continueWatchingPath = '/home/continue-watching';
   static const String requestsDetailsPath =
       '/requests/details/:integrationId/:type/:externalId';
 
