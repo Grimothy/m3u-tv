@@ -138,6 +138,8 @@
   },
   "playerCommercialSkipped": "Skipped commercial",
   "playerSkipCommercial": "Skip commercial",
+  "playerSkipCredits": "Skip Credits",
+  "playerSkipIntro": "Skip Intro",
   "searchHint": "Search live TV, movies, and series...",
   "searchSectionLiveTv": "Live TV",
   "searchSectionMovies": "Movies",

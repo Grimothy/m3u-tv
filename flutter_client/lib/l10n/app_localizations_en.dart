@@ -266,6 +266,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get playerSkipCommercial => 'Skip commercial';
 
   @override
+  String get playerSkipCredits => 'Skip Credits';
+
+  @override
+  String get playerSkipIntro => 'Skip Intro';
+
+  @override
   String get searchHint => 'Search live TV, movies, and series...';
 
   @override

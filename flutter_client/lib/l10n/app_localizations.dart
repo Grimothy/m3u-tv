@@ -572,6 +572,18 @@ abstract class AppLocalizations {
   /// **'Skip commercial'**
   String get playerSkipCommercial;
 
+  /// No description provided for @playerSkipCredits.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip Credits'**
+  String get playerSkipCredits;
+
+  /// No description provided for @playerSkipIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip Intro'**
+  String get playerSkipIntro;
+
   /// No description provided for @searchHint.
   ///
   /// In en, this message translates to:

@@ -267,6 +267,12 @@ class AppLocalizationsFr extends AppLocalizations {
   String get playerSkipCommercial => 'Ignorer la publicité';
 
   @override
+  String get playerSkipCredits => 'Ignorer le générique';
+
+  @override
+  String get playerSkipIntro => 'Ignorer l\'intro';
+
+  @override
   String get searchHint => 'Rechercher Télévision en direct, films et séries…';
 
   @override

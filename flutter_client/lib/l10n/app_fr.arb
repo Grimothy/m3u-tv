@@ -137,6 +137,8 @@
   },
   "playerCommercialSkipped": "Publicité ignorée",
   "playerSkipCommercial": "Ignorer la publicité",
+  "playerSkipCredits": "Ignorer le générique",
+  "playerSkipIntro": "Ignorer l'intro",
   "searchHint": "Rechercher Télévision en direct, films et séries…",
   "searchSectionLiveTv": "Télévision en direct",
   "searchSectionMovies": "Films",

@@ -259,6 +259,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get playerSkipCommercial => '跳过广告';
 
   @override
+  String get playerSkipCredits => '跳过片尾';
+
+  @override
+  String get playerSkipIntro => '跳过片头';
+
+  @override
   String get searchHint => '搜索直播电视、电影和剧集…';
 
   @override

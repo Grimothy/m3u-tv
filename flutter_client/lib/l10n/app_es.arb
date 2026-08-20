@@ -137,6 +137,8 @@
   },
   "playerCommercialSkipped": "Anuncio omitido",
   "playerSkipCommercial": "Omitir anuncio",
+  "playerSkipCredits": "Omitir créditos",
+  "playerSkipIntro": "Omitir introducción",
   "searchHint": "Buscar Televisión en vivo, cine y series…",
   "searchSectionLiveTv": "Televisión en vivo",
   "searchSectionMovies": "Cine",

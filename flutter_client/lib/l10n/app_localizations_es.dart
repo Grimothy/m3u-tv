@@ -268,6 +268,12 @@ class AppLocalizationsEs extends AppLocalizations {
   String get playerSkipCommercial => 'Omitir anuncio';
 
   @override
+  String get playerSkipCredits => 'Omitir créditos';
+
+  @override
+  String get playerSkipIntro => 'Omitir introducción';
+
+  @override
   String get searchHint => 'Buscar Televisión en vivo, cine y series…';
 
   @override

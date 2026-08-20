@@ -268,6 +268,12 @@ class AppLocalizationsDe extends AppLocalizations {
   String get playerSkipCommercial => 'Werbung überspringen';
 
   @override
+  String get playerSkipCredits => 'Abspann überspringen';
+
+  @override
+  String get playerSkipIntro => 'Intro überspringen';
+
+  @override
   String get searchHint => 'Live-TV, Filme und Serien durchsuchen …';
 
   @override
