@@ -25,19 +25,21 @@ void main() {
     test(
       'plays directly when the preferred backend can load the stream',
       () async {
-        // androidMpv is now the primary Android backend (tried before
-        // androidExoPlayer) -- see PlaybackCapabilities.forPlatform(android).
+        // androidExoPlayer is the primary Android backend (tried before
+        // androidMpv, which mpv-vs-Tegra-GPU-driver crashes on real Shield
+        // hardware moved back to fallback -- see
+        // PlaybackCapabilities.forPlatform(android)).
         final direct = _FakePlayerAdapter(
-          capabilities: PlaybackCapabilities.androidMpv,
+          capabilities: PlaybackCapabilities.androidExoPlayer,
         );
         final fallback = _FakePlayerAdapter(
-          capabilities: PlaybackCapabilities.androidExoPlayer,
+          capabilities: PlaybackCapabilities.androidMpv,
         );
         final transcode = _FakeTranscodeGateway();
         final orchestrator = _orchestrator(
           adapters: <PlaybackBackend, PlayerAdapter>{
-            PlaybackBackend.androidMpv: direct,
-            PlaybackBackend.androidExoPlayer: fallback,
+            PlaybackBackend.androidExoPlayer: direct,
+            PlaybackBackend.androidMpv: fallback,
           },
           transcodeGateway: transcode,
         );
@@ -51,10 +53,10 @@ void main() {
         ]);
         expect(fallback.commands, isEmpty);
         expect(transcode.startedServerRequests, isEmpty);
-        expect(orchestrator.activeBackend, PlaybackBackend.androidMpv);
+        expect(orchestrator.activeBackend, PlaybackBackend.androidExoPlayer);
         expect(
           orchestrator.diagnostics,
-          contains('direct:androidMpv:ready'),
+          contains('direct:androidExoPlayer:ready'),
         );
 
         await orchestrator.dispose();

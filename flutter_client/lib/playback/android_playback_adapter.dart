@@ -50,7 +50,7 @@ class AndroidBackendCapabilities {
 }
 
 class AndroidPlaybackAdapter
-    implements PlayerAdapter, VideoTextureProvider, MultiviewBackend {
+    implements PlayerAdapter, PlatformViewProvider, MultiviewBackend {
   AndroidPlaybackAdapter({
     required AndroidPlaybackProbe probe,
     this.playerId = defaultPlayerId,
@@ -65,6 +65,7 @@ class AndroidPlaybackAdapter
   }
 
   static const String defaultPlayerId = 'primary';
+  static const String platformViewTypeId = 'm3u_tv/android_exo_view';
 
   final String playerId;
   final bool handleAudioFocus;
@@ -79,10 +80,23 @@ class AndroidPlaybackAdapter
   StreamSubscription<AndroidMedia3Event>? _eventSubscription;
 
   PlaybackBackend _activeBackend = PlaybackBackend.androidExoPlayer;
-  int? _textureId;
 
   @override
-  int? get textureId => _textureId;
+  String get platformViewType => platformViewTypeId;
+
+  @override
+  Map<String, dynamic>? get platformViewCreationParams => <String, dynamic>{
+    'playerId': playerId,
+  };
+
+  /// Tears down the native ExoPlayer instance without closing [onState]/
+  /// [onError], so this adapter is still safe to [load] again later. See
+  /// `PlatformViewProvider.releaseNativeView`.
+  @override
+  Future<void> releaseNativeView() async {
+    await _media3Host.dispose();
+  }
+
   PlaybackState _state = const PlaybackState.idle(
     backend: PlaybackBackend.androidExoPlayer,
   );
@@ -197,7 +211,6 @@ class AndroidPlaybackAdapter
     if (_activeBackend == PlaybackBackend.androidExoPlayer) {
       await _media3Host.stop();
     }
-    _textureId = null;
     _emit(_state.copyWith(status: PlaybackStatus.stopped));
   }
 
@@ -321,11 +334,6 @@ class AndroidPlaybackAdapter
         ),
       );
       return;
-    }
-
-    // Capture the Flutter texture ID sent by the native plugin on first load.
-    if (event.textureId != null) {
-      _textureId = event.textureId;
     }
 
     final status = switch (event.type) {

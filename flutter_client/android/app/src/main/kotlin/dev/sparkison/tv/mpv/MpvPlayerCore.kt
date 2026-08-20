@@ -1,6 +1,8 @@
 package dev.sparkison.tv.mpv
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -15,7 +17,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 
 /**
  * Native Android/Android TV mpv playback core.
@@ -50,7 +51,27 @@ class MpvPlayerCore(
         fun mpvPlayerCore(core: MpvPlayerCore, event: Map<String, Any?>)
     }
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    // dev.jdtech.mpv's `suspend fun command()`/`setProperty()`/etc. are not
+    // real suspend functions -- they call their blocking native JNI
+    // counterpart directly on whatever thread invokes them, with no internal
+    // dispatcher hop (confirmed by decompiling the AAR: no Dispatchers
+    // reference anywhere in their bytecode). Running this scope on
+    // Dispatchers.Main, as this class previously did, meant every mpv
+    // command/property/create/attach call -- including `loadfile`, which can
+    // block for several seconds opening a slow live stream -- executed
+    // directly on the Android UI thread, starving Choreographer (observed as
+    // "Skipped N frames!" and visibly janky UI on real Android TV hardware).
+    // `limitedParallelism(1)` moves all of that off the UI thread while
+    // still confining it to one thread at a time, same as Main was -- other
+    // fields in this class (readyEmitted, lastLogText, disposed) are read
+    // and written without their own synchronization, relying on exactly that
+    // single-threaded assumption; a plain multi-threaded Dispatchers.IO would
+    // turn those into real data races between e.g. the event pump and a
+    // concurrent load(). [emit]/[emitError] below are the only places that
+    // still need to reach the *main* thread specifically (Flutter channel
+    // calls require it), and they hop there explicitly via [mainHandler].
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val mutex = Mutex()
     private var player: MpvPlayer? = null
     private var sequence = 0
@@ -98,12 +119,36 @@ class MpvPlayerCore(
                 }
                 try {
                     val created = MpvPlayer.create(context.applicationContext) {
-                        // gpu-next (libplacebo) is the only Android VO path that
-                        // applies HDR tone-mapping/Dolby Vision RPU reshaping
-                        // correctly; the `,gpu` fallback keeps a device where
-                        // gpu-next cannot initialize on the legacy renderer
-                        // instead of no video output at all.
-                        setOption("vo", "gpu-next,gpu")
+                        // vo=gpu, not gpu-next -- named and root-caused via
+                        // Plezy's own Android mpv core (github.com/edde746/plezy,
+                        // GPL-3.0), whose `initialVideoOutput()` picks
+                        // `gpu-next,gpu` only for software-decode sessions and
+                        // plain `gpu` for hardware-decode ones (which this app's
+                        // hwdec=mediacodec-copy below always is): gpu-next
+                        // samples hardware-decoded frames as a
+                        // `samplerExternalOES` that libplacebo declares in both
+                        // shader stages, and the Tegra GLES linker rejects that
+                        // pairing ("struct type mismatch between shaders for
+                        // uniform") -- Plezy's own issue #2010, a solid blue
+                        // screen with audio on Shield. On this app it manifested
+                        // as a full process crash instead (harder to hit under
+                        // HDR's extra shader permutations, apparently harder for
+                        // the Tegra driver to fail gracefully from) -- confirmed
+                        // via three rounds of real-Shield-hardware retesting,
+                        // where disabling individual gpu-next HDR features
+                        // (hdr-compute-peak, then tone-mapping/dither) only ever
+                        // delayed the crash to the next shader compile rather
+                        // than fixing it, because none of them were the actual
+                        // incompatibility. gpu-next's Dolby Vision RPU reshaping
+                        // benefit doesn't even apply here either way: FFmpeg's
+                        // mediacodec wrapper exports no DOVI side data under
+                        // hardware decode, so gpu-next couldn't reshape a
+                        // hardware-decoded DV stream even without the crash.
+                        // vo=gpu still tone-maps HDR-to-SDR via mpv's own
+                        // (older, non-libplacebo) color management -- this is a
+                        // switch to a different, Tegra-safe renderer, not a loss
+                        // of HDR support.
+                        setOption("vo", "gpu")
                         setOption("gpu-context", "android")
                         setOption("opengl-es", "yes")
                         setOption("hwdec", "mediacodec-copy")
@@ -286,16 +331,11 @@ class MpvPlayerCore(
                 try {
                     current?.detachSurface()
                     // close() is a synchronous, blocking AutoCloseable
-                    // teardown -- unlike command/setProperty/create, it is
-                    // not `suspend`, so calling it directly on this scope's
-                    // Dispatchers.Main would block the main thread for as
-                    // long as native mpv teardown takes. If that teardown
-                    // itself needs the main looper free to finish (e.g. a
-                    // pending Surface/Handler callback), this deadlocks the
-                    // app -- matching an observed freeze on back-press that
-                    // required a force-close. Running it on Dispatchers.IO
-                    // keeps the main thread free while it completes.
-                    withContext(Dispatchers.IO) { current?.close() }
+                    // teardown. This scope now already runs on Dispatchers.IO
+                    // (see [scope]'s own doc comment), so this was never at
+                    // risk of blocking the main thread/deadlocking on a
+                    // pending Surface/Handler callback in the first place.
+                    current?.close()
                 } catch (_: Exception) {
                     // Already closed/closing.
                 }
@@ -411,25 +451,40 @@ class MpvPlayerCore(
         return tracks
     }
 
+    // Called from whichever thread the underlying mpv event/error actually
+    // arrived on -- now Dispatchers.IO for everything in this class, a real
+    // thread pool rather than Main's single thread -- but Flutter method/
+    // event channel calls require the main thread, so this is the one place
+    // that hops there explicitly rather than relying on the caller's
+    // dispatcher. [sequence] is only ever touched inside the posted block so
+    // concurrent callers (e.g. the event pump and a load() error racing each
+    // other) can't torn-read/torn-write it -- it's also assigned in actual
+    // delivery order this way, which is what the Dart-side dedup by sequence
+    // number needs, not native-side generation order.
     private fun emit(kind: String, extra: Map<String, Any?>) {
-        sequence += 1
-        val payload = mutableMapOf<String, Any?>("viewId" to viewId, "sequence" to sequence, "kind" to kind)
+        val payload = mutableMapOf<String, Any?>("viewId" to viewId, "kind" to kind)
         payload.putAll(extra)
-        delegate.mpvPlayerCore(this, payload)
+        mainHandler.post {
+            sequence += 1
+            payload["sequence"] = sequence
+            delegate.mpvPlayerCore(this, payload)
+        }
     }
 
     private fun emitError(message: String, code: String) {
-        sequence += 1
-        delegate.mpvPlayerCore(
-            this,
-            mapOf(
-                "viewId" to viewId,
-                "sequence" to sequence,
-                "kind" to "ERROR",
-                "message" to message,
-                "code" to code,
-                "recoverable" to true,
-            ),
-        )
+        mainHandler.post {
+            sequence += 1
+            delegate.mpvPlayerCore(
+                this,
+                mapOf(
+                    "viewId" to viewId,
+                    "sequence" to sequence,
+                    "kind" to "ERROR",
+                    "message" to message,
+                    "code" to code,
+                    "recoverable" to true,
+                ),
+            )
+        }
     }
 }

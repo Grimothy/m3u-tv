@@ -52,7 +52,12 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        media3Plugin = Media3PlaybackPlugin(this, flutterEngine)
+        val media3 = Media3PlaybackPlugin(this, flutterEngine)
+        media3Plugin = media3
+        flutterEngine.platformViewsController.registry.registerViewFactory(
+            "m3u_tv/android_exo_view",
+            Media3PlatformViewFactory(media3),
+        )
         val mpv = MpvPlayerPlugin(this, flutterEngine)
         mpvPlugin = mpv
         flutterEngine.platformViewsController.registry.registerViewFactory(

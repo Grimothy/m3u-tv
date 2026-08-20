@@ -213,8 +213,8 @@ class PlaybackCapabilities {
   static List<PlaybackCapabilities> forPlatform(PlaybackPlatform platform) {
     return switch (platform) {
       PlaybackPlatform.android => const <PlaybackCapabilities>[
-        androidMpv,
         androidExoPlayer,
+        androidMpv,
         serverTranscode,
       ],
       PlaybackPlatform.apple => const <PlaybackCapabilities>[
