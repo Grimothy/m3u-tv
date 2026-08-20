@@ -9,6 +9,7 @@ import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/app_button.dart';
+import 'package:m3u_tv/shared/cached_backdrop_image.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
@@ -244,7 +245,7 @@ class _Body extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.network(backdrop, fit: BoxFit.cover),
+        CachedBackdropImage(backdrop),
         Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -284,7 +285,7 @@ class _Body extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               if (backdrop != null)
-                Image.network(backdrop, fit: BoxFit.cover)
+                CachedBackdropImage(backdrop)
               else
                 ResilientMediaImage(
                   imageUrl: result.poster,

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:m3u_tv/services/async_lifecycle.dart';
+import 'package:m3u_tv/services/json_isolate.dart';
 
 class PersistentJsonStore {
   PersistentJsonStore({File? file}) : this._(file ?? File(_defaultPath()));
@@ -75,7 +76,8 @@ class PersistentJsonStore {
 
         final current = currentBytes == null || currentBytes.isEmpty
             ? <String, Object?>{}
-            : (jsonDecode(utf8.decode(currentBytes)) as Map)
+            : ((await decodeJsonOffMainIsolate(utf8.decode(currentBytes)))!
+                      as Map)
                   .cast<String, Object?>();
         if (hadPreviousValue) {
           current[key] = previousValue;
@@ -160,7 +162,7 @@ class PersistentJsonStore {
       _cache = <String, Object?>{};
       return _cache!;
     }
-    final decoded = jsonDecode(text);
+    final decoded = await decodeJsonOffMainIsolate(text);
     _cache = decoded is Map
         ? decoded.cast<String, Object?>()
         : <String, Object?>{};
@@ -168,7 +170,7 @@ class PersistentJsonStore {
   }
 
   Future<void> _writeAll(Map<String, Object?> data) async {
-    await _writeStaging(utf8.encode(jsonEncode(data)));
+    await _writeStaging(utf8.encode(await encodeJsonOffMainIsolate(data)));
     try {
       await _commitStaging(data);
     } finally {

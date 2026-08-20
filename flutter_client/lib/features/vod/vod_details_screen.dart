@@ -6,6 +6,7 @@ import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
+import 'package:m3u_tv/shared/cached_backdrop_image.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
 import 'package:m3u_tv/shared/item_meta_info.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
@@ -145,7 +146,7 @@ class _VodDetailsBody extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (backdrop != null) Image.network(backdrop, fit: BoxFit.cover),
+        if (backdrop != null) CachedBackdropImage(backdrop),
         Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -190,7 +191,7 @@ class _VodDetailsBody extends StatelessWidget {
             children: [
               // Backdrop fills the area when available; otherwise the
               // gradient alone provides the surface transition.
-              if (backdrop != null) Image.network(backdrop, fit: BoxFit.cover),
+              if (backdrop != null) CachedBackdropImage(backdrop),
               Positioned.fill(
                 child: DecoratedBox(
                   decoration: BoxDecoration(

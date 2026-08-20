@@ -9,6 +9,7 @@ import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/services/aiostreams_api_service.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/domain_models.dart';
+import 'package:m3u_tv/shared/cached_backdrop_image.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
@@ -225,7 +226,7 @@ class _MovieBody extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.network(backdrop, fit: BoxFit.cover),
+        CachedBackdropImage(backdrop),
         Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -265,7 +266,7 @@ class _MovieBody extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               if (backdrop != null)
-                Image.network(backdrop, fit: BoxFit.cover)
+                CachedBackdropImage(backdrop)
               else
                 ResilientMediaImage(
                   imageUrl: item.poster,
@@ -496,7 +497,7 @@ class _SeriesBodyState extends State<_SeriesBody> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Image.network(backdrop, fit: BoxFit.cover),
+                CachedBackdropImage(backdrop),
                 Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
@@ -556,7 +557,7 @@ class _SeriesBodyState extends State<_SeriesBody> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      Image.network(backdrop, fit: BoxFit.cover),
+                      CachedBackdropImage(backdrop),
                       Positioned.fill(
                         child: DecoratedBox(
                           decoration: BoxDecoration(

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:m3u_tv/services/json_isolate.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 
 XtreamTransport createDefaultXtreamTransport() {
@@ -42,7 +43,7 @@ Future<Object?> _send(HttpClient client, XtreamRequest request) async {
 
   final Object? body;
   try {
-    body = jsonDecode(text);
+    body = await decodeJsonOffMainIsolate(text);
   } on FormatException {
     final serverMessage = _plainServerMessage(text);
     if (response.statusCode >= HttpStatus.badRequest) {
