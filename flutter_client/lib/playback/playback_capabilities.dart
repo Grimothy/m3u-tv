@@ -64,7 +64,7 @@ class PlaybackCapabilities {
     supportsAudioTrackSelection: true,
     supportsSubtitleTrackSelection: true,
     supportsEmbeddedSubtitles: true,
-    supportsExternalSubtitles: false,
+    supportsExternalSubtitles: true,
     supportsAdvancedSubtitleFormats: false,
     supportsPlaybackSpeed: true,
     supportsSeek: true,

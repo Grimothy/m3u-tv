@@ -442,6 +442,15 @@ class MethodChannelAndroidMedia3Host implements AndroidMedia3Host {
         'userAgent': source.userAgent,
         'headers': source.headers,
         'metadata': source.metadata,
+        'externalSubtitles': source.externalSubtitles
+            .map(
+              (subtitle) => <String, Object?>{
+                'uri': subtitle.uri,
+                'title': subtitle.title,
+                'language': subtitle.language,
+              },
+            )
+            .toList(growable: false),
       },
     });
   }

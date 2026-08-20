@@ -162,7 +162,7 @@ void main() {
       );
       expect(
         PlaybackCapabilities.androidExoPlayer.supportsExternalSubtitles,
-        isFalse,
+        isTrue,
       );
       expect(
         PlaybackCapabilities.appleAvKit.supportsAdvancedSubtitleFormats,

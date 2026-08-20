@@ -242,17 +242,19 @@ class Media3PlaybackPlugin(
             .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(httpDataSourceFactory))
             .setAudioAttributes(audioAttributes, handleAudioFocus)
             .build()
+        val subtitleConfigurations = buildSubtitleConfigurations(source["externalSubtitles"])
         val state = PlayerState(
             playerId = playerId,
             player = player,
             uri = uri,
+            subtitleConfigurations = subtitleConfigurations,
         )
         state.mediaSession = MediaSession.Builder(context, player).setId(playerId).build()
         states[playerId] = state
 
         player.setVideoSurfaceView(surfaceView)
         player.addListener(Media3Listener(playerId))
-        player.setMediaItem(buildMediaItem(uri, source), startPositionMs)
+        player.setMediaItem(buildMediaItem(uri, source, subtitleConfigurations), startPositionMs)
         emit(playerId, "buffering", uri = uri, positionMs = startPositionMs)
         player.prepare()
         player.play()
@@ -450,6 +452,7 @@ class Media3PlaybackPlugin(
         val playerId: String,
         val player: ExoPlayer,
         val uri: String,
+        val subtitleConfigurations: List<MediaItem.SubtitleConfiguration> = emptyList(),
         var mediaSession: MediaSession? = null,
         var retriedHlsAsProgressive: Boolean = false,
         var lastVideoWidth: Int = 0,
@@ -461,16 +464,22 @@ class Media3PlaybackPlugin(
             }
 
             retriedHlsAsProgressive = true
-            val mediaItem = MediaItem.Builder()
+            val builder = MediaItem.Builder()
                 .setUri(Uri.parse(uri))
                 .setMimeType(MimeTypes.VIDEO_MP2T)
-                .build()
-            player.setMediaItem(mediaItem, player.currentPosition)
+            if (subtitleConfigurations.isNotEmpty()) {
+                builder.setSubtitleConfigurations(subtitleConfigurations)
+            }
+            player.setMediaItem(builder.build(), player.currentPosition)
             return true
         }
     }
 
-    private fun buildMediaItem(uri: String, source: Map<*, *>): MediaItem {
+    private fun buildMediaItem(
+        uri: String,
+        source: Map<*, *>,
+        subtitleConfigurations: List<MediaItem.SubtitleConfiguration>,
+    ): MediaItem {
         val isLive = source["isLive"] as? Boolean ?: false
         val metadata = source["metadata"] as? Map<*, *>
         val containerExtension = metadata?.get("container_extension") as? String
@@ -483,10 +492,41 @@ class Media3PlaybackPlugin(
             else -> null
         }
 
-        return if (mimeType != null) {
-            MediaItem.Builder().setUri(Uri.parse(uri)).setMimeType(mimeType).build()
-        } else {
-            MediaItem.fromUri(Uri.parse(uri))
+        val builder = MediaItem.Builder().setUri(Uri.parse(uri))
+        if (mimeType != null) {
+            builder.setMimeType(mimeType)
+        }
+        if (subtitleConfigurations.isNotEmpty()) {
+            builder.setSubtitleConfigurations(subtitleConfigurations)
+        }
+        return builder.build()
+    }
+
+    private fun buildSubtitleConfigurations(raw: Any?): List<MediaItem.SubtitleConfiguration> {
+        val entries = raw as? List<*> ?: return emptyList()
+        return entries.mapNotNull { entry ->
+            val map = entry as? Map<*, *> ?: return@mapNotNull null
+            val subtitleUri = map["uri"] as? String ?: return@mapNotNull null
+            val language = map["language"] as? String
+            val label = map["title"] as? String
+            MediaItem.SubtitleConfiguration.Builder(Uri.parse(subtitleUri))
+                .setMimeType(subtitleMimeTypeFromUri(subtitleUri))
+                .apply {
+                    if (language != null) setLanguage(language)
+                    if (label != null) setLabel(label)
+                }
+                .setSelectionFlags(0)
+                .build()
+        }
+    }
+
+    private fun subtitleMimeTypeFromUri(uri: String): String {
+        val path = Uri.parse(uri).path ?: uri
+        return when (path.substringAfterLast('.', "").lowercase()) {
+            "vtt" -> MimeTypes.TEXT_VTT
+            "ttml", "dfxp", "xml" -> MimeTypes.APPLICATION_TTML
+            "ssa", "ass" -> MimeTypes.TEXT_SSA
+            else -> MimeTypes.APPLICATION_SUBRIP
         }
     }
 
