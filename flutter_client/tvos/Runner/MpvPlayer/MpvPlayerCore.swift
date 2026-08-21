@@ -68,6 +68,13 @@ final class MpvPlayerCore {
   // safe default. HDMI display-mode switching is meaningless in Simulator
   // anyway, so skip the whole AVDisplayManager path there instead of
   // depending on any one property being safe to call.
+  //
+  // The same "unrecognized selector" crash also hit real devices (GitHub
+  // #239) -- `avDisplayManager` is an AVKit Objective-C category on
+  // UIWindow, and Swift's automatic linking doesn't reliably emit
+  // `-framework AVKit` for category-only usage. Fixed by explicitly linking
+  // AVKit via `OTHER_LDFLAGS` in tvos/Flutter/{Debug,Release}.xcconfig
+  // (matches Plezy's tvos/Flutter/Release.xcconfig, which does the same).
   private static let isSimulator: Bool = {
     #if targetEnvironment(simulator)
       return true
