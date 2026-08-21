@@ -73,8 +73,11 @@ final class MpvPlayerCore {
   // #239) -- `avDisplayManager` is an AVKit Objective-C category on
   // UIWindow, and Swift's automatic linking doesn't reliably emit
   // `-framework AVKit` for category-only usage. Fixed by explicitly linking
-  // AVKit via `OTHER_LDFLAGS` in tvos/Flutter/{Debug,Release}.xcconfig
-  // (matches Plezy's tvos/Flutter/Release.xcconfig, which does the same).
+  // AVKit via `OTHER_LDFLAGS` on the Runner target in
+  // Runner.xcodeproj/project.pbxproj (all three configs: Debug/Release/
+  // Profile) -- deliberately NOT in tvos/Flutter/{Debug,Release}.xcconfig
+  // (Plezy's approach) because `flutter-tvos build tvos` regenerates those
+  // files, silently dropping any manual edits on every build.
   private static let isSimulator: Bool = {
     #if targetEnvironment(simulator)
       return true

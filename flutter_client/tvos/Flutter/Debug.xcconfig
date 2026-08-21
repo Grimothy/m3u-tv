@@ -1,7 +1,2 @@
 #include "Generated.xcconfig"
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
-
-// AVKit owns UIWindow.avDisplayManager (used for native Dolby Vision
-// trigger). Swift autolink doesn't reliably emit -framework AVKit for
-// ObjC category access, so link it explicitly.
-OTHER_LDFLAGS = $(inherited) -framework AVKit
