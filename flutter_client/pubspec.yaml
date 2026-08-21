@@ -82,6 +82,13 @@ flutter:
 # reservation in Partner Center - keep them in sync if the reservation
 # ever changes, since the Store rejects submissions where these don't
 # match exactly.
+#
+# store: true skips local self-signing entirely (Partner Center signs on
+# ingestion) - without it the msix package silently self-signs with its own
+# bundled test certificate and overwrites `publisher` with that cert's
+# subject, ignoring the value below. For a local sideload-test build instead,
+# comment this out (or set to false) - the resulting package won't be
+# store-uploadable but installs directly on this machine.
 msix_config:
   display_name: M3U TV
   publisher_display_name: sparkison
@@ -90,4 +97,5 @@ msix_config:
   msix_version: 1.1.0.0
   logo_path: assets/icons/icon.png
   capabilities: internetClient
+  store: true
   languages: en-us
