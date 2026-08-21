@@ -528,7 +528,14 @@ void main() {
       );
       expect(releaseSummary, contains('Android + Android TV'));
       expect(releaseSummary, contains('| Linux |'));
-      expect(releaseSummary, contains('| Windows |'));
+      expect(
+        releaseSummary,
+        contains('| Windows (portable, unsigned) |'),
+      );
+      expect(
+        releaseSummary,
+        contains('| Windows (Microsoft Store, signed by Partner Center) |'),
+      );
     },
   );
 
