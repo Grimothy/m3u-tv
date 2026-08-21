@@ -43,10 +43,16 @@ class CachedMediaThumbnail extends StatelessWidget {
     return Image(
       image: cacheWidth == null && cacheHeight == null
           ? provider
-          : ResizeImage(provider, width: cacheWidth, height: cacheHeight),
+          : ResizeImage(
+              provider,
+              width: cacheWidth,
+              height: cacheHeight,
+              policy: ResizeImagePolicy.fit,
+            ),
       width: width,
       height: height,
       fit: fit,
+      filterQuality: FilterQuality.high,
       gaplessPlayback: true,
       errorBuilder: (_, _, _) => fallback,
     );

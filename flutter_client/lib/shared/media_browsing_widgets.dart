@@ -417,10 +417,12 @@ class ResilientMediaImage extends StatelessWidget {
                           provider,
                           width: cacheWidth,
                           height: cacheHeight,
+                          policy: ResizeImagePolicy.fit,
                         ),
                   fit: fit,
                   width: width,
                   height: height,
+                  filterQuality: FilterQuality.high,
                   gaplessPlayback: true,
                   frameBuilder:
                       (context, child, frame, wasSynchronouslyLoaded) {
