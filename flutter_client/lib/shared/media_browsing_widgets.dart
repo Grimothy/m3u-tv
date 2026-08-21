@@ -385,7 +385,12 @@ class ResilientMediaImage extends StatelessWidget {
       title: fallbackTitle,
     );
     final url = imageUrl;
-    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    // Oversample beyond raw pixel density so detailed logos (thin
+    // text/wordmarks) survive downscaling instead of being crushed to a
+    // blocky, aliased decode that no display-time FilterQuality can recover.
+    // ResizeImage never upscales past the source's intrinsic size, so this
+    // is free when the source is already small.
+    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context) * 2;
     final cacheWidth = width == null
         ? null
         : (width! * devicePixelRatio).round();

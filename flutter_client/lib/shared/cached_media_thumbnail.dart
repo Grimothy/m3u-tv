@@ -27,9 +27,17 @@ class CachedMediaThumbnail extends StatelessWidget {
   final double? height;
   final BoxFit? fit;
 
+  /// Decode at extra resolution beyond the display's raw pixel density so
+  /// detailed logos (thin text/wordmarks) survive downscaling instead of
+  /// being crushed to a blocky, aliased decode that no amount of display-time
+  /// [FilterQuality] can recover. [ResizeImage] never upscales past the
+  /// source's intrinsic size, so this is free when the source is small.
+  static const double _oversample = 2;
+
   @override
   Widget build(BuildContext context) {
-    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final devicePixelRatio =
+        MediaQuery.devicePixelRatioOf(context) * _oversample;
     final provider = CachedNetworkImageProvider(
       url,
       cacheManager: MediaImageCacheManager(),
