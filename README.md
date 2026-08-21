@@ -21,7 +21,7 @@ Cross-platform TV front-end player for the [M3U Editor web app](https://github.c
 | Platform | Status |
 |---|---|
 | Android / Android TV | ExoPlayer/Media3, with a native mpv fallback for media ExoPlayer can't play |
-| iOS / iPadOS | Native mpv (MPVKit), with an AVKit fallback for unsupported mediaorted |
+| iOS / iPadOS | Native mpv (MPVKit), with an AVKit fallback for unsupported media |
 | Apple TV (tvOS) | Native mpv (MPVKit), with an AVKit fallback for unsupported media |
 | Desktop (Linux / Windows) | libmpv (in-process) |
 | Desktop (macOS) | Native mpv (MPVKit) |
