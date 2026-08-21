@@ -921,6 +921,39 @@ jobs:
             flutter_client/m3u-tv-v${{ needs.validate.outputs.version }}-windows.zip
             flutter_client/m3u-tv-v${{ needs.validate.outputs.version }}-windows.zip.sha256
 
+      - name: Build MSIX package (Microsoft Store)
+        # --version overrides msix_config's msix_version in pubspec.yaml so the
+        # package version tracks the release tag instead of staying pinned to
+        # whatever was last hand-edited there. --output-path/--output-name write
+        # the file directly to the working directory under the release's naming
+        # convention instead of the default build\windows\x64\runner\Release\m3u_tv.msix.
+        # `store: true` is already set in pubspec.yaml msix_config (required for
+        # Partner Center to accept the package - see project memory on this), so
+        # no signing certificate is needed here; Partner Center signs on ingestion.
+        run: |
+          $V = "${{ needs.validate.outputs.version }}"
+          dart run msix:create --version="${V}.0" --output-path=. --output-name="m3u-tv-v${V}-windows"
+
+      - name: Verify MSIX package
+        run: |
+          $V = "${{ needs.validate.outputs.version }}"
+          $Msix = "m3u-tv-v${V}-windows.msix"
+          if (-not (Test-Path $Msix -PathType Leaf)) {
+            throw "Expected MSIX package not found: $Msix"
+          }
+          if ((Get-Item $Msix).Length -eq 0) {
+            throw "MSIX package is empty: $Msix"
+          }
+          $Hash = (Get-FileHash -Algorithm SHA256 $Msix).Hash.ToLowerInvariant()
+          "$Hash  $Msix" | Set-Content "$Msix.sha256"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-msix
+          path: |
+            flutter_client/m3u-tv-v${{ needs.validate.outputs.version }}-windows.msix
+            flutter_client/m3u-tv-v${{ needs.validate.outputs.version }}-windows.msix.sha256
+
   # ── GitHub Release ─────────────────────────────────────────────────────────
   release:
     name: Create GitHub Release
@@ -956,6 +989,12 @@ jobs:
           name: windows-zip
           path: artifacts/windows-zips/
 
+      - name: Download Windows MSIX
+        uses: actions/download-artifact@v8
+        with:
+          name: windows-msix
+          path: artifacts/windows-msix/
+
       - name: Verify non-Apple assets
         run: |
           set -euo pipefail
@@ -963,7 +1002,8 @@ jobs:
           for asset in \
             "artifacts/android-apks/m3u-tv-v${V}-android.apk" \
             "artifacts/linux-zips/m3u-tv-v${V}-linux.zip" \
-            "artifacts/windows-zips/m3u-tv-v${V}-windows.zip"; do
+            "artifacts/windows-zips/m3u-tv-v${V}-windows.zip" \
+            "artifacts/windows-msix/m3u-tv-v${V}-windows.msix"; do
             test -s "$asset"
             test -s "$asset.sha256"
             (cd "$(dirname "$asset")" && sha256sum -c "$(basename "$asset").sha256")
@@ -995,6 +1035,8 @@ jobs:
             "artifacts/linux-zips/m3u-tv-v${V}-linux.zip.sha256"
             "artifacts/windows-zips/m3u-tv-v${V}-windows.zip"
             "artifacts/windows-zips/m3u-tv-v${V}-windows.zip.sha256"
+            "artifacts/windows-msix/m3u-tv-v${V}-windows.msix"
+            "artifacts/windows-msix/m3u-tv-v${V}-windows.msix.sha256"
           )
 
           if gh release view "$TAG" > /dev/null 2>&1; then
@@ -1019,6 +1061,7 @@ jobs:
           echo "| Android + Android TV | \`m3u-tv-${V}-android.apk\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Linux | \`m3u-tv-${V}-linux.zip\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Windows | \`m3u-tv-${V}-windows.zip\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows (Microsoft Store MSIX) | \`m3u-tv-${V}-windows.msix\` |" >> $GITHUB_STEP_SUMMARY
 
   # ── Apple Release ─────────────────────────────────────────────────────────
   release-apple:
