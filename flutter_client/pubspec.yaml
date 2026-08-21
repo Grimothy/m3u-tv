@@ -51,6 +51,7 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   mockito: ^5.4.4
+  msix: ^3.18.0
   stream_channel: ^2.1.0
   very_good_analysis: ^10.3.0
 
@@ -74,3 +75,19 @@ flutter:
   assets:
     - assets/icons/
     - pubspec.yaml
+
+# Microsoft Store packaging (`dart run msix:create`).
+#
+# identity_name/publisher/publisher_display_name below match the app
+# reservation in Partner Center - keep them in sync if the reservation
+# ever changes, since the Store rejects submissions where these don't
+# match exactly.
+msix_config:
+  display_name: M3U TV
+  publisher_display_name: sparkison
+  identity_name: sparkison.M3UTV
+  publisher: CN=72E1AAD5-EAA8-421E-AEFE-473CFDE56550
+  msix_version: 1.1.0.0
+  logo_path: assets/icons/icon.png
+  capabilities: internetClient
+  languages: en-us
