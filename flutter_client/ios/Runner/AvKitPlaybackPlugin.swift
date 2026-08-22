@@ -30,6 +30,21 @@ class AvKitPlaybackPlugin: NSObject, FlutterStreamHandler {
     init(textureRegistry: FlutterTextureRegistry) {
         self.textureRegistry = textureRegistry
         super.init()
+        configureAudioSession()
+    }
+
+    // Multiview runs several concurrent AVPlayers sharing one AVAudioSession.
+    // Without an explicit category, each player.play() call can implicitly
+    // (re)configure/reactivate the session, racing the other tiles for it and
+    // causing audio glitching/desync. Setting this once up front avoids that
+    // renegotiation.
+    private func configureAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            // Non-fatal -- AVPlayer still plays using the session's default config.
+        }
     }
 
     // MARK: FlutterStreamHandler
@@ -153,6 +168,12 @@ class AvKitPlaybackPlugin: NSObject, FlutterStreamHandler {
         case "setVolume":
             let volume = (args?["volume"] as? NSNumber)?.floatValue ?? 1
             states[playerId]?.player.volume = volume
+            // Volume alone only attenuates post-decode gain -- a "muted" tile
+            // (e.g. an unfocused Multiview tile) keeps decoding and rendering
+            // audio, competing with other concurrent AVPlayers for the shared
+            // hardware audio route. Disabling the audio track stops decode
+            // entirely so muted tiles no longer contend for that resource.
+            setAudioTracksEnabled(playerId: playerId, enabled: volume > 0)
             result(nil)
 
         case "setAudioTrack":
@@ -267,6 +288,13 @@ class AvKitPlaybackPlugin: NSObject, FlutterStreamHandler {
         }
         let prefix = characteristic == .audible ? "audio" : "subtitle"
         return "\(prefix):\(index)"
+    }
+
+    private func setAudioTracksEnabled(playerId: String, enabled: Bool) {
+        guard let item = states[playerId]?.item else { return }
+        for track in item.tracks where track.assetTrack?.mediaType == .audio {
+            track.isEnabled = enabled
+        }
     }
 
     private func parseTrackIndex(_ trackId: String) -> Int? {
