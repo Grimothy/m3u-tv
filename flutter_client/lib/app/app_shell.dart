@@ -146,6 +146,8 @@ class AppShellState extends ConsumerState<AppShell>
 
   PlayerArgs? _playerArgs;
   PlaybackOrchestrator? _playerOrchestrator;
+  StreamSubscription<bool>? _playerNativePlaneSub;
+  bool _playerNativePlaneActive = false;
   bool _playerHasFailed = false;
   // True while any root-navigator modal dialog opened from within the
   // player is on screen (track selector, stop/delete-recording confirm),
@@ -329,6 +331,7 @@ class AppShellState extends ConsumerState<AppShell>
     _desktopNotificationDispatcher.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _playerOrchestrator?.dispose().ignore();
+    _playerNativePlaneSub?.cancel().ignore();
     for (final node in _sidebarFocusNodes) {
       node.dispose();
     }
@@ -528,6 +531,7 @@ class AppShellState extends ConsumerState<AppShell>
       setState(() {
         _playerArgs = args;
         _playerHasFailed = false;
+        _playerNativePlaneActive = _playerOrchestrator!.isNativePlaneActive;
       });
       return;
     }
@@ -539,7 +543,15 @@ class AppShellState extends ConsumerState<AppShell>
     setState(() {
       _playerArgs = args;
       _playerOrchestrator = newOrch;
+      _playerNativePlaneActive = newOrch.isNativePlaneActive;
       _playerHasFailed = false;
+    });
+    _playerNativePlaneSub = newOrch.onNativePlaneCompositionChanged.listen((
+      active,
+    ) {
+      if (!mounted || !identical(_playerOrchestrator, newOrch)) return;
+      if (_playerNativePlaneActive == active) return;
+      setState(() => _playerNativePlaneActive = active);
     });
   }
 
@@ -555,6 +567,7 @@ class AppShellState extends ConsumerState<AppShell>
   Future<void> _closePlayer() async {
     ref.read(playerOverlayActiveProvider.notifier).state = false;
     final orch = _playerOrchestrator;
+    final nativePlaneSub = _playerNativePlaneSub;
     final savedFocus = _focusBeforePlayer;
     _focusBeforePlayer = null;
     unawaited(_systemUiPolicy.applyBrowsing());
@@ -574,10 +587,13 @@ class AppShellState extends ConsumerState<AppShell>
       // Fall through and close anyway -- better to leak a not-fully-disposed
       // adapter than leave the user stuck on a dead player screen.
     }
+    nativePlaneSub?.cancel().ignore();
     if (!mounted) return;
     setState(() {
       _playerArgs = null;
       _playerOrchestrator = null;
+      _playerNativePlaneSub = null;
+      _playerNativePlaneActive = false;
       _playerHasFailed = false;
       _playerModalDialogVisible = false;
     });
@@ -1335,12 +1351,23 @@ class AppShellState extends ConsumerState<AppShell>
 
     final viewerId = _appState.activeViewer?.ulid ?? '';
     final recordingChannelIds = ref.watch(recordingChannelIdsProvider);
+    final suppressBrowsingComposition =
+        _playerNativePlaneActive && !_playerHasFailed;
 
     return NotificationToastOverlay(
       key: _toastKey,
       child: Stack(
         children: [
-          backAwareShell,
+          IgnorePointer(
+            ignoring: suppressBrowsingComposition,
+            child: ExcludeSemantics(
+              excluding: suppressBrowsingComposition,
+              child: Opacity(
+                opacity: suppressBrowsingComposition ? 0 : 1,
+                child: backAwareShell,
+              ),
+            ),
+          ),
           Positioned.fill(
             child:
                 widget.playerRouteBuilder?.call(args) ??
@@ -1488,7 +1515,8 @@ class AppShellState extends ConsumerState<AppShell>
                   },
                   traktService: _appState.traktService,
                   onPlaybackFailure: () {
-                    _playerHasFailed = true;
+                    if (!mounted) return;
+                    setState(() => _playerHasFailed = true);
                     unawaited(_systemUiPolicy.applyBrowsing());
                   },
                   onClose: _closePlayer,

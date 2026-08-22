@@ -184,6 +184,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   StreamSubscription<PlaybackState>? _stateSubscription;
   StreamSubscription<PlaybackError>? _errorSubscription;
+  StreamSubscription<bool>? _nativePlaneSubscription;
 
   bool _disposed = false;
   bool _traktScrobbleActive = false;
@@ -193,6 +194,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool get _isLive => widget.args.type == 'live';
   bool get _canSeek => !_isLive && _duration > Duration.zero;
   bool get _isSeries => widget.args.type == 'series';
+  bool get _isNativePlaneActive => widget.orchestrator.isNativePlaneActive;
 
   String _nowPlayingBadgeLabel(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -254,6 +256,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
     _stateSubscription = widget.orchestrator.onState.listen(_handleState);
     _errorSubscription = widget.orchestrator.onError.listen(_handleError);
+    // `_isNativePlaneActive` reads the orchestrator directly rather than
+    // caching its value, so nothing otherwise triggers a rebuild when it
+    // flips -- without this, AppShell's own onNativePlaneCompositionChanged
+    // listener (app_shell.dart) could un-suppress the opaque browsing shell
+    // behind this screen before this screen's own backgroundColor toggle
+    // (which only updates via _handleState/_handleError) catches up.
+    _nativePlaneSubscription = widget
+        .orchestrator
+        .onNativePlaneCompositionChanged
+        .listen((_) {
+          if (mounted) setState(() {});
+        });
     _openSource(widget.args);
     _startLoadingTimeout();
     _scheduleOverlayHide();
@@ -763,6 +777,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _errorButtonFocusNode.dispose();
     unawaited(_stateSubscription?.cancel());
     unawaited(_errorSubscription?.cancel());
+    unawaited(_nativePlaneSubscription?.cancel());
     unawaited(widget.wakelockController.disable());
     unawaited(widget.orchestrator.stop());
     super.dispose();
@@ -1198,7 +1213,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: _isNativePlaneActive && _errorMessage == null
+          ? Colors.transparent
+          : Colors.black,
       body: Shortcuts(
         shortcuts: <LogicalKeySet, Intent>{
           LogicalKeySet(LogicalKeyboardKey.escape): const _BackIntent(),
