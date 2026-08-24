@@ -1375,6 +1375,9 @@ class AppShellState extends ConsumerState<AppShell>
                   key: ValueKey(_playerSessionId),
                   args: args,
                   orchestrator: orch,
+                  isHandheld:
+                      widget.deviceType == DeviceType.phone ||
+                      widget.deviceType == DeviceType.tablet,
                   epgService: _appState.epgService,
                   xtreamService: _appState.xtreamService,
                   comskipSettings: _appState.comskipSettings,

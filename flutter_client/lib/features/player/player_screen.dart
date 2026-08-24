@@ -60,6 +60,7 @@ class PlayerScreen extends StatefulWidget {
     this.onTrackDialogVisibilityChanged,
     this.isRecordingCurrentChannel = false,
     this.viewSettingsService,
+    this.isHandheld = false,
     super.key,
   });
 
@@ -81,6 +82,14 @@ class PlayerScreen extends StatefulWidget {
   final void Function(EpgProgram program)? onRecordProgram;
   final ValueChanged<bool>? onTrackDialogVisibilityChanged;
   final bool isRecordingCurrentChannel;
+
+  /// True for phones/tablets (never TV/desktop -- see `DeviceType` in
+  /// `app_shell.dart`). Locks the device into landscape for the duration of
+  /// this screen and restores portrait on close, since a handheld video
+  /// player is cramped and inconsistently laid out in portrait, and the
+  /// user has to fight the OS's rotation lock to get a usable landscape
+  /// view otherwise.
+  final bool isHandheld;
 
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
@@ -240,6 +249,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
     // not just while actively playing — e.g. staying paused on an overlay
     // shouldn't let the screen sleep. Enabled here, disabled in dispose().
     unawaited(widget.wakelockController.enable());
+    if (widget.isHandheld) {
+      unawaited(
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]),
+      );
+    }
     // Steal focus from the content area (autofocus won't do this if another
     // widget already holds focus when the player opens via the AppShell Stack).
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -762,6 +779,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void dispose() {
     _disposed = true;
+    if (widget.isHandheld) {
+      unawaited(
+        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]),
+      );
+    }
     if (_traktScrobbleActive) _scrobble('stop');
     _loadingTimer?.cancel();
     _overlayHideTimer?.cancel();
@@ -1270,29 +1292,48 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 // overlay's fixed 420px width off the right edge and its
                 // top edge under the status bar/notch.
                 final mediaQuery = MediaQuery.of(context);
-                final isCompact = mediaQuery.size.width < 600;
-                // On compact/portrait layouts the back button lives in
+                // Judged by the shortest side (not raw width) so a phone
+                // rotated into landscape -- wide but short -- is still
+                // recognized as compact instead of flipping to the TV/
+                // desktop layout just because it's momentarily wider than
+                // 600px. The old width-only check made these overlays
+                // inconsistent between portrait and landscape on the same
+                // device. Shared with PlaybackControls -- see
+                // [isHandheldLayout].
+                final isCompact = isHandheldLayout(context);
+                final edgePadding = overlayEdgePaddingFor(context);
+                // On compact/handheld layouts the back button lives in
                 // PlaybackControls' own top-left corner
-                // (overlayEdgePadding + a ~44px circular hit target); the
+                // (edgePadding + a ~44px circular hit target); the
                 // overlay must clear that whole row instead of overlapping
                 // it. Derive the left offset from the actual button
                 // geometry instead of a magic constant: safe-area inset +
-                // PlaybackControls' own padding (overlayEdgePadding, shared
+                // PlaybackControls' own padding (edgePadding, shared
                 // with it so the two can't drift apart) + the ~44px
                 // circular back button + a real gap.
                 final overlayLeft = isCompact
                     ? 16.0
                     : Platform.operatingSystem == 'tvos'
-                    ? mediaQuery.padding.left + overlayEdgePadding + 44.0 + 16.0
+                    ? mediaQuery.padding.left + edgePadding + 44.0 + 16.0
                     : 104.0;
-                // Must match PlaybackControls' own overlayEdgePadding or the
+                // Must match PlaybackControls' own edgePadding or the
                 // back button and this overlay's top edges drift apart.
                 final topPaddingMatch = Platform.operatingSystem == 'tvos'
-                    ? overlayEdgePadding
-                    : (isCompact ? 96.0 : overlayEdgePadding);
+                    ? edgePadding
+                    : (isCompact ? 96.0 : edgePadding);
                 final overlayTop = mediaQuery.padding.top + topPaddingMatch;
+                // Reserve room on the right for the diagnostics panel (debug
+                // builds only) so the two don't draw on top of each other --
+                // on a compact/handheld screen the title overlay would
+                // otherwise stretch to within a few pixels of the right
+                // edge, exactly where the diagnostics panel sits.
+                final diagnosticsWidth = _showPlaybackDiagnostics
+                    ? (isCompact ? 200.0 : 300.0)
+                    : 0.0;
                 final overlayWidth = isCompact
-                    ? mediaQuery.size.width - overlayLeft * 2
+                    ? mediaQuery.size.width -
+                          overlayLeft * 2 -
+                          (diagnosticsWidth > 0 ? diagnosticsWidth + 12 : 0)
                     : 420.0;
                 final skipPrompt = _buildSkipPrompt(context);
 
@@ -1437,9 +1478,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         _overlayVisible &&
                         _errorMessage == null)
                       Positioned(
-                        top: 40,
-                        right: 40,
+                        top: overlayTop,
+                        right: mediaQuery.padding.right + edgePadding,
                         child: _PlaybackDiagnosticsPanel(
+                          compact: isCompact,
+                          width: diagnosticsWidth,
                           activeBackend: widget.orchestrator.activeBackend,
                           diagnostics: widget.orchestrator.diagnostics,
                         ),
@@ -1493,8 +1536,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     // Comskip: brief auto-skip indicator (DVR recordings only)
                     if (_showComskipSkippedBadge)
                       Positioned(
-                        top: overlayEdgePadding,
-                        left: overlayEdgePadding,
+                        top: edgePadding,
+                        left: edgePadding,
                         child: _ComskipSkippedBadge(
                           label: AppLocalizations.of(
                             context,
@@ -1515,8 +1558,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     // controls' own back-button corner once the OSD appears.
                     if (!_overlayVisible && skipPrompt != null)
                       Positioned(
-                        left: overlayEdgePadding,
-                        bottom: overlayEdgePadding,
+                        left: edgePadding,
+                        bottom: edgePadding,
                         child: skipPrompt,
                       ),
                   ],
@@ -1534,10 +1577,22 @@ class _PlaybackDiagnosticsPanel extends StatelessWidget {
   const _PlaybackDiagnosticsPanel({
     required this.activeBackend,
     required this.diagnostics,
+    this.compact = false,
+    this.width = 360,
   });
 
   final PlaybackBackend? activeBackend;
   final List<String> diagnostics;
+
+  /// Shrinks padding/fonts/label width for phones/tablets, where the fixed
+  /// 360px panel used to run off the edge of the screen in portrait and
+  /// collide with the title overlay in the short landscape orientation.
+  final bool compact;
+
+  /// Caller-supplied width (see `PlayerScreen`'s `diagnosticsWidth`), so this
+  /// panel and the title overlay it sits beside can agree on how much of the
+  /// screen each one gets instead of overlapping.
+  final double width;
 
   @override
   Widget build(BuildContext context) {
@@ -1546,25 +1601,45 @@ class _PlaybackDiagnosticsPanel extends StatelessWidget {
       diagnostics: diagnostics,
     );
     final rows = <Widget>[
-      _DiagnosticsRow(label: 'Backend', value: snapshot.backendLabel),
+      _DiagnosticsRow(
+        label: 'Backend',
+        value: snapshot.backendLabel,
+        compact: compact,
+      ),
       if (snapshot.fallbackReason != null)
-        _DiagnosticsRow(label: 'Fallback', value: snapshot.fallbackReason!),
+        _DiagnosticsRow(
+          label: 'Fallback',
+          value: snapshot.fallbackReason!,
+          compact: compact,
+        ),
       if (snapshot.codecDecision != null)
-        _DiagnosticsRow(label: 'Codec', value: snapshot.codecDecision!),
+        _DiagnosticsRow(
+          label: 'Codec',
+          value: snapshot.codecDecision!,
+          compact: compact,
+        ),
       if (snapshot.transcodeSession != null)
-        _DiagnosticsRow(label: 'Transcode', value: snapshot.transcodeSession!),
+        _DiagnosticsRow(
+          label: 'Transcode',
+          value: snapshot.transcodeSession!,
+          compact: compact,
+        ),
       if (snapshot.cleanupStatus != null)
-        _DiagnosticsRow(label: 'Cleanup', value: snapshot.cleanupStatus!),
+        _DiagnosticsRow(
+          label: 'Cleanup',
+          value: snapshot.cleanupStatus!,
+          compact: compact,
+        ),
     ];
 
     return IgnorePointer(
       child: Container(
-        width: 360,
-        padding: const EdgeInsets.all(14),
+        width: width,
+        padding: EdgeInsets.all(compact ? 8 : 14),
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.78),
           border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(compact ? 10 : 14),
           boxShadow: const <BoxShadow>[
             BoxShadow(
               color: Colors.black54,
@@ -1584,25 +1659,30 @@ class _PlaybackDiagnosticsPanel extends StatelessWidget {
 }
 
 class _DiagnosticsRow extends StatelessWidget {
-  const _DiagnosticsRow({required this.label, required this.value});
+  const _DiagnosticsRow({
+    required this.label,
+    required this.value,
+    this.compact = false,
+  });
 
   final String label;
   final String value;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: EdgeInsets.symmetric(vertical: compact ? 2 : 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 118,
+            width: compact ? 72 : 118,
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: Colors.white60,
-                fontSize: 12,
+                fontSize: compact ? 10 : 12,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.6,
               ),
@@ -1611,13 +1691,13 @@ class _DiagnosticsRow extends StatelessWidget {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
+              style: TextStyle(
                 color: Colors.white,
-                fontSize: 12,
+                fontSize: compact ? 10 : 12,
                 fontWeight: FontWeight.w600,
                 height: 1.25,
               ),
-              maxLines: 3,
+              maxLines: compact ? 2 : 3,
               overflow: TextOverflow.ellipsis,
             ),
           ),
