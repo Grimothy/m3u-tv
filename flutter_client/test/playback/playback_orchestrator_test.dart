@@ -64,6 +64,69 @@ void main() {
     );
 
     test(
+      'switches to the next backend on a mid-stream decoder failure '
+      'instead of retrying the one that just failed',
+      () async {
+        final direct = _FakePlayerAdapter(
+          capabilities: PlaybackCapabilities.androidExoPlayer,
+        );
+        final fallback = _FakePlayerAdapter(
+          capabilities: PlaybackCapabilities.androidMpv,
+        );
+        final transcode = _FakeTranscodeGateway();
+        final orchestrator = _orchestrator(
+          adapters: <PlaybackBackend, PlayerAdapter>{
+            PlaybackBackend.androidExoPlayer: direct,
+            PlaybackBackend.androidMpv: fallback,
+          },
+          transcodeGateway: transcode,
+        );
+
+        await orchestrator.open(_source(videoCodec: 'h264'));
+        await orchestrator.play();
+        expect(orchestrator.activeBackend, PlaybackBackend.androidExoPlayer);
+
+        // ExoPlayer loaded fine but then failed mid-stream on an EAC3 audio
+        // track it has no on-device decoder for -- this can't be fixed by
+        // retrying ExoPlayer again, so the orchestrator should switch to
+        // androidMpv instead.
+        direct.emitError(
+          const PlaybackError(
+            backend: PlaybackBackend.androidExoPlayer,
+            message: 'MediaCodecAudioRenderer error',
+            code: 'ERROR_CODE_DECODER_INIT_FAILED',
+            recoverable: true,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(orchestrator.activeBackend, PlaybackBackend.androidMpv);
+        expect(fallback.commands, <String>[
+          'load:https://provider.example/live/news.ts',
+        ]);
+        expect(
+          direct.commands,
+          <String>[
+            'load:https://provider.example/live/news.ts',
+            'play',
+            'stop',
+          ],
+        );
+        expect(transcode.startedServerRequests, isEmpty);
+        expect(
+          orchestrator.diagnostics,
+          contains(
+            'decoder-fallback:ERROR_CODE_DECODER_INIT_FAILED:'
+            'androidExoPlayer->androidMpv',
+          ),
+        );
+
+        await orchestrator.dispose();
+      },
+    );
+
+    test(
       'falls back to the native platform backend before transcoding',
       () async {
         final direct = _FakePlayerAdapter(
@@ -1171,6 +1234,10 @@ class _FakePlayerAdapter implements PlayerAdapter {
   Future<void> dispose() async {
     await _stateController.close();
     await _errorController.close();
+  }
+
+  void emitError(PlaybackError error) {
+    _errorController.add(error);
   }
 
   void _emit(PlaybackState state) {

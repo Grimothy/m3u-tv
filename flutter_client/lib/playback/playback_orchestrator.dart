@@ -2,6 +2,7 @@
 
 import 'dart:async';
 
+import 'package:m3u_tv/playback/decoder_failure.dart';
 import 'package:m3u_tv/playback/playback_capabilities.dart';
 import 'package:m3u_tv/playback/player_adapter.dart';
 import 'package:m3u_tv/playback/stream_probe_failure.dart';
@@ -47,6 +48,11 @@ class PlaybackOrchestrator {
   /// backend can't route around anyway.
   static const int _streamUnavailableMaxRetries = 2;
   static const Duration _streamUnavailableRetryDelay = Duration(seconds: 3);
+
+  /// See the comment at its use in [_fallBackToNextBackend]: a settle
+  /// window between releasing one Hybrid Composition platform view and
+  /// creating the next, to avoid a Flutter/Android platform-view swap race.
+  static const Duration _platformViewSettleDelay = Duration(milliseconds: 300);
 
   final PlaybackPlatform _platform;
   final Map<PlaybackBackend, PlayerAdapter> _adapters;
@@ -131,23 +137,37 @@ class PlaybackOrchestrator {
     if (!_isCurrentGeneration(generation)) return;
     _clearActiveAdapter();
 
+    await _tryBackendsThenTranscode(_nativeBackends(), source, generation);
+  }
+
+  /// Walks [backends] in order via [_tryLoadBackend], falling through to
+  /// server transcode if every one of them fails recoverably. Shared by
+  /// [open] (walks the full [_nativeBackends] list) and the mid-stream
+  /// decoder-failure path in [_handleRecoverableActiveFailure] (walks only
+  /// the backends after the one that just failed).
+  Future<void> _tryBackendsThenTranscode(
+    Iterable<PlaybackBackend> backends,
+    PlaybackSource source,
+    int generation, {
+    PlaybackBackend? previousBackend,
+  }) async {
     PlaybackException? lastRecoverableFailure;
-    PlaybackBackend? previousBackend;
-    var attempt = 0;
-    for (final backend in _nativeBackends()) {
+    var priorBackend = previousBackend;
+    var attempt = priorBackend == null ? 0 : 1;
+    for (final backend in backends) {
       if (!_isCurrentGeneration(generation)) return;
       final failure = await _tryLoadBackend(
         backend: backend,
         source: source,
         successDiagnostic: attempt == 0
             ? 'direct:${backend.name}:ready'
-            : 'fallback:${backend.name}:preferred ${previousBackend?.name ?? 'none'} unsupported',
+            : 'fallback:${backend.name}:preferred ${priorBackend?.name ?? 'none'} unsupported',
         generation: generation,
       );
       if (!_isCurrentGeneration(generation)) return;
       attempt += 1;
       if (failure == null) return;
-      previousBackend = backend;
+      priorBackend = backend;
       if (!failure.recoverable) return;
       lastRecoverableFailure = failure;
     }
@@ -659,6 +679,24 @@ class PlaybackOrchestrator {
       _emitError(error);
       return;
     }
+
+    if (looksLikeDecoderFailure(error.code)) {
+      final remainingBackends = _nativeBackends()
+          .skipWhile((candidate) => candidate != backend)
+          .skip(1)
+          .toList();
+      if (remainingBackends.isNotEmpty) {
+        await _fallBackToNextBackend(
+          adapter: adapter,
+          backend: backend,
+          source: source,
+          remainingBackends: remainingBackends,
+          error: error,
+        );
+        return;
+      }
+    }
+
     if (_activeRecoveryAttempts >= 1) {
       _beginGeneration();
       await _stopActiveAdapter();
@@ -699,6 +737,58 @@ class PlaybackOrchestrator {
           code: error.code,
           recoverable: error.recoverable,
         ),
+      );
+    } finally {
+      _recovering = false;
+    }
+  }
+
+  /// Switches away from [backend] to the first of [remainingBackends] after
+  /// a mid-stream decoder failure (e.g. no on-device EAC3 decoder) that
+  /// retrying the same backend can never recover from. Unlike the
+  /// same-backend retry above, this doesn't count against
+  /// [_activeRecoveryAttempts] -- it's a one-time move to a backend that can
+  /// actually decode the content, not a retry of one that can't.
+  Future<void> _fallBackToNextBackend({
+    required PlayerAdapter adapter,
+    required PlaybackBackend backend,
+    required PlaybackSource source,
+    required List<PlaybackBackend> remainingBackends,
+    required PlaybackError error,
+  }) async {
+    _recovering = true;
+    final generation = _playbackGeneration;
+    _diagnostics.add(
+      'decoder-fallback:${error.code}:${backend.name}->'
+      '${remainingBackends.first.name}',
+    );
+    try {
+      await adapter.stop();
+      if (_disposed || generation != _playbackGeneration) return;
+      if (identical(_activeAdapter, adapter) && _activeBackend == backend) {
+        _clearActiveAdapter();
+      }
+      if (adapter is PlatformViewProvider) {
+        await (adapter as PlatformViewProvider).releaseNativeView();
+        // Give Android's compositor a moment to actually finish tearing
+        // down the old Hybrid Composition SurfaceView before the next
+        // backend's own platform view tries to attach one right after --
+        // chaining stop -> release -> create back-to-back (far tighter
+        // than a cold start, which has natural startup delay before its
+        // first platform view is ever created) has been observed to throw
+        // `UnimplementedError: Not supported for hybrid composition` from
+        // Flutter's own RenderAndroidView mid-swap, which corrupts the
+        // surface handoff and leaves the new backend's video renderer with
+        // no usable Surface (audio keeps playing, video silently drops).
+        if (_disposed || generation != _playbackGeneration) return;
+        await Future<void>.delayed(_platformViewSettleDelay);
+      }
+      if (_disposed || generation != _playbackGeneration) return;
+      await _tryBackendsThenTranscode(
+        remainingBackends,
+        source,
+        generation,
+        previousBackend: backend,
       );
     } finally {
       _recovering = false;
