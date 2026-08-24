@@ -350,6 +350,27 @@
   "searchTypeToSearch": "输入以搜索",
   "vodPlayMovie": "播放电影",
   "vodContinueMovie": "继续播放",
+  "vodTimeLeftMinutes": "{minutes, plural, other{还剩{minutes}分钟}}",
+  "@vodTimeLeftMinutes": {
+    "description": "Trailing label inside the resume button on a VOD detail screen, showing time remaining under an hour.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "vodTimeLeftHoursMinutes": "还剩{hours}小时{minutes}分钟",
+  "@vodTimeLeftHoursMinutes": {
+    "description": "Trailing label inside the resume button on a VOD detail screen, showing time remaining of an hour or more.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "navAioStreams": "AIOStreams",
   "aiostreamsGetStreams": "获取播放源",
   "aiostreamsLoadingStreams": "正在加载播放源…",

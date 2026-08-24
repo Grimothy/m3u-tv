@@ -1382,6 +1382,18 @@ abstract class AppLocalizations {
   /// **'Continue movie'**
   String get vodContinueMovie;
 
+  /// Trailing label inside the resume button on a VOD detail screen, showing time remaining under an hour.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes, plural, =1{1 min left} other{{minutes} min left}}'**
+  String vodTimeLeftMinutes(int minutes);
+
+  /// Trailing label inside the resume button on a VOD detail screen, showing time remaining of an hour or more.
+  ///
+  /// In en, this message translates to:
+  /// **'{hours}h {minutes}m left'**
+  String vodTimeLeftHoursMinutes(int hours, int minutes);
+
   /// No description provided for @navAioStreams.
   ///
   /// In en, this message translates to:

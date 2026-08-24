@@ -1578,7 +1578,7 @@ void main() {
       await _pumpAppFrame(tester);
 
       expect(find.text('Play movie'), findsOneWidget);
-      expect(find.text('Continue movie'), findsNothing);
+      expect(find.text('1h 5m left'), findsNothing);
 
       await appState.resumeService.save(
         Progress(
@@ -1593,7 +1593,8 @@ void main() {
       await appState.refreshLocalState();
       await _pumpAppFrame(tester);
 
-      expect(find.text('Continue movie'), findsOneWidget);
+      // Remaining: 6480s - 2593s = 3887s, rounded up to 65 min = 1h 5m.
+      expect(find.text('1h 5m left'), findsOneWidget);
       expect(find.text('Play movie'), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
     },
@@ -1643,8 +1644,9 @@ void main() {
       await tester.tap(find.text('Route Movie').last);
       await _pumpAppFrame(tester);
 
-      expect(find.text('Continue movie'), findsOneWidget);
-      await tester.tap(find.text('Continue movie'));
+      // Remaining: 600s - 91s = 509s, rounded up to 9 min.
+      expect(find.text('9 min left'), findsOneWidget);
+      await tester.tap(find.text('9 min left'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
@@ -24,6 +25,7 @@ class ItemMetaInfo extends StatelessWidget {
     this.chips = const [],
     this.fullWidthButton = false,
     this.progressValue,
+    this.onStartOver,
     this.isLoading = false,
     this.plot,
     this.credits = const [],
@@ -31,10 +33,24 @@ class ItemMetaInfo extends StatelessWidget {
 
   final String name;
   final List<String> chips;
+
+  /// Primary button's label. When [progressValue] is set, this is the
+  /// trailing text next to the inline progress bar (e.g. "33 min left")
+  /// rather than a verb like "Play" - the icon and bar already say "resume".
   final String buttonLabel;
   final VoidCallback? onPlay;
   final bool fullWidthButton;
+
+  /// Watched fraction (0-1). When set, renders inside the primary button as
+  /// an inline progress track next to [buttonLabel] instead of a plain
+  /// label-only button.
   final double? progressValue;
+
+  /// Shows a secondary "start from beginning" button next to the primary
+  /// one. Only meaningful alongside [progressValue] - there's nothing to
+  /// restart from when nothing has been watched yet.
+  final VoidCallback? onStartOver;
+
   final bool isLoading;
   final String? plot;
   final List<MetaCreditLine> credits;
@@ -48,7 +64,31 @@ class ItemMetaInfo extends StatelessWidget {
       icon: Icons.play_arrow,
       label: buttonLabel,
       onPressed: isLoading ? null : onPlay,
+      inlineProgressValue: progressValue,
     );
+    final startOverCallback = onStartOver;
+    final startOverButton = startOverCallback == null
+        ? null
+        : AppButton(
+            icon: Icons.replay,
+            label: AppLocalizations.of(context).playerStartFromBeginning,
+            onPressed: isLoading ? null : startOverCallback,
+          );
+    final sizedButton = fullWidthButton
+        ? SizedBox(width: double.infinity, child: button)
+        : button;
+    // Wrap (not Row) so the secondary button drops to its own line instead
+    // of overflowing when the info column is too narrow to fit both -
+    // narrow layouts, and a full-width primary button always claims the
+    // whole line on its own run.
+    final buttonRow = startOverButton == null
+        ? sizedButton
+        : Wrap(
+            spacing: MediaBrowsingMetrics.itemGap,
+            runSpacing: MediaBrowsingMetrics.itemGap,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [sizedButton, startOverButton],
+          );
     final hasPlot = plot != null && plot!.trim().isNotEmpty;
 
     return Column(
@@ -63,14 +103,7 @@ class ItemMetaInfo extends StatelessWidget {
             children: chips.map((label) => MetadataChip(label: label)).toList(),
           ),
         const SizedBox(height: MediaBrowsingMetrics.contentPadding),
-        if (fullWidthButton)
-          SizedBox(width: double.infinity, child: button)
-        else
-          button,
-        if (progressValue != null) ...[
-          const SizedBox(height: MediaBrowsingMetrics.chipGap),
-          LinearProgressIndicator(value: progressValue, minHeight: 4),
-        ],
+        buttonRow,
         const SizedBox(height: MediaBrowsingMetrics.pagePadding),
         if (isLoading) ...[
           const LinearProgressIndicator(),

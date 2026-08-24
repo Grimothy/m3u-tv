@@ -248,7 +248,9 @@ class _VodDetailsBody extends StatelessWidget {
     bool fullWidthButton = false,
   }) {
     final l = AppLocalizations.of(context);
-    final buttonLabel = progress == null ? l.vodPlayMovie : l.vodContinueMovie;
+    final buttonLabel = progress == null
+        ? l.vodPlayMovie
+        : (_timeLeftLabel(context, progress) ?? l.vodContinueMovie);
     return ItemMetaInfo(
       name: details.name,
       chips: [
@@ -260,7 +262,12 @@ class _VodDetailsBody extends StatelessWidget {
           details.containerExtension!.toUpperCase(),
       ],
       buttonLabel: buttonLabel,
-      onPlay: () => _play(details, progress),
+      onPlay: () =>
+          _play(details, startPosition: progress?.positionSeconds.toDouble()),
+      onStartOver: progress == null
+          ? null
+          // ignore: prefer_int_literals
+          : () => _play(details, startPosition: 0.0),
       fullWidthButton: fullWidthButton,
       progressValue: _progressValue(progress),
       isLoading: isLoading,
@@ -280,14 +287,27 @@ class _VodDetailsBody extends StatelessWidget {
     return (progress.positionSeconds / duration).clamp(0.0, 1.0);
   }
 
-  void _play(_ResolvedVodDetails details, Progress? progress) {
+  String? _timeLeftLabel(BuildContext context, Progress? progress) {
+    final duration = progress?.durationSeconds;
+    if (progress == null || duration == null || duration <= 0) return null;
+    final remainingSeconds = (duration - progress.positionSeconds).clamp(
+      0,
+      duration,
+    );
+    final totalMinutes = (remainingSeconds / 60).ceil().clamp(1, duration);
+    final l = AppLocalizations.of(context);
+    if (totalMinutes < 60) return l.vodTimeLeftMinutes(totalMinutes);
+    return l.vodTimeLeftHoursMinutes(totalMinutes ~/ 60, totalMinutes % 60);
+  }
+
+  void _play(_ResolvedVodDetails details, {double? startPosition}) {
     onPlay?.call(
       PlayerArgs(
         streamUrl: item.streamUrl,
         title: details.name,
         type: 'vod',
         streamId: item.id,
-        startPosition: progress?.positionSeconds.toDouble(),
+        startPosition: startPosition,
         metadata: <String, Object?>{
           'title': details.name,
           if (details.containerExtension != null)

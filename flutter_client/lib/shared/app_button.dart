@@ -190,7 +190,12 @@ class AppButton extends StatelessWidget {
     this.loading = false,
     this.autoScroll = true,
     this.footer,
-  });
+    this.inlineProgressValue,
+  }) : assert(
+         footer == null || inlineProgressValue == null,
+         'footer and inlineProgressValue are alternate layouts for '
+         'attaching progress to a button - use only one.',
+       );
 
   final String label;
   final IconData? icon;
@@ -217,6 +222,13 @@ class AppButton extends StatelessWidget {
   /// bare [LinearProgressIndicator], which stretches on its own). Ignored
   /// while [loading] is true.
   final Widget? footer;
+
+  /// Renders a fixed-width progress track between [icon] and [label] on a
+  /// single row (e.g. play icon, watched-fraction bar, "33 min left") instead
+  /// of the plain icon+label row — for a resume affordance that shows watch
+  /// progress at a glance without a second element below the button.
+  /// Mutually exclusive with [footer]; ignored while [loading] is true.
+  final double? inlineProgressValue;
 
   @override
   Widget build(BuildContext context) {
@@ -264,7 +276,7 @@ class AppButton extends StatelessWidget {
       button = isPrimary
           ? ElevatedButton(style: style, onPressed: null, child: child)
           : FilledButton.tonal(style: style, onPressed: null, child: child);
-    } else if (icon == null && footer == null) {
+    } else if (icon == null && footer == null && inlineProgressValue == null) {
       button = isPrimary
           ? ElevatedButton(
               style: style,
@@ -276,7 +288,7 @@ class AppButton extends StatelessWidget {
               onPressed: effectiveOnPressed,
               child: Text(label),
             );
-    } else if (footer == null) {
+    } else if (footer == null && inlineProgressValue == null) {
       button = isPrimary
           ? ElevatedButton.icon(
               style: style,
@@ -289,6 +301,41 @@ class AppButton extends StatelessWidget {
               onPressed: effectiveOnPressed,
               icon: Icon(icon),
               label: Text(label),
+            );
+    } else if (inlineProgressValue != null) {
+      // A fixed-width track keeps the bar readable at a glance regardless of
+      // how long the trailing label text ends up being in a given locale.
+      final child = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 18),
+            const SizedBox(width: 10),
+          ],
+          SizedBox(
+            width: 72,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: inlineProgressValue,
+                minHeight: 4,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(label),
+        ],
+      );
+      button = isPrimary
+          ? ElevatedButton(
+              style: style,
+              onPressed: effectiveOnPressed,
+              child: child,
+            )
+          : FilledButton.tonal(
+              style: style,
+              onPressed: effectiveOnPressed,
+              child: child,
             );
     } else {
       // [footer] present: build the label/icon row by hand (rather than the

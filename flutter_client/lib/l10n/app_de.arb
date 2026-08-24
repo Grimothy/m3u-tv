@@ -350,6 +350,27 @@
   "searchTypeToSearch": "Zum Suchen tippen",
   "vodPlayMovie": "Film abspielen",
   "vodContinueMovie": "Film fortsetzen",
+  "vodTimeLeftMinutes": "{minutes, plural, =1{noch 1 Min.} other{noch {minutes} Min.}}",
+  "@vodTimeLeftMinutes": {
+    "description": "Trailing label inside the resume button on a VOD detail screen, showing time remaining under an hour.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "vodTimeLeftHoursMinutes": "noch {hours} Std. {minutes} Min.",
+  "@vodTimeLeftHoursMinutes": {
+    "description": "Trailing label inside the resume button on a VOD detail screen, showing time remaining of an hour or more.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "navAioStreams": "AIOStreams",
   "aiostreamsGetStreams": "Streams laden",
   "aiostreamsLoadingStreams": "Streams werden geladen…",

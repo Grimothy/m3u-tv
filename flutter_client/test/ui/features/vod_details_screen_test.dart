@@ -102,13 +102,23 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Continue movie'), findsOneWidget);
+      // Remaining time: 6000s total - 1500s watched = 4500s = 75 min.
+      expect(find.text('1h 15m left'), findsOneWidget);
       expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      expect(find.text('Start from Beginning'), findsOneWidget);
 
-      await tester.tap(find.text('Continue movie'));
+      await tester.tap(find.text('1h 15m left'));
       await tester.pump();
 
+      // The button resumes directly - no intermediate resume/start-over
+      // modal on this screen, since "Start from Beginning" is its own
+      // button right next to it.
       expect(playerArgs?.startPosition, 1500.0);
+
+      await tester.tap(find.text('Start from Beginning'));
+      await tester.pump();
+
+      expect(playerArgs?.startPosition, 0.0);
     });
   });
 }

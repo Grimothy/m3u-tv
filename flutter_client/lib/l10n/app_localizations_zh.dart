@@ -689,6 +689,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get vodContinueMovie => '继续播放';
 
   @override
+  String vodTimeLeftMinutes(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other: '还剩$minutes分钟',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String vodTimeLeftHoursMinutes(int hours, int minutes) {
+    return '还剩$hours小时$minutes分钟';
+  }
+
+  @override
   String get navAioStreams => 'AIOStreams';
 
   @override

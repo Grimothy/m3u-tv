@@ -725,6 +725,22 @@ class AppLocalizationsFr extends AppLocalizations {
   String get vodContinueMovie => 'Continuer le film';
 
   @override
+  String vodTimeLeftMinutes(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other: 'Il reste $minutes min',
+      one: 'Il reste 1 min',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String vodTimeLeftHoursMinutes(int hours, int minutes) {
+    return 'Il reste $hours h $minutes min';
+  }
+
+  @override
   String get navAioStreams => 'AIOStreams';
 
   @override
