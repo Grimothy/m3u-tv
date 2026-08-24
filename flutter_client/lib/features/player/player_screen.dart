@@ -1302,26 +1302,27 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 // [isHandheldLayout].
                 final isCompact = isHandheldLayout(context);
                 final edgePadding = overlayEdgePaddingFor(context);
-                // On compact/handheld layouts the back button lives in
-                // PlaybackControls' own top-left corner
-                // (edgePadding + a ~44px circular hit target); the
-                // overlay must clear that whole row instead of overlapping
-                // it. Derive the left offset from the actual button
-                // geometry instead of a magic constant: safe-area inset +
-                // PlaybackControls' own padding (edgePadding, shared
-                // with it so the two can't drift apart) + the ~44px
-                // circular back button + a real gap.
-                final overlayLeft = isCompact
-                    ? 16.0
-                    : Platform.operatingSystem == 'tvos'
-                    ? mediaQuery.padding.left + edgePadding + 44.0 + 16.0
+                // Compact/handheld now sits to the right of the back
+                // button, the same corner PlaybackControls itself uses --
+                // mirroring tvOS's existing placement below. It used to sit
+                // below the back button instead, which ate a big chunk of
+                // vertical space that's especially scarce in the short
+                // landscape orientation the player locks to on phones.
+                // Derive the offset from the actual button geometry instead
+                // of a magic constant: safe-area inset + PlaybackControls'
+                // own padding (edgePadding, shared with it so the two can't
+                // drift apart) + the ~44px circular back button + a gap.
+                final rightOfBackButton =
+                    isCompact || Platform.operatingSystem == 'tvos';
+                final overlayLeft = rightOfBackButton
+                    ? mediaQuery.padding.left +
+                          edgePadding +
+                          44.0 +
+                          (isCompact ? 12.0 : 16.0)
                     : 104.0;
                 // Must match PlaybackControls' own edgePadding or the
                 // back button and this overlay's top edges drift apart.
-                final topPaddingMatch = Platform.operatingSystem == 'tvos'
-                    ? edgePadding
-                    : (isCompact ? 96.0 : edgePadding);
-                final overlayTop = mediaQuery.padding.top + topPaddingMatch;
+                final overlayTop = mediaQuery.padding.top + edgePadding;
                 // Reserve room on the right for the diagnostics panel (debug
                 // builds only) so the two don't draw on top of each other --
                 // on a compact/handheld screen the title overlay would
@@ -1332,7 +1333,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     : 0.0;
                 final overlayWidth = isCompact
                     ? mediaQuery.size.width -
-                          overlayLeft * 2 -
+                          overlayLeft -
+                          (mediaQuery.padding.right + edgePadding) -
                           (diagnosticsWidth > 0 ? diagnosticsWidth + 12 : 0)
                     : 420.0;
                 final skipPrompt = _buildSkipPrompt(context);
