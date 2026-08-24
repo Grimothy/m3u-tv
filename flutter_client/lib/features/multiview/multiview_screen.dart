@@ -2,10 +2,13 @@ import 'dart:async';
 
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:m3u_tv/features/multiview/multiview_controller.dart';
 import 'package:m3u_tv/features/multiview/multiview_grid_math.dart';
+import 'package:m3u_tv/features/player/playback_controls.dart'
+    show isHandheldLayout;
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/navigation/content_actions.dart';
@@ -69,6 +72,13 @@ class _MultiviewScreenState extends ConsumerState<MultiviewScreen> {
   int _nextPlayerSeq = 0;
   bool _closing = false;
 
+  // Set the first time [didChangeDependencies] finds a handheld (phone/
+  // tablet) viewport, so dispose() knows whether it locked landscape here
+  // and needs to restore portrait -- mirrors PlayerScreen's own auto-rotate
+  // (see `isHandheld` there), since a multiview grid is exactly as cramped
+  // in portrait as a single-stream player is.
+  bool _lockedLandscapeForHandheld = false;
+
   @override
   void initState() {
     super.initState();
@@ -78,7 +88,26 @@ class _MultiviewScreenState extends ConsumerState<MultiviewScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_lockedLandscapeForHandheld && isHandheldLayout(context)) {
+      _lockedLandscapeForHandheld = true;
+      unawaited(
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]),
+      );
+    }
+  }
+
+  @override
   void dispose() {
+    if (_lockedLandscapeForHandheld) {
+      unawaited(
+        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]),
+      );
+    }
     for (final tile in _tiles) {
       tile.dispose();
     }
