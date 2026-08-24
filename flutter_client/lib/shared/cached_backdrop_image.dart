@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart'
     show CachedNetworkImageProvider;
 import 'package:flutter/material.dart';
 
+import 'package:m3u_tv/main.dart' show TvZoomScale;
 import 'package:m3u_tv/shared/media_image_cache_manager.dart';
 
 /// Full-bleed backdrop image for detail screens, disk-cached via
@@ -21,7 +22,8 @@ class CachedBackdropImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final devicePixelRatio =
+        MediaQuery.devicePixelRatioOf(context) * TvZoomScale.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         final provider = CachedNetworkImageProvider(
@@ -41,6 +43,7 @@ class CachedBackdropImage extends StatelessWidget {
                   provider,
                   width: cacheWidth,
                   height: cacheHeight,
+                  policy: ResizeImagePolicy.fit,
                 ),
           fit: fit,
           gaplessPlayback: true,

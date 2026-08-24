@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
     show KeyDownEvent, KeyEvent, LogicalKeyboardKey;
+import 'package:m3u_tv/main.dart' show TvZoomScale;
 import 'package:m3u_tv/shared/app_button.dart' show kStadiumFocusEffects;
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
@@ -390,7 +391,8 @@ class ResilientMediaImage extends StatelessWidget {
     // blocky, aliased decode that no display-time FilterQuality can recover.
     // ResizeImage never upscales past the source's intrinsic size, so this
     // is free when the source is already small.
-    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context) * 2;
+    final devicePixelRatio =
+        MediaQuery.devicePixelRatioOf(context) * 2 * TvZoomScale.of(context);
     final cacheWidth = width == null
         ? null
         : (width! * devicePixelRatio).round();

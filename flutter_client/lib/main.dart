@@ -280,6 +280,30 @@ class _MyAppState extends State<MyApp> {
   }
 }
 
+/// The extra scale factor [_TvZoom] applies on top of the real screen's
+/// devicePixelRatio. Image cache-dimension widgets (`CachedBackdropImage`,
+/// `CachedMediaThumbnail`, `ResilientMediaImage`) multiply
+/// `MediaQuery.devicePixelRatioOf(context)` by this when sizing their
+/// `ResizeImage`, since they compute cache dimensions from local widget
+/// size/constraints in the shrunk virtual canvas -- unlike code that reads
+/// devicePixelRatio together with `localToGlobal()`, which already lands in
+/// real-space coordinates via the FittedBox's paint transform and needs no
+/// correction. Defaults to 1 outside the TV zoom (non-TV devices, or any
+/// context above `_TvZoom` in the tree).
+class TvZoomScale extends InheritedWidget {
+  const TvZoomScale({required this.scale, required super.child, super.key});
+
+  final double scale;
+
+  static double of(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<TvZoomScale>()?.scale ??
+        1;
+  }
+
+  @override
+  bool updateShouldNotify(TvZoomScale oldWidget) => scale != oldWidget.scale;
+}
+
 /// Renders the app on a smaller virtual canvas and stretches it to fill the
 /// real screen, so text/icons/nav read clearly from a couch-length distance.
 /// TV-only: on the couch, physical viewing distance is far larger than a
@@ -315,12 +339,19 @@ class _TvZoom extends StatelessWidget {
             // a _scale-times-too-large share of the smaller virtual canvas.
             data: mediaQuery.copyWith(
               size: virtualSize,
+              // devicePixelRatio is deliberately left as the real screen's
+              // value, not divided/multiplied by _scale: code that reads it
+              // together with localToGlobal() (e.g. native_video_surface.dart)
+              // already gets real-space coordinates for free, because
+              // localToGlobal composes the FittedBox's paint transform. Image
+              // cache-dimension widgets instead read TvZoomScale.of(context)
+              // (below) to correct for the extra stretch on top of this.
               padding: mediaQuery.padding / _scale,
               viewPadding: mediaQuery.viewPadding / _scale,
               viewInsets: mediaQuery.viewInsets / _scale,
               systemGestureInsets: mediaQuery.systemGestureInsets / _scale,
             ),
-            child: child,
+            child: TvZoomScale(scale: _scale, child: child),
           ),
         ),
       ),

@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart'
     show CachedNetworkImageProvider;
 import 'package:flutter/material.dart';
 
+import 'package:m3u_tv/main.dart' show TvZoomScale;
 import 'package:m3u_tv/shared/media_image_cache_manager.dart';
 
 /// Fixed-size thumbnail (channel logo, episode/video preview, favorites
@@ -37,7 +38,9 @@ class CachedMediaThumbnail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final devicePixelRatio =
-        MediaQuery.devicePixelRatioOf(context) * _oversample;
+        MediaQuery.devicePixelRatioOf(context) *
+        _oversample *
+        TvZoomScale.of(context);
     final provider = CachedNetworkImageProvider(
       url,
       cacheManager: MediaImageCacheManager(),
