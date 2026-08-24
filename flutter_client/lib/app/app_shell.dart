@@ -1105,6 +1105,7 @@ class AppShellState extends ConsumerState<AppShell>
             fullScreen: true,
           ),
         ),
+        useSidebarLayout: shouldUseSidebar(widget.deviceType),
         onSidebarActivate: _activateSidebar,
       ),
       RouteNames.search => SearchScreen(
@@ -2075,6 +2076,7 @@ class _HomeScreen extends ConsumerStatefulWidget {
     required this.onContinueWatchingMore,
     required this.onRecordingsSelect,
     required this.onAioStreamsItemSelect,
+    this.useSidebarLayout = false,
     this.onSidebarActivate,
   });
 
@@ -2086,6 +2088,7 @@ class _HomeScreen extends ConsumerStatefulWidget {
   final VoidCallback onContinueWatchingMore;
   final VoidCallback onRecordingsSelect;
   final void Function(AIOStreamsItem, int integrationId) onAioStreamsItemSelect;
+  final bool useSidebarLayout;
   final VoidCallback? onSidebarActivate;
 
   @override
@@ -2190,6 +2193,7 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
       emptyLabel: l.homeNoContinueWatching,
       items: continueWatchingRowItems,
       landscapeStyle: true,
+      useSidebarLayout: widget.useSidebarLayout,
       onSidebarActivate: widget.onSidebarActivate,
     );
     final favoriteChannels = channels
@@ -2225,6 +2229,7 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
       titleIcon: favoriteChannels.isEmpty ? Icons.live_tv : Icons.star,
       emptyLabel: l.homeNoLiveTv,
       items: liveSectionChannels.map(liveChannelItem).toList(growable: false),
+      useSidebarLayout: widget.useSidebarLayout,
       onSidebarActivate: widget.onSidebarActivate,
     );
     final moviesSection = MediaPreviewSection(
@@ -2249,6 +2254,7 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
             ),
           )
           .toList(growable: false),
+      useSidebarLayout: widget.useSidebarLayout,
       onSidebarActivate: widget.onSidebarActivate,
     );
     final seriesSection = MediaPreviewSection(
@@ -2275,6 +2281,7 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
             ),
           )
           .toList(growable: false),
+      useSidebarLayout: widget.useSidebarLayout,
       onSidebarActivate: widget.onSidebarActivate,
     );
     final recordingsSection = MediaPreviewSection(
@@ -2291,6 +2298,7 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
           onTap: () => widget.onRecordingsSelect(),
         ),
       ],
+      useSidebarLayout: widget.useSidebarLayout,
       onSidebarActivate: widget.onSidebarActivate,
     );
     return Scaffold(

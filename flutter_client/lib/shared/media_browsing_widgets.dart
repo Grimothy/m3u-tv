@@ -798,6 +798,7 @@ class MediaPreviewSection extends StatefulWidget {
     this.titleIcon,
     this.posterStyle = false,
     this.landscapeStyle = false,
+    this.useSidebarLayout = false,
     this.onSidebarActivate,
     super.key,
   });
@@ -808,11 +809,22 @@ class MediaPreviewSection extends StatefulWidget {
   final List<MediaPreviewItem> items;
   final bool posterStyle;
   final bool landscapeStyle;
+
+  /// Whether this row is hosted inside `AppShell`'s TV/desktop sidebar
+  /// layout, where the content pane sits at a fixed `left: 64` (the
+  /// collapsed rail's width - see [_kSidebarRailInset]) instead of filling
+  /// the full window width.
+  final bool useSidebarLayout;
   final VoidCallback? onSidebarActivate;
 
   @override
   State<MediaPreviewSection> createState() => _MediaPreviewSectionState();
 }
+
+/// Mirrors the collapsed-state width of `NavigationSidebar` and the fixed
+/// `left` inset `AppShell._buildTvLayout` gives its content pane outside of
+/// the full-screen-detail transition (see [_MediaPreviewSectionState.build]).
+const double _kSidebarRailInset = 64;
 
 class _MediaPreviewSectionState extends State<MediaPreviewSection> {
   final ScrollController _controller = ScrollController();
@@ -838,12 +850,20 @@ class _MediaPreviewSectionState extends State<MediaPreviewSection> {
       baseWidth = MediaBrowsingMetrics.previewCardWidth;
       baseHeight = MediaBrowsingMetrics.previewCardHeight;
     }
-    // Scale off the overall screen width rather than this row's
-    // LayoutBuilder constraints: the content pane's width animates during
-    // the sidebar collapse/expand transition, and deriving cardWidth from
-    // that would change the ResizeImage cache key every frame, forcing a
-    // fresh decode per frame and flickering the thumbnails.
-    final scale = _previewCardScale(MediaQuery.sizeOf(context).width);
+    // Scale off the window width rather than this row's LayoutBuilder
+    // constraints: pushing a full-screen detail route re-parents the content
+    // pane's `left` from 64 to 0 (see AppShell._buildTvLayout), and this row
+    // stays mounted underneath that transition, so a constraints-derived
+    // cardWidth would change the ResizeImage cache key every animation
+    // frame, forcing a fresh decode per frame and flickering the thumbnails.
+    // Subtracting the fixed rail inset and the row's own horizontal page
+    // padding up front keeps the result correct for the sidebar layout's
+    // steady state without reintroducing that per-frame dependency.
+    final availableWidth =
+        MediaQuery.sizeOf(context).width -
+        (widget.useSidebarLayout ? _kSidebarRailInset : 0) -
+        MediaBrowsingMetrics.pagePadding * 2;
+    final scale = _previewCardScale(availableWidth);
     final cardWidth = baseWidth * scale;
     final cardHeight = baseHeight * scale;
 
