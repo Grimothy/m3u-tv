@@ -826,95 +826,96 @@ class _MediaPreviewSectionState extends State<MediaPreviewSection> {
   @override
   Widget build(BuildContext context) {
     final visibleItems = widget.items.take(12).toList(growable: false);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final double baseWidth;
-        final double baseHeight;
-        if (widget.landscapeStyle) {
-          baseWidth = MediaBrowsingMetrics.landscapeCardWidth;
-          baseHeight = MediaBrowsingMetrics.landscapeCardHeight;
-        } else if (widget.posterStyle) {
-          baseWidth = MediaBrowsingMetrics.posterCardWidth;
-          baseHeight = MediaBrowsingMetrics.posterCardHeight;
-        } else {
-          baseWidth = MediaBrowsingMetrics.previewCardWidth;
-          baseHeight = MediaBrowsingMetrics.previewCardHeight;
-        }
-        final scale = _previewCardScale(constraints.maxWidth);
-        final cardWidth = baseWidth * scale;
-        final cardHeight = baseHeight * scale;
+    final double baseWidth;
+    final double baseHeight;
+    if (widget.landscapeStyle) {
+      baseWidth = MediaBrowsingMetrics.landscapeCardWidth;
+      baseHeight = MediaBrowsingMetrics.landscapeCardHeight;
+    } else if (widget.posterStyle) {
+      baseWidth = MediaBrowsingMetrics.posterCardWidth;
+      baseHeight = MediaBrowsingMetrics.posterCardHeight;
+    } else {
+      baseWidth = MediaBrowsingMetrics.previewCardWidth;
+      baseHeight = MediaBrowsingMetrics.previewCardHeight;
+    }
+    // Scale off the overall screen width rather than this row's
+    // LayoutBuilder constraints: the content pane's width animates during
+    // the sidebar collapse/expand transition, and deriving cardWidth from
+    // that would change the ResizeImage cache key every frame, forcing a
+    // fresh decode per frame and flickering the thumbnails.
+    final scale = _previewCardScale(MediaQuery.sizeOf(context).width);
+    final cardWidth = baseWidth * scale;
+    final cardHeight = baseHeight * scale;
 
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (widget.titleIcon != null) ...[
-                    Icon(
-                      widget.titleIcon,
-                      size: 20,
-                      color: Theme.of(context).textTheme.titleLarge?.color,
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  Text(
-                    widget.title,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleLarge?.copyWith(fontSize: 18),
-                  ),
-                ],
+              if (widget.titleIcon != null) ...[
+                Icon(
+                  widget.titleIcon,
+                  size: 20,
+                  color: Theme.of(context).textTheme.titleLarge?.color,
+                ),
+                const SizedBox(width: 8),
+              ],
+              Text(
+                widget.title,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontSize: 18),
               ),
-              const SizedBox(height: MediaBrowsingMetrics.chipGap),
-              if (visibleItems.isEmpty)
-                Text(widget.emptyLabel)
-              else
-                SizedBox(
-                  height: cardHeight + 16,
-                  // ExcludeSemantics prevents the tvOS framework bug where
-                  // ScrollableState.setIgnorePointer calls markNeedsSemanticsUpdate
-                  // during the semantics flush phase, causing an assertion crash
-                  // when scrolling quickly.
-                  child: ExcludeSemantics(
-                    child: DpadRegion(
-                      memoryKey: 'preview-row/${widget.title}',
-                      horizontalEdge: DpadEdgeBehavior.stop,
-                      onEdge: (direction) {
-                        if (direction == TraversalDirection.left) {
-                          widget.onSidebarActivate?.call();
-                        }
-                      },
-                      child: Scrollbar(
-                        controller: _controller,
-                        thumbVisibility: true,
-                        trackVisibility: true,
-                        child: ListView.separated(
-                          controller: _controller,
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.only(bottom: 12),
-                          itemCount: visibleItems.length,
-                          separatorBuilder: (_, _) => const SizedBox(
-                            width: MediaBrowsingMetrics.itemGap,
-                          ),
-                          itemBuilder: (context, index) => MediaPreviewCard(
-                            item: visibleItems[index],
-                            posterStyle: widget.posterStyle,
-                            landscapeStyle: widget.landscapeStyle,
-                            autofocus: index == 0,
-                            cardWidth: cardWidth,
-                          ),
-                        ),
+            ],
+          ),
+          const SizedBox(height: MediaBrowsingMetrics.chipGap),
+          if (visibleItems.isEmpty)
+            Text(widget.emptyLabel)
+          else
+            SizedBox(
+              height: cardHeight + 16,
+              // ExcludeSemantics prevents the tvOS framework bug where
+              // ScrollableState.setIgnorePointer calls markNeedsSemanticsUpdate
+              // during the semantics flush phase, causing an assertion crash
+              // when scrolling quickly.
+              child: ExcludeSemantics(
+                child: DpadRegion(
+                  memoryKey: 'preview-row/${widget.title}',
+                  horizontalEdge: DpadEdgeBehavior.stop,
+                  onEdge: (direction) {
+                    if (direction == TraversalDirection.left) {
+                      widget.onSidebarActivate?.call();
+                    }
+                  },
+                  child: Scrollbar(
+                    controller: _controller,
+                    thumbVisibility: true,
+                    trackVisibility: true,
+                    child: ListView.separated(
+                      controller: _controller,
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.only(bottom: 12),
+                      itemCount: visibleItems.length,
+                      separatorBuilder: (_, _) => const SizedBox(
+                        width: MediaBrowsingMetrics.itemGap,
+                      ),
+                      itemBuilder: (context, index) => MediaPreviewCard(
+                        item: visibleItems[index],
+                        posterStyle: widget.posterStyle,
+                        landscapeStyle: widget.landscapeStyle,
+                        autofocus: index == 0,
+                        cardWidth: cardWidth,
                       ),
                     ),
                   ),
                 ),
-            ],
-          ),
-        );
-      },
+              ),
+            ),
+        ],
+      ),
     );
   }
 
