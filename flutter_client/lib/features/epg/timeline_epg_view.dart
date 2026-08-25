@@ -319,28 +319,70 @@ class TimelineEpgViewState extends State<TimelineEpgView> {
     WidgetsBinding.instance.addPostFrameCallback(_scrollToStart);
   }
 
+  // Both sync paths below defer their actual jumpTo() calls to a
+  // post-frame callback instead of firing them synchronously from within
+  // the triggering ScrollController listener/notification. jumpTo()
+  // internally calls goIdle()/beginActivity(), which toggles
+  // RenderIgnorePointer.ignoring and calls markNeedsSemanticsUpdate() on
+  // the *other* scrollable. During a fast fling, ListView.builder is
+  // itself mid-way through attaching/detaching rows and running its own
+  // semantics pass; a reentrant jumpTo() fired from inside that pass hits
+  // Flutter's `!attached || !owner!._debugDoingSemantics` assertion and
+  // throws, aborting the sync call and leaving the two scrollables
+  // permanently desynced. Deferring to addPostFrameCallback runs the jump
+  // after the current frame's build/layout/semantics have fully settled,
+  // which is always safe. The `_vSyncScheduled`/`_hSyncScheduled` flags
+  // coalesce a burst of notifications (many pixels-per-frame during a
+  // fling) into a single deferred jump using the latest offset.
+  bool _vSyncScheduled = false;
+  bool _pendingSyncFromLeft = false;
+
   void _onLeftV() {
-    if (_vSyncing || !_rightVCtrl.hasClients) return;
-    _vSyncing = true;
-    _rightVCtrl.jumpTo(_leftVCtrl.offset);
-    _vSyncing = false;
+    if (_vSyncing) return;
+    _pendingSyncFromLeft = true;
+    _scheduleVSync();
   }
 
   void _onRightV() {
-    if (_vSyncing || !_leftVCtrl.hasClients) return;
-    _vSyncing = true;
-    _leftVCtrl.jumpTo(_rightVCtrl.offset);
-    _vSyncing = false;
+    if (_vSyncing) return;
+    _pendingSyncFromLeft = false;
+    _scheduleVSync();
   }
+
+  void _scheduleVSync() {
+    if (_vSyncScheduled) return;
+    _vSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _vSyncScheduled = false;
+      if (!mounted) return;
+      _vSyncing = true;
+      if (_pendingSyncFromLeft) {
+        _jump(_rightVCtrl, _leftVCtrl.hasClients ? _leftVCtrl.offset : 0);
+      } else {
+        _jump(_leftVCtrl, _rightVCtrl.hasClients ? _rightVCtrl.offset : 0);
+      }
+      _vSyncing = false;
+    });
+  }
+
+  bool _hSyncScheduled = false;
+  double _pendingHOffset = 0;
 
   void _syncH(double offset) {
     if (_hSyncing) return;
-    _hSyncing = true;
-    _jump(_headerHCtrl, offset);
-    for (final c in _rowHCtrls) {
-      _jump(c, offset);
-    }
-    _hSyncing = false;
+    _pendingHOffset = offset;
+    if (_hSyncScheduled) return;
+    _hSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hSyncScheduled = false;
+      if (!mounted) return;
+      _hSyncing = true;
+      _jump(_headerHCtrl, _pendingHOffset);
+      for (final c in _rowHCtrls) {
+        _jump(c, _pendingHOffset);
+      }
+      _hSyncing = false;
+    });
   }
 
   void _jump(ScrollController ctrl, double offset) {
