@@ -434,6 +434,30 @@ abstract class AppLocalizations {
   /// **'Couldn\'t play - select to retry'**
   String get multiviewRetry;
 
+  /// No description provided for @multiviewManageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage Multiview'**
+  String get multiviewManageTitle;
+
+  /// No description provided for @multiviewClearAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear All'**
+  String get multiviewClearAll;
+
+  /// No description provided for @multiviewRemoveChannel.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove {channel}'**
+  String multiviewRemoveChannel(String channel);
+
+  /// No description provided for @close.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get close;
+
   /// No description provided for @catchupBadgeAvailable.
   ///
   /// In en, this message translates to:

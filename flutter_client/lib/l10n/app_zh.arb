@@ -90,6 +90,17 @@
   "multiviewBackToGrid": "返回网格",
   "multiviewRemove": "从多画面移除",
   "multiviewRetry": "播放失败，选择以重试",
+  "multiviewManageTitle": "管理多画面",
+  "multiviewClearAll": "全部清除",
+  "multiviewRemoveChannel": "移除 {channel}",
+  "@multiviewRemoveChannel": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "close": "关闭",
   "catchupBadgeAvailable": "可回看",
   "catchupBadgeAvailableDays": "可回看 {days} 天",
   "@catchupBadgeAvailableDays": {

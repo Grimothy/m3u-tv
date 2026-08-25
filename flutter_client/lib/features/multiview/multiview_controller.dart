@@ -31,6 +31,14 @@ class MultiviewController extends ChangeNotifier {
     return true;
   }
 
+  /// Removes the channel with [channelId], if queued. No-op otherwise (e.g.
+  /// a concurrent removal from another surface already dropped it).
+  void remove(int channelId) {
+    final before = _channels.length;
+    _channels.removeWhere((c) => c.id == channelId);
+    if (_channels.length != before) notifyListeners();
+  }
+
   void reorder(int oldIndex, int newIndex) {
     if (oldIndex == newIndex ||
         oldIndex < 0 ||

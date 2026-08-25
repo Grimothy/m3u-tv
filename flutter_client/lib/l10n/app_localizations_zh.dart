@@ -184,6 +184,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get multiviewRetry => '播放失败，选择以重试';
 
   @override
+  String get multiviewManageTitle => '管理多画面';
+
+  @override
+  String get multiviewClearAll => '全部清除';
+
+  @override
+  String multiviewRemoveChannel(String channel) {
+    return '移除 $channel';
+  }
+
+  @override
+  String get close => '关闭';
+
+  @override
   String get catchupBadgeAvailable => '可回看';
 
   @override

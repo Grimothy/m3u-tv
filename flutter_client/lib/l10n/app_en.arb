@@ -91,6 +91,17 @@
   "multiviewBackToGrid": "Back to Grid",
   "multiviewRemove": "Remove from Multiview",
   "multiviewRetry": "Couldn't play - select to retry",
+  "multiviewManageTitle": "Manage Multiview",
+  "multiviewClearAll": "Clear All",
+  "multiviewRemoveChannel": "Remove {channel}",
+  "@multiviewRemoveChannel": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "close": "Close",
   "catchupBadgeAvailable": "Catchup available",
   "catchupBadgeAvailableDays": "Catchup available: {days}d",
   "@catchupBadgeAvailableDays": {

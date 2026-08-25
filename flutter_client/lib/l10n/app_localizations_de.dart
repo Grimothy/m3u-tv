@@ -193,6 +193,20 @@ class AppLocalizationsDe extends AppLocalizations {
       'Wiedergabe fehlgeschlagen - zum Wiederholen auswählen';
 
   @override
+  String get multiviewManageTitle => 'Multiview verwalten';
+
+  @override
+  String get multiviewClearAll => 'Alle entfernen';
+
+  @override
+  String multiviewRemoveChannel(String channel) {
+    return '$channel entfernen';
+  }
+
+  @override
+  String get close => 'Schließen';
+
+  @override
   String get catchupBadgeAvailable => 'Catchup verfügbar';
 
   @override

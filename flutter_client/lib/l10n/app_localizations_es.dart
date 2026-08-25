@@ -193,6 +193,20 @@ class AppLocalizationsEs extends AppLocalizations {
       'No se pudo reproducir - selecciona para reintentar';
 
   @override
+  String get multiviewManageTitle => 'Gestionar Multivista';
+
+  @override
+  String get multiviewClearAll => 'Quitar todo';
+
+  @override
+  String multiviewRemoveChannel(String channel) {
+    return 'Quitar $channel';
+  }
+
+  @override
+  String get close => 'Cerrar';
+
+  @override
   String get catchupBadgeAvailable => 'Catchup disponible';
 
   @override

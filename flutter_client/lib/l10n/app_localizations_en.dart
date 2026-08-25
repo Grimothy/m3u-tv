@@ -191,6 +191,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get multiviewRetry => 'Couldn\'t play - select to retry';
 
   @override
+  String get multiviewManageTitle => 'Manage Multiview';
+
+  @override
+  String get multiviewClearAll => 'Clear All';
+
+  @override
+  String multiviewRemoveChannel(String channel) {
+    return 'Remove $channel';
+  }
+
+  @override
+  String get close => 'Close';
+
+  @override
   String get catchupBadgeAvailable => 'Catchup available';
 
   @override

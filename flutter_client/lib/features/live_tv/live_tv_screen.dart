@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:m3u_tv/features/epg/epg_recording_index.dart';
 import 'package:m3u_tv/features/epg/timeline_epg_view.dart';
 import 'package:m3u_tv/features/live_tv/catchup_shows_dialog.dart';
+import 'package:m3u_tv/features/multiview/multiview_manage_dialog.dart';
 import 'package:m3u_tv/features/multiview/multiview_screen.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
@@ -1255,6 +1256,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
       badgeCount: multiviewCount,
       label: AppLocalizations.of(context).multiviewTitle,
       onPressed: () => unawaited(_openMultiview(context)),
+      onLongPress: () => unawaited(showMultiviewManageDialog(context)),
     );
   }
 

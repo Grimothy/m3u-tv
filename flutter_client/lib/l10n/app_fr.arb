@@ -90,6 +90,17 @@
   "multiviewBackToGrid": "Retour à la grille",
   "multiviewRemove": "Retirer de Multivue",
   "multiviewRetry": "Échec de la lecture - sélectionner pour réessayer",
+  "multiviewManageTitle": "Gérer Multivue",
+  "multiviewClearAll": "Tout retirer",
+  "multiviewRemoveChannel": "Retirer {channel}",
+  "@multiviewRemoveChannel": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "close": "Fermer",
   "catchupBadgeAvailable": "Catchup disponible",
   "catchupBadgeAvailableDays": "Catchup disponible : {days} j",
   "@catchupBadgeAvailableDays": {

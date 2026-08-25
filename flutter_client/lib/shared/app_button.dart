@@ -118,6 +118,7 @@ class _HoverFocusable extends StatefulWidget {
   const _HoverFocusable({
     required this.child,
     required this.onSelect,
+    this.onLongSelect,
     this.autofocus = false,
     this.focusNode,
     this.autoScroll = true,
@@ -125,6 +126,11 @@ class _HoverFocusable extends StatefulWidget {
 
   final Widget child;
   final VoidCallback? onSelect;
+
+  /// D-pad long-select (via [DpadFocusable.onLongSelect]) and touch
+  /// long-press (via an inner [GestureDetector], since Material buttons
+  /// don't expose one themselves) both fire this.
+  final VoidCallback? onLongSelect;
   final bool autofocus;
   final FocusNode? focusNode;
 
@@ -160,8 +166,14 @@ class _HoverFocusableState extends State<_HoverFocusable> {
         autofocus: widget.autofocus,
         autoScroll: widget.autoScroll,
         onSelect: widget.onSelect,
+        onLongSelect: widget.onLongSelect,
         effects: kStadiumFocusEffects,
-        child: widget.child,
+        child: widget.onLongSelect == null
+            ? widget.child
+            : GestureDetector(
+                onLongPress: widget.onLongSelect,
+                child: widget.child,
+              ),
       ),
     );
   }
@@ -191,6 +203,7 @@ class AppButton extends StatelessWidget {
     this.autoScroll = true,
     this.footer,
     this.inlineProgressValue,
+    this.onLongPress,
   }) : assert(
          footer == null || inlineProgressValue == null,
          'footer and inlineProgressValue are alternate layouts for '
@@ -204,6 +217,11 @@ class AppButton extends StatelessWidget {
   /// Multiview tile count) instead of appending the count to [label].
   final int? badgeCount;
   final VoidCallback? onPressed;
+
+  /// Fires on D-pad long-select and touch long-press, alongside [onPressed]'s
+  /// plain tap/select (e.g. the Multiview button: tap opens the grid,
+  /// long-press opens a manage-channels dialog).
+  final VoidCallback? onLongPress;
   final AppButtonVariant variant;
   final bool autofocus;
   final FocusNode? focusNode;
@@ -384,6 +402,7 @@ class AppButton extends StatelessWidget {
       focusNode: focusNode,
       autoScroll: autoScroll,
       onSelect: effectiveOnPressed,
+      onLongSelect: loading ? null : onLongPress,
       child: button,
     );
     final count = badgeCount;

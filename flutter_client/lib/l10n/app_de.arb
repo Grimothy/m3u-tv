@@ -90,6 +90,17 @@
   "multiviewBackToGrid": "Zurück zum Raster",
   "multiviewRemove": "Aus Multiview entfernen",
   "multiviewRetry": "Wiedergabe fehlgeschlagen - zum Wiederholen auswählen",
+  "multiviewManageTitle": "Multiview verwalten",
+  "multiviewClearAll": "Alle entfernen",
+  "multiviewRemoveChannel": "{channel} entfernen",
+  "@multiviewRemoveChannel": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "close": "Schließen",
   "catchupBadgeAvailable": "Catchup verfügbar",
   "catchupBadgeAvailableDays": "Catchup verfügbar: {days} Tage",
   "@catchupBadgeAvailableDays": {

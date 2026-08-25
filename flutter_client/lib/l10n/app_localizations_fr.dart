@@ -192,6 +192,20 @@ class AppLocalizationsFr extends AppLocalizations {
       'Échec de la lecture - sélectionner pour réessayer';
 
   @override
+  String get multiviewManageTitle => 'Gérer Multivue';
+
+  @override
+  String get multiviewClearAll => 'Tout retirer';
+
+  @override
+  String multiviewRemoveChannel(String channel) {
+    return 'Retirer $channel';
+  }
+
+  @override
+  String get close => 'Fermer';
+
+  @override
   String get catchupBadgeAvailable => 'Catchup disponible';
 
   @override
