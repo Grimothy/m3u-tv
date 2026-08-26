@@ -206,6 +206,21 @@ class _MyAppState extends State<MyApp> {
                 borderRadius: BorderRadius.all(Radius.circular(8)),
               ),
             ],
+            // The package default (220ms animateTo) drives a Ticker that
+            // calls ScrollPosition.forcePixels() every animation frame.
+            // DpadFocusable's autoScroll, the directional-traversal
+            // fallback, and Dpad.ensureVisible() all funnel through this
+            // same animated path, including when Dpad's restoreFocus
+            // (see below) re-focuses a nearby widget after a fast-scrolled
+            // item's FocusNode is disposed by a lazy list — landing that
+            // reentrant animateTo() squarely inside the list's own
+            // semantics pass and throwing
+            // '!attached || !owner!._debugDoingSemantics' on every tick
+            // until the animation finishes (see feedback_scroll_sync_
+            // jumpto memory). Duration.zero makes every one of those calls
+            // a single non-repeating jumpTo() instead, so there's no
+            // ticker left to keep re-triggering the assertion.
+            scrollDuration: Duration.zero,
           ),
           // restoreFocus keeps focus alive on TV/desktop (needed for D-pad).
           // On phone/tablet it actively harms scroll: when focus drifts to a

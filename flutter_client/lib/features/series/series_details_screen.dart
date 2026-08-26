@@ -633,6 +633,7 @@ class _EpisodeTile extends StatefulWidget {
 class _EpisodeTileState extends State<_EpisodeTile> {
   final FocusNode _focusNode = FocusNode();
   bool _hovered = false;
+  bool _scrollScheduled = false;
 
   @override
   void dispose() {
@@ -643,6 +644,33 @@ class _EpisodeTileState extends State<_EpisodeTile> {
   void _setHovered(bool v) {
     if (_hovered == v) return;
     setState(() => _hovered = v);
+  }
+
+  // DpadFocusable's default autoScroll calls DpadScroll.ensureVisible
+  // synchronously from a post-frame callback on every focus change, using
+  // ScrollPosition.animateTo() (an animated, ticker-driven jump). During
+  // fast d-pad key-repeat through the episode list, each focus change
+  // schedules another one before the previous animation settles; the
+  // resulting animateTo()/forcePixels() calls collide with ListView's own
+  // in-flight semantics pass (items attaching/detaching under the fling)
+  // and throw the same '_debugDoingSemantics' assertion fixed for the EPG
+  // grid sync (see feedback_scroll_sync_jumpto memory). autoScroll is
+  // disabled below and replaced with this deferred, coalesced, zero-
+  // duration equivalent: addPostFrameCallback runs after the frame's
+  // build/layout/semantics settle (always safe), the `_scrollScheduled`
+  // flag coalesces a burst of focus changes into one call, and re-checking
+  // `hasFocus` when the callback fires skips scrolling to a row focus has
+  // already moved past. Duration.zero uses jumpTo (a single, non-animated
+  // position write) instead of animateTo, avoiding the repeated per-frame
+  // forcePixels() calls an in-flight animation would otherwise make.
+  void _scheduleEnsureVisible() {
+    if (_scrollScheduled) return;
+    _scrollScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollScheduled = false;
+      if (!mounted || !_focusNode.hasFocus) return;
+      DpadScroll.ensureVisible(_focusNode, duration: Duration.zero);
+    });
   }
 
   @override
@@ -677,6 +705,10 @@ class _EpisodeTileState extends State<_EpisodeTile> {
         autofocus: autofocus,
         focusNode: _focusNode,
         onSelect: onTap,
+        autoScroll: false,
+        onFocusChange: (focused) {
+          if (focused) _scheduleEnsureVisible();
+        },
         builder: (context, state, child) => DpadEffect.wrap(
           context,
           const [
