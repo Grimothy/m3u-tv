@@ -4,6 +4,23 @@
 
 Cross-platform TV front-end player for the [M3U Editor web app](https://github.com/m3ue/m3u-editor). The primary client is the Flutter app in `flutter_client/`.
 
+## Download
+
+<a href='https://testflight.apple.com/join/hqJYVsJr'><img height='60' alt='Download on the App Store (TestFlight beta)' src='./assets/badges/app-store-badge.png'/></a>
+<a href='https://play.google.com/store/apps/details?id=dev.sparkison.tv&referrer=utm_source%3Dgithub%26utm_campaign%3Dreadme_badge'><img height='60' alt='Get it on Google Play' src='./assets/badges/play-store-badge.png'/></a>
+<a href='https://apps.microsoft.com/detail/9P2PBHQ4XZ1L?referrer=appbadge&cid=github'><img height='60' alt='Get it from Microsoft' src='./assets/badges/microsoft-badge.png'/></a>
+
+| Platform | Download |
+| --- | --- |
+| Android / Android TV | [.apk](https://github.com/m3ue/m3u-tv/releases/latest) |
+| iOS / iPadOS | [.ipa (sideload)](https://github.com/m3ue/m3u-tv/releases/latest) |
+| Apple TV (tvOS) | [.ipa (sideload)](https://github.com/m3ue/m3u-tv/releases/latest) |
+| macOS | [.dmg (Apple Silicon + Intel)](https://github.com/m3ue/m3u-tv/releases/latest) |
+| Linux | [portable .zip](https://github.com/m3ue/m3u-tv/releases/latest) |
+| Windows | [portable .zip](https://github.com/m3ue/m3u-tv/releases/latest) &middot; [.msix](https://github.com/m3ue/m3u-tv/releases/latest) |
+
+**NOTE:** Release assets are versioned (`m3u-tv-v<version>-<platform>.<ext>`), so each row links to the latest release page rather than a fixed-name download.
+
 ## Features
 
 - **Live TV**: Browse and watch live TV channels with category filtering
