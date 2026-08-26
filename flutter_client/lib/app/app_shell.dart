@@ -1114,6 +1114,8 @@ class AppShellState extends ConsumerState<AppShell>
         onVodSelect: _openVod,
         onSeriesSelect: _openSeries,
         onSidebarActivate: _activateSidebar,
+        onSearchShows: _searchEpgShows,
+        onShowSelect: _openShow,
       ),
       RouteNames.liveTv => LiveTvScreen(
         favoritesService: _appState.favoritesService,
