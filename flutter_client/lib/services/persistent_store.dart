@@ -50,7 +50,18 @@ class PersistentJsonStore {
     final hadPreviousValue = previous.containsKey(key);
     final previousValue = previous[key];
     final data = Map<String, Object?>.from(previous)..[key] = value;
-    final candidateBytes = utf8.encode(jsonEncode(data));
+    // Encode off the calling isolate for large maps, same as [_writeAll]. This
+    // store is shared with the content cache, so a single-key write (e.g. the
+    // resume tracker every ~10s during playback) would otherwise re-serialize
+    // the entire channel/VOD/series catalog on the UI isolate and drop frames.
+    // The catalog lives in a handful of huge keys, so force the offload off
+    // the file size rather than the (low) top-level key count.
+    final candidateBytes = utf8.encode(
+      await encodeJsonOffMainIsolate(
+        data,
+        forceOffload: (previousBytes?.length ?? 0) >= 32 * 1024,
+      ),
+    );
     await _writeStaging(candidateBytes);
     try {
       if (!shouldCommit()) return false;

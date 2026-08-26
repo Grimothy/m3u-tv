@@ -166,7 +166,9 @@ class _VodScreenState extends ConsumerState<VodScreen> {
       onEntryFocusScopeReady: widget.onEntryFocusScopeReady,
     );
     final content = Expanded(
-      child: isLoading
+      // Only show the spinner when there is nothing to display yet. During a
+      // background refresh the already-populated grid stays visible.
+      child: isLoading && vodItems.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : filtered.isEmpty
           ? Center(

@@ -167,7 +167,9 @@ class _SeriesScreenState extends ConsumerState<SeriesScreen> {
       onEntryFocusScopeReady: widget.onEntryFocusScopeReady,
     );
     final content = Expanded(
-      child: isLoading
+      // Only show the spinner when there is nothing to display yet. During a
+      // background refresh the already-populated grid stays visible.
+      child: isLoading && seriesList.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : filtered.isEmpty
           ? Center(

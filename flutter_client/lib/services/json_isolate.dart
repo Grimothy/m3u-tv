@@ -17,8 +17,15 @@ Future<Object?> decodeJsonOffMainIsolate(String text) {
 
 /// Encodes [data] as JSON, hopping off the calling isolate for large maps
 /// for the same reason as [decodeJsonOffMainIsolate].
-Future<String> encodeJsonOffMainIsolate(Map<String, Object?> data) {
-  if (data.length < 64) {
+///
+/// The key-count check is only a cheap proxy for "big payload". Pass
+/// [forceOffload] when the caller already knows the map is large by another
+/// measure (e.g. a multi-KB backing file) but holds few top-level keys.
+Future<String> encodeJsonOffMainIsolate(
+  Map<String, Object?> data, {
+  bool forceOffload = false,
+}) {
+  if (!forceOffload && data.length < 64) {
     return Future.value(jsonEncode(data));
   }
   return Isolate.run(() => jsonEncode(data));

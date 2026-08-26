@@ -460,68 +460,114 @@ class AppStateController extends ChangeNotifier {
     }
 
     final savedSource = await _readSavedSourceType();
-    final restored = await authNotifier.loadSavedCredentials(
-      isCurrent: () => !_sourceOperationGeneration.isStale(sourceGeneration),
-    );
-    if (restored) {
+    // Read saved credentials off disk without a network handshake so cached
+    // content can be painted before the live credential check completes.
+    final credentials = await authNotifier.loadSavedCredentialsOffline();
+    if (_sourceOperationGeneration.isStale(sourceGeneration)) return;
+
+    if (credentials != null) {
       _resetEpgSession();
-      final credentials = authNotifier.credentials!;
       final notificationGeneration = _notificationSessionGeneration.advance();
-      if (await _hydrateCachedXtreamContent(
-        sourceGeneration: sourceGeneration,
-      )) {
-        _isBootstrapping = false;
-        notifyListeners();
-        final activeViewer = _activeViewer;
-        final viewerGeneration = _viewerOperationGeneration.current;
-        if (activeViewer != null) {
-          _runBackgroundPersistence(
-            _syncFavoritesForActiveViewer(
-              activeViewer,
-              sourceGeneration: sourceGeneration,
-              viewerGeneration: viewerGeneration,
-            ),
-          );
-          _runBackgroundPersistence(
-            _refreshRecentlyWatchedForActiveViewer(
-              activeViewer,
-              sourceGeneration: sourceGeneration,
-              viewerGeneration: viewerGeneration,
-            ),
-          );
-        }
-        _runBackgroundPersistence(
-          _replaceWithXtreamContent(
-            clearCache: false,
-            sourceGeneration: sourceGeneration,
-          ),
-        );
-        _pushRegistrationSuspended = false;
-        _runBackgroundPersistence(
-          _connectTvNotifications(credentials, notificationGeneration),
-        );
-        unawaited(_registerPushToken(credentials));
-        return;
-      }
-      final loaded = await _replaceWithXtreamContent(
-        clearCache: false,
+      final hydrated = await _hydrateCachedXtreamContent(
         sourceGeneration: sourceGeneration,
       );
-      if (loaded) {
-        _pushRegistrationSuspended = false;
+      if (_sourceOperationGeneration.isStale(sourceGeneration)) return;
+
+      if (hydrated) {
+        // Paint the cached grids now; validate the credentials and refresh
+        // from the server in the background.
+        _isBootstrapping = false;
+        notifyListeners();
         _runBackgroundPersistence(
-          _connectTvNotifications(credentials, notificationGeneration),
+          _validateCredentialsAndRefresh(
+            credentials,
+            sourceGeneration: sourceGeneration,
+            notificationGeneration: notificationGeneration,
+          ),
         );
-        unawaited(_registerPushToken(credentials));
+        return;
       }
-    } else if (savedSource == AppSourceType.xtream &&
-        authNotifier.error != null) {
-      _sourceType = AppSourceType.xtream;
-      _error = authNotifier.error;
+
+      // Nothing cached to paint - block on the handshake and first load.
+      final connected = await authNotifier.connect(
+        credentials,
+        isCurrent: () => !_sourceOperationGeneration.isStale(sourceGeneration),
+      );
+      if (_sourceOperationGeneration.isStale(sourceGeneration)) return;
+      if (connected) {
+        final loaded = await _replaceWithXtreamContent(
+          clearCache: false,
+          sourceGeneration: sourceGeneration,
+        );
+        if (loaded) {
+          _pushRegistrationSuspended = false;
+          _runBackgroundPersistence(
+            _connectTvNotifications(credentials, notificationGeneration),
+          );
+          unawaited(_registerPushToken(credentials));
+        }
+      } else if (savedSource == AppSourceType.xtream &&
+          authNotifier.error != null) {
+        _sourceType = AppSourceType.xtream;
+        _error = authNotifier.error;
+      }
     }
 
     _isBootstrapping = false;
     notifyListeners();
+  }
+
+  /// Runs the live credential handshake after cached content has already been
+  /// painted by [boot]. On success it refreshes every list from the server
+  /// and wires up notifications/push. On failure it leaves the stale cached
+  /// content in place and surfaces the error as a banner rather than tearing
+  /// the grids down - a transient network drop should not blank a working
+  /// screen on a TV.
+  Future<void> _validateCredentialsAndRefresh(
+    UserCredentials credentials, {
+    required int sourceGeneration,
+    required int notificationGeneration,
+  }) async {
+    final connected = await authNotifier.connect(
+      credentials,
+      isCurrent: () => !_sourceOperationGeneration.isStale(sourceGeneration),
+    );
+    if (_sourceOperationGeneration.isStale(sourceGeneration)) return;
+    if (!connected) {
+      _error = authNotifier.error;
+      notifyListeners();
+      return;
+    }
+
+    final activeViewer = _activeViewer;
+    final viewerGeneration = _viewerOperationGeneration.current;
+    if (activeViewer != null) {
+      _runBackgroundPersistence(
+        _syncFavoritesForActiveViewer(
+          activeViewer,
+          sourceGeneration: sourceGeneration,
+          viewerGeneration: viewerGeneration,
+        ),
+      );
+      _runBackgroundPersistence(
+        _refreshRecentlyWatchedForActiveViewer(
+          activeViewer,
+          sourceGeneration: sourceGeneration,
+          viewerGeneration: viewerGeneration,
+        ),
+      );
+    }
+    _runBackgroundPersistence(
+      _replaceWithXtreamContent(
+        clearCache: false,
+        sourceGeneration: sourceGeneration,
+      ),
+    );
+    _pushRegistrationSuspended = false;
+    _runBackgroundPersistence(
+      _connectTvNotifications(credentials, notificationGeneration),
+    );
+    unawaited(_registerPushToken(credentials));
   }
 
   Future<bool> connectXtream(UserCredentials credentials) {
@@ -2321,6 +2367,10 @@ class AppStateController extends ChangeNotifier {
             );
       final viewersFuture = xtreamService.getViewers();
 
+      // Only the browsing catalog and viewers gate the first paint. DVR
+      // recordings/rules and media requests are fired in parallel above but
+      // joined off the critical path in [_applyDvrAndRequestExtras] so a cold
+      // cache does not make Movies wait on endpoints the grids never render.
       final results = await Future.wait<Object>(<Future<Object>>[
         liveCategoriesFuture,
         vodCategoriesFuture,
@@ -2328,37 +2378,17 @@ class AppStateController extends ChangeNotifier {
         channelsFuture,
         vodItemsFuture,
         seriesFuture,
-        recordingsFuture,
-        seriesRulesFuture,
         viewersFuture,
-        mediaRequestsFuture,
       ]);
       if (_sourceOperationGeneration.isStale(sourceGeneration)) return false;
 
-      final viewers = results[8] as List<Viewer>;
-      final channels = results[3] as List<Channel>;
       final liveCategories = results[0] as List<Category>;
       final vodCategories = results[1] as List<Category>;
       final seriesCategories = results[2] as List<Category>;
+      final channels = results[3] as List<Channel>;
       final vodItems = results[4] as List<VodItem>;
       final seriesList = results[5] as List<Series>;
-      final fetchedDvrRecordings = results[6] as List<DvrRecording>;
-      final fetchedDvrSeriesRules = results[7] as List<DvrSeriesRule>;
-      final mediaRequests = results[9] as List<MediaRequestSummary>;
-      // Keep local DVR state if the server returned nothing (e.g. sync lag
-      // or a transient failure swallowed by the catchError above) — mirrors
-      // the progress-list guard below. Without this, a single flaky
-      // list_dvr_series_rules/get_dvr_recordings round-trip on reload wipes
-      // rules/recordings the editor still has, even though nothing changed
-      // server-side.
-      final dvrRecordings =
-          fetchedDvrRecordings.isEmpty && _dvrRecordings.isNotEmpty
-          ? _dvrRecordings
-          : fetchedDvrRecordings;
-      final dvrSeriesRules =
-          fetchedDvrSeriesRules.isEmpty && _dvrSeriesRules.isNotEmpty
-          ? _dvrSeriesRules
-          : fetchedDvrSeriesRules;
+      final viewers = results[6] as List<Viewer>;
 
       final activeViewer = await viewerService.resolveActiveViewer(
         viewers,
@@ -2462,10 +2492,17 @@ class AppStateController extends ChangeNotifier {
           _channels = channels;
           _vodItems = vodItems;
           _seriesList = seriesList;
-          _dvrRecordings = dvrRecordings;
-          _recordingChannelIds = _extractRecordingChannelIds(dvrRecordings);
-          _dvrSeriesRules = dvrSeriesRules;
-          _mediaRequests = mediaRequests;
+          // DVR recordings/rules and media requests land via
+          // [_applyDvrAndRequestExtras] after this commit. On a fresh
+          // connection drop the previous account's values now; on a
+          // same-account refresh keep them until the refetch resolves so the
+          // Home/DVR screens do not flicker to empty.
+          if (clearCache) {
+            _dvrRecordings = const <DvrRecording>[];
+            _recordingChannelIds = const <int>{};
+            _dvrSeriesRules = const <DvrSeriesRule>[];
+            _mediaRequests = const <MediaRequestSummary>[];
+          }
           _viewers = viewers;
           _activeViewer = activeViewer;
           _progressList = progress;
@@ -2504,13 +2541,28 @@ class AppStateController extends ChangeNotifier {
         }
       }
 
-      if (ownsSourceReplacementQueue) return await commit();
-      _sourceReplacementOwners += 1;
-      try {
-        return await _sourceReplacementQueue.run(commit);
-      } finally {
-        _sourceReplacementOwners -= 1;
+      final bool loaded;
+      if (ownsSourceReplacementQueue) {
+        loaded = await commit();
+      } else {
+        _sourceReplacementOwners += 1;
+        try {
+          loaded = await _sourceReplacementQueue.run(commit);
+        } finally {
+          _sourceReplacementOwners -= 1;
+        }
       }
+      if (loaded && !_sourceOperationGeneration.isStale(sourceGeneration)) {
+        _runBackgroundPersistence(
+          _applyDvrAndRequestExtras(
+            recordingsFuture,
+            seriesRulesFuture,
+            mediaRequestsFuture,
+            sourceGeneration: sourceGeneration,
+          ),
+        );
+      }
+      return loaded;
     } on Object catch (error) {
       if (!_sourceOperationGeneration.isStale(sourceGeneration)) {
         _error = _redact(
@@ -2520,6 +2572,46 @@ class AppStateController extends ChangeNotifier {
       }
       return false;
     }
+  }
+
+  /// Joins the DVR recordings/rules and media-request fetches started by
+  /// [_replaceWithXtreamContent] after its content commit, so the browsing
+  /// grids are never gated on endpoints they do not render. Each future
+  /// already resolves to an empty list on failure (catchError at the call
+  /// site), so [Future.wait] here never throws.
+  Future<void> _applyDvrAndRequestExtras(
+    Future<List<DvrRecording>> recordingsFuture,
+    Future<List<DvrSeriesRule>> seriesRulesFuture,
+    Future<List<MediaRequestSummary>> mediaRequestsFuture, {
+    required int sourceGeneration,
+  }) async {
+    final results = await Future.wait<Object>(<Future<Object>>[
+      recordingsFuture,
+      seriesRulesFuture,
+      mediaRequestsFuture,
+    ]);
+    if (_disposed || _sourceOperationGeneration.isStale(sourceGeneration)) {
+      return;
+    }
+    final fetchedDvrRecordings = results[0] as List<DvrRecording>;
+    final fetchedDvrSeriesRules = results[1] as List<DvrSeriesRule>;
+    final mediaRequests = results[2] as List<MediaRequestSummary>;
+    // Keep local DVR state if the server returned nothing (sync lag or a
+    // transient failure swallowed by the catchError on each future), mirroring
+    // the progress-list guard in [_replaceWithXtreamContent].
+    final dvrRecordings =
+        fetchedDvrRecordings.isEmpty && _dvrRecordings.isNotEmpty
+        ? _dvrRecordings
+        : fetchedDvrRecordings;
+    final dvrSeriesRules =
+        fetchedDvrSeriesRules.isEmpty && _dvrSeriesRules.isNotEmpty
+        ? _dvrSeriesRules
+        : fetchedDvrSeriesRules;
+    _dvrRecordings = dvrRecordings;
+    _recordingChannelIds = _extractRecordingChannelIds(dvrRecordings);
+    _dvrSeriesRules = dvrSeriesRules;
+    _mediaRequests = mediaRequests;
+    notifyListeners();
   }
 
   Future<bool> _hydrateCachedXtreamContent({

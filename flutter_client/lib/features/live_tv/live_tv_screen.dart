@@ -744,7 +744,9 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
             )
           else
             Expanded(
-              child: isLoading
+              // Only show the spinner when there is nothing to display yet.
+              // During a background refresh the populated list stays visible.
+              child: isLoading && channels.isEmpty
                   ? const Center(child: CircularProgressIndicator())
                   : filtered.isEmpty
                   ? Center(

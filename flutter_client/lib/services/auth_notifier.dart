@@ -173,6 +173,32 @@ class AuthNotifier extends ChangeNotifier {
     }
   }
 
+  /// Loads saved credentials from secure storage into memory *without* a
+  /// network handshake. Lets `AppStateController.boot` paint cached content
+  /// before the live credential validation in [connect] completes. Returns
+  /// the parsed credentials, or null if none are stored or parsing fails.
+  ///
+  /// This does not set [isConfigured] or [authResponse] - a subsequent
+  /// [connect] call does that once the server confirms the credentials.
+  Future<UserCredentials?> loadSavedCredentialsOffline() async {
+    await _credentialPersistenceQueue.drained;
+    final saved = await secureStorage.read(_credentialsKey);
+    if (saved == null) return null;
+    try {
+      final json = jsonDecode(saved) as Map<String, Object?>;
+      final credentials = UserCredentials(
+        server: '${json['server'] ?? ''}',
+        username: '${json['username'] ?? ''}',
+        password: '${json['password'] ?? ''}',
+      );
+      _credentials = credentials;
+      xtreamService.hydrateCredentials(credentials);
+      return credentials;
+    } on Object catch (_) {
+      return null;
+    }
+  }
+
   /// Clears the current error message.
   void clearError() {
     _error = null;

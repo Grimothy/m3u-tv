@@ -166,10 +166,12 @@ void main() {
       expect(find.byType(LiveTvScreen), findsOneWidget);
     });
 
-    testWidgets('shows loading indicator while fetching', (tester) async {
+    testWidgets('shows loading indicator only when there is nothing to show', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _TestApp(
-          channels: testChannels,
+          channels: const [],
           categories: testCategories,
           isLoading: true,
         ),
@@ -178,6 +180,25 @@ void main() {
 
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
+
+    testWidgets(
+      'keeps the populated list visible during a background refresh',
+      (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _TestApp(
+            channels: testChannels,
+            categories: testCategories,
+            isLoading: true,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+        expect(find.text('BBC One'), findsOneWidget);
+      },
+    );
 
     testWidgets('shows not configured message when not connected', (
       tester,

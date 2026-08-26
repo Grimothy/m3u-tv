@@ -475,6 +475,14 @@ class XtreamService {
     return authResponse;
   }
 
+  /// Seeds credentials from disk on boot without a live handshake, so cached
+  /// content can be painted before [authenticate] validates them. The next
+  /// [authenticate] call overwrites this with the normalized form and fills
+  /// in the server location / feature flags.
+  void hydrateCredentials(UserCredentials credentials) {
+    _credentials ??= credentials.normalized();
+  }
+
   void clearCredentials() {
     _credentials = null;
     _isM3UEditor = false;

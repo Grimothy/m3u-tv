@@ -105,10 +105,12 @@ void main() {
       expect(find.text('Breaking Bad'), findsOneWidget);
     });
 
-    testWidgets('shows loading indicator while fetching', (tester) async {
+    testWidgets('shows loading indicator only when there is nothing to show', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _TestApp(
-          seriesList: testSeriesList,
+          seriesList: const [],
           categories: testCategories,
           isLoading: true,
         ),
@@ -117,6 +119,25 @@ void main() {
 
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
+
+    testWidgets(
+      'keeps the populated grid visible during a background refresh',
+      (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _TestApp(
+            seriesList: testSeriesList,
+            categories: testCategories,
+            isLoading: true,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+        expect(find.text('Breaking Bad'), findsOneWidget);
+      },
+    );
 
     testWidgets('shows not configured message when not connected', (
       tester,
