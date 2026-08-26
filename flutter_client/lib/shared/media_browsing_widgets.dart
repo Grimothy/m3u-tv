@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart'
     show CachedNetworkImageProvider;
 import 'package:dpad/dpad.dart';
@@ -354,7 +356,7 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
   }
 }
 
-class ResilientMediaImage extends StatelessWidget {
+class ResilientMediaImage extends StatefulWidget {
   const ResilientMediaImage({
     required this.imageUrl,
     required this.fallbackIcon,
@@ -379,13 +381,52 @@ class ResilientMediaImage extends StatelessWidget {
   final Color? backgroundColor;
 
   @override
+  State<ResilientMediaImage> createState() => _ResilientMediaImageState();
+}
+
+class _ResilientMediaImageState extends State<ResilientMediaImage> {
+  // On a cold app start, every row on the home screen fires its poster
+  // requests at once, which blows past flutter_cache_manager's hardcoded
+  // concurrentFetches limit (10). Requests queued behind that limit can lose
+  // the race against transient network hiccups, and neither
+  // cached_network_image nor flutter_cache_manager retry on their own - the
+  // failed entry is simply evicted, so the image sits on the fallback icon
+  // until something (e.g. a manual app reload) asks for it again. Retrying
+  // here with backoff closes that gap without needing to touch the shared
+  // cache manager's concurrency settings.
+  static const _maxRetries = 3;
+
+  int _attempt = 0;
+  bool _retryScheduled = false;
+
+  @override
+  void didUpdateWidget(covariant ResilientMediaImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.imageUrl != widget.imageUrl) {
+      _attempt = 0;
+      _retryScheduled = false;
+    }
+  }
+
+  void _scheduleRetry() {
+    if (_retryScheduled || _attempt >= _maxRetries) return;
+    _retryScheduled = true;
+    final delay = Duration(milliseconds: 500 * (1 << _attempt));
+    _attempt++;
+    Future.delayed(delay, () {
+      _retryScheduled = false;
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final fallback = _MediaImageFallback(
-      icon: fallbackIcon,
-      title: fallbackTitle,
+      icon: widget.fallbackIcon,
+      title: widget.fallbackTitle,
     );
-    final url = imageUrl;
+    final url = widget.imageUrl;
     // Oversample beyond raw pixel density so detailed logos (thin
     // text/wordmarks) survive downscaling instead of being crushed to a
     // blocky, aliased decode that no display-time FilterQuality can recover.
@@ -393,12 +434,12 @@ class ResilientMediaImage extends StatelessWidget {
     // is free when the source is already small.
     final devicePixelRatio =
         MediaQuery.devicePixelRatioOf(context) * 2 * TvZoomScale.of(context);
-    final cacheWidth = width == null
+    final cacheWidth = widget.width == null
         ? null
-        : (width! * devicePixelRatio).round();
-    final cacheHeight = height == null
+        : (widget.width! * devicePixelRatio).round();
+    final cacheHeight = widget.height == null
         ? null
-        : (height! * devicePixelRatio).round();
+        : (widget.height! * devicePixelRatio).round();
     final provider = url == null || url.isEmpty
         ? null
         : CachedNetworkImageProvider(
@@ -407,13 +448,14 @@ class ResilientMediaImage extends StatelessWidget {
           );
 
     final image = ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
+      borderRadius: BorderRadius.circular(widget.borderRadius),
       child: SizedBox(
-        width: width,
-        height: height,
+        width: widget.width,
+        height: widget.height,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: backgroundColor ?? colorScheme.surfaceContainerHighest,
+            color:
+                widget.backgroundColor ?? colorScheme.surfaceContainerHighest,
           ),
           child: provider == null
               ? fallback
@@ -426,9 +468,9 @@ class ResilientMediaImage extends StatelessWidget {
                           height: cacheHeight,
                           policy: ResizeImagePolicy.fit,
                         ),
-                  fit: fit,
-                  width: width,
-                  height: height,
+                  fit: widget.fit,
+                  width: widget.width,
+                  height: widget.height,
                   filterQuality: FilterQuality.high,
                   gaplessPlayback: true,
                   frameBuilder:
@@ -442,13 +484,16 @@ class ResilientMediaImage extends StatelessWidget {
                     if (loadingProgress == null) return child;
                     return fallback;
                   },
-                  errorBuilder: (_, _, _) => fallback,
+                  errorBuilder: (_, _, _) {
+                    _scheduleRetry();
+                    return fallback;
+                  },
                 ),
         ),
       ),
     );
-    if (aspectRatio == null) return image;
-    return AspectRatio(aspectRatio: aspectRatio!, child: image);
+    if (widget.aspectRatio == null) return image;
+    return AspectRatio(aspectRatio: widget.aspectRatio!, child: image);
   }
 }
 
