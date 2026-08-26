@@ -257,7 +257,7 @@ class Series {
     backdropUrl: _asNullableString(_firstListItem(json['backdrop_path'])),
     categoryId: _asNullableString(json['category_id']),
     plot: _asNullableString(json['plot']),
-    rating: _asDoubleOrNull(json['rating']),
+    rating: _asDoubleOrNull(json['rating'] ?? json['rating_5based']),
     tmdbId: _asIntOrNull(json['tmdb_id'] ?? json['tmdb']),
   );
 }

@@ -238,9 +238,11 @@ Map<String, Object?> _seriesToJson(Series series) => <String, Object?>{
   'series_id': series.id,
   'name': series.name,
   if (series.coverUrl != null) 'cover': series.coverUrl,
+  if (series.backdropUrl != null) 'backdrop_path': series.backdropUrl,
   if (series.categoryId != null) 'category_id': series.categoryId,
   if (series.plot != null) 'plot': series.plot,
-  if (series.rating != null) 'rating_5based': series.rating,
+  if (series.rating != null) 'rating': series.rating,
+  if (series.tmdbId != null) 'tmdb_id': series.tmdbId,
 };
 
 Map<String, Object?> _asMap(Object? value) =>
