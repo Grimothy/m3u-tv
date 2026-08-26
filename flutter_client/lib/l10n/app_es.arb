@@ -700,5 +700,6 @@
   "settingsLiveTvChannelColumnTitleOnly": "Solo título",
   "settingsEpgStartView": "La guía empieza a las",
   "settingsEpgStartViewCurrentTime": "Hora actual",
-  "settingsEpgStartViewPrimeTime": "Horario estelar"
+  "settingsEpgStartViewPrimeTime": "Horario estelar",
+  "settingsDefaultStartPage": "Página de inicio predeterminada"
 }

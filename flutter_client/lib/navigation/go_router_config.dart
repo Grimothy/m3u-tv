@@ -47,9 +47,10 @@ GoRouter createGoRouter({
   Widget Function(PlayerArgs args)? playerRouteBuilder,
   SystemUiPolicy? systemUiPolicy,
   DeviceType? deviceTypeOverride,
+  String initialLocation = RouteNames.home,
 }) {
   return GoRouter(
-    initialLocation: RouteNames.home,
+    initialLocation: initialLocation,
     routes: [
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {

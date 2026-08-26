@@ -111,5 +111,25 @@ void main() {
 
       expect(await viewSettingsService.epgStartView(), EpgStartView.primeTime);
     });
+
+    testWidgets('renders default start page chips and persists the choice', (
+      tester,
+    ) async {
+      await pumpSettingsScreen(tester);
+
+      final l = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.text(l.settingsDefaultStartPage), findsOneWidget);
+
+      final liveTvChip = find.widgetWithText(DpadInkWell, l.navLiveTv);
+      await tester.ensureVisible(liveTvChip);
+      await tester.pumpAndSettle();
+      await tester.tap(liveTvChip);
+      await tester.pumpAndSettle();
+
+      expect(
+        await viewSettingsService.defaultStartPage(),
+        DefaultStartPage.liveTv,
+      );
+    });
   });
 }

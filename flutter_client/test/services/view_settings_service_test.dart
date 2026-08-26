@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/services/persistent_store.dart';
 import 'package:m3u_tv/services/view_settings_service.dart';
 
@@ -17,7 +18,32 @@ void main() {
     test('default values when no persisted settings exist', () async {
       expect(await service.liveTvLayout(), LiveTvLayout.list);
       expect(await service.epgStartView(), EpgStartView.currentTime);
+      expect(await service.defaultStartPage(), DefaultStartPage.home);
     });
+
+    test('persists and restores the default start page', () async {
+      for (final page in DefaultStartPage.values) {
+        await service.setDefaultStartPage(page);
+        expect(await service.defaultStartPage(), page);
+        expect(service.defaultStartPageSync, page);
+      }
+    });
+
+    test('start page enum maps to the matching router location', () {
+      expect(DefaultStartPage.home.route, RouteNames.home);
+      expect(DefaultStartPage.search.route, RouteNames.search);
+      expect(DefaultStartPage.liveTv.route, RouteNames.liveTv);
+      expect(DefaultStartPage.movies.route, RouteNames.vod);
+      expect(DefaultStartPage.series.route, RouteNames.series);
+    });
+
+    test(
+      'ignores unknown persisted start page and falls back to Home',
+      () async {
+        memory[ViewSettingsService.defaultStartPageKey] = 'dashboard';
+        expect(await service.defaultStartPage(), DefaultStartPage.home);
+      },
+    );
 
     test('persists and restores live TV layout', () async {
       for (final layout in LiveTvLayout.values) {

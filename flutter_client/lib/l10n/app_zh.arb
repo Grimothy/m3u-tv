@@ -700,5 +700,6 @@
   "settingsLiveTvChannelColumnTitleOnly": "仅名称",
   "settingsEpgStartView": "节目单起始时间",
   "settingsEpgStartViewCurrentTime": "当前时间",
-  "settingsEpgStartViewPrimeTime": "黄金时段"
+  "settingsEpgStartViewPrimeTime": "黄金时段",
+  "settingsDefaultStartPage": "默认启动页面"
 }

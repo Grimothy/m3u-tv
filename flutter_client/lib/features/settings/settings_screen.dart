@@ -2082,6 +2082,7 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
   LiveTvLayout _liveTvLayout = LiveTvLayout.list;
   EpgStartView _epgStartView = EpgStartView.currentTime;
   ChannelColumnLayout _channelColumnLayout = ChannelColumnLayout.logoOnly;
+  DefaultStartPage _defaultStartPage = DefaultStartPage.home;
 
   @override
   void initState() {
@@ -2100,11 +2101,13 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
     final layout = await widget.service.liveTvLayout();
     final startView = await widget.service.epgStartView();
     final channelColumnLayout = await widget.service.channelColumnLayout();
+    final defaultStartPage = await widget.service.defaultStartPage();
     if (!mounted) return;
     setState(() {
       _liveTvLayout = layout;
       _epgStartView = startView;
       _channelColumnLayout = channelColumnLayout;
+      _defaultStartPage = defaultStartPage;
     });
   }
 
@@ -2118,6 +2121,23 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Text(
+              l.settingsDefaultStartPage,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final page in DefaultStartPage.values)
+                  _IntervalChip(
+                    label: _startPageLabel(l, page),
+                    isSelected: _defaultStartPage == page,
+                    onTap: () => widget.service.setDefaultStartPage(page),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
             Text(
               l.settingsLiveTvLayout,
               style: Theme.of(context).textTheme.bodyMedium,
@@ -2341,6 +2361,15 @@ class _StatusRow extends StatelessWidget {
     );
   }
 }
+
+String _startPageLabel(AppLocalizations l, DefaultStartPage page) =>
+    switch (page) {
+      DefaultStartPage.home => l.navHome,
+      DefaultStartPage.search => l.navSearch,
+      DefaultStartPage.liveTv => l.navLiveTv,
+      DefaultStartPage.movies => l.navVod,
+      DefaultStartPage.series => l.navSeries,
+    };
 
 String _intervalLabel(AppLocalizations l, Duration d) {
   if (d.inHours >= 1) {

@@ -701,5 +701,6 @@
   "settingsLiveTvChannelColumnTitleOnly": "Title Only",
   "settingsEpgStartView": "EPG starts at",
   "settingsEpgStartViewCurrentTime": "Current time",
-  "settingsEpgStartViewPrimeTime": "Prime time"
+  "settingsEpgStartViewPrimeTime": "Prime time",
+  "settingsDefaultStartPage": "Default start page"
 }

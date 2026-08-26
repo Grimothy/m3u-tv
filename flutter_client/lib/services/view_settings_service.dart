@@ -1,5 +1,29 @@
 import 'package:flutter/foundation.dart';
+import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/services/persistent_store.dart';
+
+/// Which top-level screen the app opens on a fresh launch. Defaults to Home;
+/// Settings is deliberately not an option.
+enum DefaultStartPage {
+  home('home', RouteNames.home),
+  search('search', RouteNames.search),
+  liveTv('liveTv', RouteNames.liveTv),
+  movies('movies', RouteNames.vod),
+  series('series', RouteNames.series);
+
+  const DefaultStartPage(this.value, this.route);
+
+  final String value;
+
+  /// The router location this start page navigates to.
+  final String route;
+
+  static DefaultStartPage fromValue(String? value) =>
+      DefaultStartPage.values.firstWhere(
+        (page) => page.value == value,
+        orElse: () => DefaultStartPage.home,
+      );
+}
 
 /// Available layouts for the Live TV browsing screen.
 enum LiveTvLayout {
@@ -60,9 +84,25 @@ class ViewSettingsService extends ChangeNotifier {
   static const epgStartViewKey = 'm3ue_tv_epg_start_view';
   static const channelColumnLayoutKey = 'm3ue_tv_channel_column_layout';
   static const hdrEnabledKey = 'm3ue_tv_hdr_enabled';
+  static const defaultStartPageKey = 'm3ue_tv_default_start_page';
 
   final Map<String, Object?> _memory;
   final PersistentJsonStore? store;
+
+  Future<DefaultStartPage> defaultStartPage() async {
+    final raw = await _read(defaultStartPageKey);
+    return DefaultStartPage.fromValue(raw as String?);
+  }
+
+  /// Synchronous access to the in-memory cached start page. Valid once
+  /// [defaultStartPage] has resolved at least once.
+  DefaultStartPage get defaultStartPageSync =>
+      DefaultStartPage.fromValue(_memory[defaultStartPageKey] as String?);
+
+  Future<void> setDefaultStartPage(DefaultStartPage page) async {
+    await _write(defaultStartPageKey, page.value);
+    notifyListeners();
+  }
 
   Future<LiveTvLayout> liveTvLayout() async {
     final raw = await _read(liveTvLayoutKey);

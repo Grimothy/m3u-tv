@@ -12,6 +12,7 @@ import 'package:m3u_tv/app/device_type_resolver.dart';
 import 'package:m3u_tv/app/system_ui_policy.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/go_router_config.dart';
+import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/persistent_store.dart';
@@ -35,6 +36,9 @@ Future<void> main() async {
   if (_isMobilePushCapable(nativeTelevisionHint)) {
     unawaited(_initPushNotifications(appState));
   }
+  // Resolve the user's preferred start page before the router is built so a
+  // cold launch opens there instead of always on Home.
+  final startPage = await appState.viewSettingsService.defaultStartPage();
   runApp(
     ProviderScope(
       overrides: [overrideAppState(appState)],
@@ -42,6 +46,7 @@ Future<void> main() async {
         nativeTelevisionHint: nativeTelevisionHint,
         appState: appState,
         systemUiPolicy: systemUiPolicy,
+        initialLocation: startPage.route,
       ),
     ),
   );
@@ -146,11 +151,13 @@ class MyApp extends StatefulWidget {
     this.nativeTelevisionHint = false,
     this.appState,
     this.systemUiPolicy,
+    this.initialLocation = RouteNames.home,
   });
 
   final bool nativeTelevisionHint;
   final AppStateController? appState;
   final SystemUiPolicy? systemUiPolicy;
+  final String initialLocation;
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -161,6 +168,7 @@ class _MyAppState extends State<MyApp> {
     appState: widget.appState ?? AppStateController(),
     nativeTelevisionHint: widget.nativeTelevisionHint,
     systemUiPolicy: widget.systemUiPolicy,
+    initialLocation: widget.initialLocation,
   );
 
   @override

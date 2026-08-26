@@ -2293,6 +2293,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Prime time'**
   String get settingsEpgStartViewPrimeTime;
+
+  /// No description provided for @settingsDefaultStartPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Default start page'**
+  String get settingsDefaultStartPage;
 }
 
 class _AppLocalizationsDelegate

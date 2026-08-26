@@ -1282,4 +1282,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get settingsEpgStartViewPrimeTime => 'Prime time';
+
+  @override
+  String get settingsDefaultStartPage => 'Page de démarrage par défaut';
 }

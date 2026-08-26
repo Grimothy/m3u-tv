@@ -1278,4 +1278,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get settingsEpgStartViewPrimeTime => 'Prime Time';
+
+  @override
+  String get settingsDefaultStartPage => 'Standardstartseite';
 }

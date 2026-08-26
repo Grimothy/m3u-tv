@@ -1232,4 +1232,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsEpgStartViewPrimeTime => '黄金时段';
+
+  @override
+  String get settingsDefaultStartPage => '默认启动页面';
 }

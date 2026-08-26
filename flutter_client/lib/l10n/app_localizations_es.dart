@@ -1280,4 +1280,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get settingsEpgStartViewPrimeTime => 'Horario estelar';
+
+  @override
+  String get settingsDefaultStartPage => 'Página de inicio predeterminada';
 }
