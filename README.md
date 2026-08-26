@@ -217,9 +217,9 @@ flutter-tvos upgrade
 - [x] Search functionality
 - [x] Apple TV (tvOS)
 - [x] Localization (en, de, es, fr, zh)
+- [x] Catchup/DVR support
 - [ ] Parental controls
 - [ ] Stream quality selection
-- [ ] Catchup/DVR support
 
 ---
 
