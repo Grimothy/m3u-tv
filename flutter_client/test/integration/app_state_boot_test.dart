@@ -1116,6 +1116,148 @@ void main() {
       },
     );
 
+    test(
+      'content cache migrates into its own file for pre-split installs',
+      () async {
+        final directory = await io.Directory.systemTemp.createTemp(
+          'm3u-tv-split-',
+        );
+        addTearDown(() => _deleteDirectoryRetrying(directory));
+        final stateFile = io.File('${directory.path}/app_state.json');
+        final cacheFile = io.File('${directory.path}/cache.json');
+
+        // Pre-split install: one store, so the whole catalog lands in
+        // app_state.json alongside credentials and resume progress.
+        final legacy = AppStateController(
+          persistentStore: PersistentJsonStore(file: stateFile),
+          xtreamService: XtreamService(
+            transport: _FakeXtreamTransport.success().call,
+          ),
+        );
+        expect(
+          await legacy.connectXtream(
+            const UserCredentials(
+              server: 'https://fixture.example',
+              username: 'fixture-user',
+              password: 'fixture-password',
+            ),
+          ),
+          isTrue,
+        );
+        final stateBefore = await PersistentJsonStore(
+          file: stateFile,
+        ).snapshot();
+        expect(
+          stateBefore.keys.any((key) => key.startsWith('m3ue_cache_')),
+          isTrue,
+        );
+        expect(cacheFile.existsSync(), isFalse);
+
+        // Next launch has the split wired up: boot() moves the cache keys
+        // into cache.json and the hydrate still succeeds off the new file.
+        final migrated = AppStateController(
+          persistentStore: PersistentJsonStore(file: stateFile),
+          cacheStore: PersistentJsonStore(file: cacheFile),
+          xtreamService: XtreamService(
+            transport: _FakeXtreamTransport.success().call,
+          ),
+        );
+        await migrated.boot();
+        await _waitForXtreamRefresh(migrated);
+
+        expect(migrated.sourceType, AppSourceType.xtream);
+        expect(migrated.channels.single.name, 'BBC One');
+
+        final stateAfter = await PersistentJsonStore(
+          file: stateFile,
+        ).snapshot();
+        final cacheAfter = await PersistentJsonStore(
+          file: cacheFile,
+        ).snapshot();
+        expect(
+          stateAfter.keys.any((key) => key.startsWith('m3ue_cache_')),
+          isFalse,
+        );
+        expect(
+          cacheAfter.keys.any((key) => key.startsWith('m3ue_cache_')),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'boot sweeps cache keys still left in app_state.json after a '
+      'half-finished earlier migration',
+      () async {
+        final directory = await io.Directory.systemTemp.createTemp(
+          'm3u-tv-split-leftover-',
+        );
+        addTearDown(() => _deleteDirectoryRetrying(directory));
+        final stateFile = io.File('${directory.path}/app_state.json');
+        final cacheFile = io.File('${directory.path}/cache.json');
+
+        final legacy = AppStateController(
+          persistentStore: PersistentJsonStore(file: stateFile),
+          xtreamService: XtreamService(
+            transport: _FakeXtreamTransport.success().call,
+          ),
+        );
+        expect(
+          await legacy.connectXtream(
+            const UserCredentials(
+              server: 'https://fixture.example',
+              username: 'fixture-user',
+              password: 'fixture-password',
+            ),
+          ),
+          isTrue,
+        );
+
+        // Simulate a crash between adoptKeysFrom's two writes: cache.json
+        // already has the keys, but app_state.json was never cleared.
+        final stateSnapshot = await PersistentJsonStore(
+          file: stateFile,
+        ).snapshot();
+        final seededCache = PersistentJsonStore(file: cacheFile);
+        for (final entry in stateSnapshot.entries) {
+          if (entry.key.startsWith('m3ue_cache_')) {
+            await seededCache.write(entry.key, entry.value);
+          }
+        }
+        expect(
+          (await PersistentJsonStore(file: stateFile).snapshot()).keys.any(
+            (key) => key.startsWith('m3ue_cache_'),
+          ),
+          isTrue,
+        );
+
+        final migrated = AppStateController(
+          persistentStore: PersistentJsonStore(file: stateFile),
+          cacheStore: PersistentJsonStore(file: cacheFile),
+          xtreamService: XtreamService(
+            transport: _FakeXtreamTransport.success().call,
+          ),
+        );
+        await migrated.boot();
+        await _waitForXtreamRefresh(migrated);
+
+        expect(migrated.sourceType, AppSourceType.xtream);
+        expect(migrated.channels.single.name, 'BBC One');
+        expect(
+          (await PersistentJsonStore(file: stateFile).snapshot()).keys.any(
+            (key) => key.startsWith('m3ue_cache_'),
+          ),
+          isFalse,
+        );
+        expect(
+          (await PersistentJsonStore(file: cacheFile).snapshot()).keys.any(
+            (key) => key.startsWith('m3ue_cache_'),
+          ),
+          isTrue,
+        );
+      },
+    );
+
     test('newer EPG range wins when an older request completes last', () async {
       final oldRange = Completer<Object?>();
       final newRange = Completer<Object?>();

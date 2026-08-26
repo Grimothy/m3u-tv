@@ -5,7 +5,13 @@ import 'package:m3u_tv/services/async_lifecycle.dart';
 import 'package:m3u_tv/services/json_isolate.dart';
 
 class PersistentJsonStore {
-  PersistentJsonStore({File? file}) : this._(file ?? File(_defaultPath()));
+  /// [fileName] picks the basename inside the platform app-data directory
+  /// (default `app_state.json`). Pass a distinct name (e.g. `cache.json`) to
+  /// keep a large, frequently-rewritten section in its own file so an
+  /// unrelated single-key write does not re-serialize it. Ignored when an
+  /// explicit [file] is given (tests).
+  PersistentJsonStore({File? file, String fileName = 'app_state.json'})
+    : this._(file ?? File(_defaultPath(fileName)));
 
   PersistentJsonStore._(File file)
     : _file = file,
@@ -137,6 +143,44 @@ class PersistentJsonStore {
     return Map<String, Object?>.from(await _readAllUnlocked());
   }
 
+  /// One-time move of keys matching [test] out of [source] and into this
+  /// store, run on boot. Writes here first, then clears [source]. It is
+  /// idempotent: once this store holds the keys, later calls only sweep any
+  /// copy still left in [source] - e.g. from a crash between the two writes,
+  /// or from [source] being reseeded - so the large payload can never linger
+  /// there (which would defeat the point of the split).
+  Future<void> adoptKeysFrom(
+    PersistentJsonStore source,
+    bool Function(String key) test,
+  ) async {
+    // Distinct instances can share one file, and its cache + write queue, via
+    // the static _states map; a shared state means there is nothing to move.
+    if (identical(_state, source._state)) return;
+    await _writeQueue.drained;
+    final existing = await _readAllUnlocked();
+    if (existing.keys.any(test)) {
+      // Destination already migrated. Only rewrite the source if an earlier
+      // run left matching keys behind - otherwise every boot would rewrite
+      // app_state.json for nothing.
+      if ((await source.snapshot()).keys.any(test)) {
+        await source.removeWhere(test);
+      }
+      return;
+    }
+    final sourceData = await source.snapshot();
+    final migrated = <String, Object?>{
+      for (final entry in sourceData.entries)
+        if (test(entry.key)) entry.key: entry.value,
+    };
+    if (migrated.isEmpty) return;
+    await _queueWrite(() async {
+      final data = await _readAllUnlocked();
+      data.addAll(migrated);
+      await _writeAll(data);
+    });
+    await source.removeWhere(test);
+  }
+
   Future<void> removeWhere(bool Function(String key) test) async {
     await _queueWrite(() async {
       final data = await _readAllUnlocked();
@@ -217,7 +261,7 @@ class PersistentJsonStore {
     return true;
   }
 
-  static String _defaultPath() {
+  static String _defaultPath(String fileName) {
     final env = Platform.environment;
     final base = switch (Platform.operatingSystem) {
       'windows' =>
@@ -229,7 +273,7 @@ class PersistentJsonStore {
             '${env['HOME'] ?? Directory.systemTemp.path}/.local/share',
       _ => '${env['HOME'] ?? Directory.systemTemp.path}/.m3u_tv',
     };
-    return '$base/m3u_tv/app_state.json';
+    return '$base/m3u_tv/$fileName';
   }
 }
 
