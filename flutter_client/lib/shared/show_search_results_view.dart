@@ -25,6 +25,7 @@ class ShowSearchResultsView extends StatefulWidget {
     required this.memoryKeyPrefix,
     this.onEdge,
     this.resetTabsToken,
+    this.precomputedResult,
   });
 
   final List<EpgShow> shows;
@@ -47,6 +48,12 @@ class ShowSearchResultsView extends StatefulWidget {
   /// `_searchResultsTabController.index = 0` side effect, which becomes
   /// unreachable from the parent once the TabController moves in here.
   final Object? resetTabsToken;
+
+  /// Skips the internal `buildShowResultEntries` call when the caller has
+  /// already computed it this build (e.g. `SearchScreen`'s All tab needs the
+  /// same result) - avoids doing the On-Now/Upcoming grouping work twice per
+  /// keystroke.
+  final ShowResultEntries? precomputedResult;
 
   @override
   State<ShowSearchResultsView> createState() => _ShowSearchResultsViewState();
@@ -80,7 +87,9 @@ class _ShowSearchResultsViewState extends State<ShowSearchResultsView>
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final languageTag = Localizations.localeOf(context).toLanguageTag();
-    final result = buildShowResultEntries(widget.shows, widget.channelsById);
+    final result =
+        widget.precomputedResult ??
+        buildShowResultEntries(widget.shows, widget.channelsById);
     return Column(
       children: [
         DpadTabBar(

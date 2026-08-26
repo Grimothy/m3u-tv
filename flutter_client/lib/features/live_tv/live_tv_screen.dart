@@ -19,6 +19,7 @@ import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/dvr_action_dialogs.dart';
+import 'package:m3u_tv/shared/epg_show_search_controller.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/media_category_nav.dart';
 import 'package:m3u_tv/shared/recording_dot.dart';
@@ -212,16 +213,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
   // last landed on - not necessarily the row the user was actually just on.
   final GlobalKey<TimelineEpgViewState> _timelineEpgViewKey =
       GlobalKey<TimelineEpgViewState>();
-  Timer? _showSearchDebounce;
-  int _showSearchGeneration = 0;
-  List<EpgShow> _showResults = const <EpgShow>[];
-  bool _showIsLoading = false;
-  String? _showError;
-  // Bumped on each new qualifying search to tell the embedded
-  // ShowSearchResultsView to reset its tab index back to "All". Mirrors
-  // the previous `_searchResultsTabController.index = 0` side effect at
-  // the old :404-407 call site.
-  int _searchSessionId = 0;
+  final _showSearchController = EpgShowSearchController();
 
   @override
   void initState() {
@@ -230,6 +222,11 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
     _attachViewSettingsListener();
     unawaited(_initCategory());
     widget.onBackHandlerReady?.call(_handleBackFromEpg);
+    _showSearchController.addListener(_onShowSearchChanged);
+  }
+
+  void _onShowSearchChanged() {
+    if (mounted) setState(() {});
   }
 
   bool _handleBackFromEpg() {
@@ -263,7 +260,9 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
     _searchResultsFocusNode.dispose();
     _channelColumnFocusNode.dispose();
     _dayControlsFocusNode.dispose();
-    _showSearchDebounce?.cancel();
+    _showSearchController
+      ..removeListener(_onShowSearchChanged)
+      ..dispose();
     super.dispose();
   }
 
@@ -367,77 +366,6 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
     if (mounted) {
       setState(() {
         _favoriteIds = ids;
-      });
-    }
-  }
-
-  // Tracks whether the *previous* keystroke's query already met the 2-char
-  // search threshold, so the results tab only resets to "All" on the
-  // transition into search mode - not on every keystroke while refining an
-  // already-active query, which would otherwise bounce the user off a
-  // deliberately-chosen On Now/Upcoming tab mid-typing.
-  bool _showSearchWasActive = false;
-
-  /// Mirrors `ShowsScreen._onQueryChanged`. Kept independent of the
-  /// synchronous `_query` setState that drives [_filteredChannels] so the
-  /// channel list narrows on every keystroke while the show search waits
-  /// out the debounce + network roundtrip.
-  void _onShowQueryChanged(String value) {
-    final trimmed = value.trim();
-    if (trimmed.length < 2) {
-      _showSearchWasActive = false;
-      _showSearchDebounce?.cancel();
-      _showSearchGeneration++;
-      if (_showResults.isNotEmpty || _showIsLoading || _showError != null) {
-        setState(() {
-          _showResults = const <EpgShow>[];
-          _showIsLoading = false;
-          _showError = null;
-        });
-      }
-      return;
-    }
-    if (!_showSearchWasActive) {
-      _searchSessionId++;
-    }
-    _showSearchWasActive = true;
-    _showSearchDebounce?.cancel();
-    // R2.1: flip to loading synchronously so the results view renders
-    // "Searching shows…" the same frame the qualifying query first
-    // arrives. Without this, the empty view flashes "No shows match your
-    // search" for the 350ms the debounce is waiting before the network
-    // call fires.
-    setState(() {
-      _showIsLoading = true;
-      _showResults = const <EpgShow>[];
-      _showError = null;
-    });
-    _showSearchDebounce = Timer(
-      const Duration(milliseconds: 350),
-      () => _runShowSearch(trimmed),
-    );
-  }
-
-  Future<void> _runShowSearch(String trimmed) async {
-    final search = widget.onSearchShows;
-    if (search == null) return;
-    final generation = ++_showSearchGeneration;
-    setState(() {
-      _showIsLoading = true;
-      _showError = null;
-    });
-    try {
-      final results = await search(trimmed);
-      if (!mounted || generation != _showSearchGeneration) return;
-      setState(() {
-        _showResults = results;
-        _showIsLoading = false;
-      });
-    } on Object catch (error) {
-      if (!mounted || generation != _showSearchGeneration) return;
-      setState(() {
-        _showError = error.toString();
-        _showIsLoading = false;
       });
     }
   }
@@ -764,7 +692,7 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
       query: _query,
       onQueryChanged: (value) {
         setState(() => _query = value);
-        _onShowQueryChanged(value);
+        _showSearchController.onQueryChanged(value, widget.onSearchShows);
       },
       searchHint: l.liveTvSearchHint,
       tabs: _categoryTabs(categories),
@@ -800,16 +728,16 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
               child: FocusScope(
                 node: _searchResultsFocusNode,
                 child: ShowSearchResultsView(
-                  shows: _showResults,
-                  isLoading: _showIsLoading,
-                  error: _showError,
+                  shows: _showSearchController.results,
+                  isLoading: _showSearchController.isLoading,
+                  error: _showSearchController.error,
                   channelsById: channelsById,
                   onChannelSelect: widget.onChannelSelect,
                   onChannelContextChanged: widget.onChannelContextChanged,
                   onShowSelect: widget.onShowSelect,
                   memoryKeyPrefix: 'live-tv/search-results',
                   onEdge: _handleGridLeftEdge,
-                  resetTabsToken: _searchSessionId,
+                  resetTabsToken: _showSearchController.searchSessionId,
                 ),
               ),
             )

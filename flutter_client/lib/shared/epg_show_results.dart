@@ -31,6 +31,16 @@ class ShowResultEntry {
   final bool isOnNow;
 }
 
+/// Return shape of [buildShowResultEntries], named so callers can hold onto
+/// a precomputed result (e.g. to share it between two widgets in the same
+/// build instead of recomputing) without repeating the record shape.
+typedef ShowResultEntries = ({
+  List<ShowResultEntry> all,
+  List<ShowResultEntry> onNow,
+  List<ShowResultEntry> upcoming,
+  List<Channel> onNowChannels,
+});
+
 /// Combines the `airingNow` and `recentEpisodes` of each show into a single
 /// deduped list of result rows, partitioned by On Now vs Upcoming and grouped
 /// by (show, channelId) - keeps the same shape LiveTvScreen has rendered
@@ -40,13 +50,7 @@ class ShowResultEntry {
 /// search-filtered channel list - searching for a show name does not filter
 /// channels by name, so the lookup must include every channel a programme
 /// could be airing on.
-({
-  List<ShowResultEntry> all,
-  List<ShowResultEntry> onNow,
-  List<ShowResultEntry> upcoming,
-  List<Channel> onNowChannels,
-})
-buildShowResultEntries(
+ShowResultEntries buildShowResultEntries(
   List<EpgShow> shows,
   Map<int, Channel> channelsById,
 ) {
