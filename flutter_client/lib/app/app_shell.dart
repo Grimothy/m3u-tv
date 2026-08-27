@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:ui' show ImageFilter;
 
+import 'package:clock/clock.dart';
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -137,6 +138,17 @@ class AppShellState extends ConsumerState<AppShell>
 
   DateTime? _lastBackPress;
   Timer? _backExitTimer;
+
+  // TV-only: when the app returns to the foreground after having been
+  // backgrounded for at least this long, navigate back to the user's
+  // configured start page instead of resuming wherever they left off. On the
+  // couch, reopening the app is expected to land on your "home base"; on
+  // desktop/mobile users task-switch constantly and expect their place kept,
+  // so this is gated to DeviceType.tv. The grace period keeps brief
+  // interruptions (voice assistant overlay, a permission dialog) from
+  // resetting the user.
+  static const Duration _tvForegroundResetGrace = Duration(seconds: 10);
+  DateTime? _backgroundedAt;
   int _lastNavMs = 0;
   int _lastNavIndex = -1;
   StreamSubscription<TvNotificationItem>? _tvNotificationSub;
@@ -345,6 +357,7 @@ class AppShellState extends ConsumerState<AppShell>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
+      _backgroundedAt = clock.now();
       unawaited(_appState.suspendNotifications());
       return;
     }
@@ -355,6 +368,43 @@ class AppShellState extends ConsumerState<AppShell>
           ? _systemUiPolicy.applyBrowsing()
           : _systemUiPolicy.applyPlayer(),
     );
+    // After the system-UI call above: when this resets to the start page it
+    // may close an open player, and _closePlayer restores the browsing
+    // system UI itself.
+    _maybeResetToStartPageAfterBackground();
+  }
+
+  /// TV-only: on returning from a real background (longer than
+  /// [_tvForegroundResetGrace]), close any open player and switch to the
+  /// user's configured start page so reopening the app lands on their
+  /// preferred landing screen rather than wherever they left off. No-op on
+  /// desktop/mobile, where keeping the user's place is the expected behavior.
+  void _maybeResetToStartPageAfterBackground() {
+    final backgroundedAt = _backgroundedAt;
+    _backgroundedAt = null;
+    if (widget.deviceType != DeviceType.tv) return;
+    if (backgroundedAt == null) return;
+    if (clock.now().difference(backgroundedAt) < _tvForegroundResetGrace) {
+      return;
+    }
+
+    final startRoute = _appState.viewSettingsService.defaultStartPageSync.route;
+    final branchIndex = RouteNames.mainRoutes.indexOf(startRoute);
+    if (branchIndex < 0) return;
+
+    if (_playerArgs != null) unawaited(_closePlayer());
+
+    // Defer the navigation out of the lifecycle callback: goBranch drives a
+    // router rebuild, which is not safe to trigger synchronously from
+    // didChangeAppLifecycleState. initialLocation:true resets the target
+    // branch to its root screen, dropping any nested detail route the user
+    // had open on it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.navigationShell.goBranch(branchIndex, initialLocation: true);
+      if (_sidebarActive) setState(() => _sidebarActive = false);
+      _contentFocusNode.requestFocus();
+    });
   }
 
   void _navigateTo(int index) {

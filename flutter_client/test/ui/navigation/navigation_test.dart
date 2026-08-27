@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,6 +23,7 @@ import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/services/resume_service.dart';
 import 'package:m3u_tv/services/secure_storage.dart';
+import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/services/viewer_service.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
@@ -1981,6 +1983,139 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
   });
+
+  group('TV foreground reset to start page', () {
+    Future<AppStateController> connectedAppState() async {
+      final appState = _testAppState(xtreamService: _NavigationXtreamService());
+      addTearDown(appState.dispose);
+      await appState.connectXtream(
+        const UserCredentials(
+          server: 'http://example.com',
+          username: 'user',
+          password: 'pass',
+        ),
+      );
+      return appState;
+    }
+
+    Future<void> backgroundAndResume(
+      WidgetTester tester, {
+      required Duration away,
+    }) async {
+      final base = DateTime(2026, 1, 1, 12);
+      withClock(Clock.fixed(base), () {
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.paused,
+        );
+      });
+      withClock(Clock.fixed(base.add(away)), () {
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+      });
+      await _pumpAppFrame(tester);
+    }
+
+    testWidgets(
+      'resuming after a real background returns to the configured start page',
+      (tester) async {
+        final appState = await connectedAppState();
+        await appState.viewSettingsService.setDefaultStartPage(
+          DefaultStartPage.liveTv,
+        );
+
+        await tester.pumpWidget(
+          _TestApp(deviceType: DeviceType.tv, appState: appState),
+        );
+        await _pumpAppFrame(tester);
+
+        // Wander off to a nested Movies detail screen.
+        await tester.tap(_sidebarText('Movies'));
+        await _pumpAppFrame(tester);
+        await tester.tap(find.text('Route Movie').last);
+        await _pumpAppFrame(tester);
+        expect(find.text('Play movie'), findsOneWidget);
+
+        await backgroundAndResume(tester, away: const Duration(seconds: 30));
+
+        // Back on the Live TV start page; the Movies detail is no longer shown.
+        expect(find.text('Play movie'), findsNothing);
+        expect(find.text('Route News'), findsAtLeast(1));
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
+    testWidgets('resuming after a real background closes an open player', (
+      tester,
+    ) async {
+      final appState = await connectedAppState();
+
+      await tester.pumpWidget(
+        _TestApp(deviceType: DeviceType.tv, appState: appState),
+      );
+      await _pumpAppFrame(tester);
+
+      await tester.tap(_sidebarText('Live TV'));
+      await _pumpAppFrame(tester);
+      await tester.tap(find.text('Route News').last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Player route: Route News'), findsOneWidget);
+
+      await backgroundAndResume(tester, away: const Duration(seconds: 30));
+
+      expect(find.text('Player route: Route News'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('a brief background keeps the user where they were', (
+      tester,
+    ) async {
+      final appState = await connectedAppState();
+      await appState.viewSettingsService.setDefaultStartPage(
+        DefaultStartPage.liveTv,
+      );
+
+      await tester.pumpWidget(
+        _TestApp(deviceType: DeviceType.tv, appState: appState),
+      );
+      await _pumpAppFrame(tester);
+
+      await tester.tap(_sidebarText('Movies'));
+      await _pumpAppFrame(tester);
+      await tester.tap(find.text('Route Movie').last);
+      await _pumpAppFrame(tester);
+      expect(find.text('Play movie'), findsOneWidget);
+
+      await backgroundAndResume(tester, away: const Duration(seconds: 3));
+
+      expect(find.text('Play movie'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('desktop never resets on resume', (tester) async {
+      final appState = await connectedAppState();
+      await appState.viewSettingsService.setDefaultStartPage(
+        DefaultStartPage.liveTv,
+      );
+
+      await tester.pumpWidget(
+        _TestApp(deviceType: DeviceType.desktop, appState: appState),
+      );
+      await _pumpAppFrame(tester);
+
+      await tester.tap(_sidebarText('Movies'));
+      await _pumpAppFrame(tester);
+      await tester.tap(find.text('Route Movie').last);
+      await _pumpAppFrame(tester);
+      expect(find.text('Play movie'), findsOneWidget);
+
+      await backgroundAndResume(tester, away: const Duration(minutes: 5));
+
+      expect(find.text('Play movie'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  });
 }
 
 Finder _sidebarText(String label) {
@@ -2127,6 +2262,7 @@ AppStateController _testAppState({required XtreamService xtreamService}) {
     favoritesService: FavoritesService(memory: memory),
     resumeService: ResumeService(memory: memory),
     viewerService: ViewerService(memory: memory),
+    viewSettingsService: ViewSettingsService(memory: memory),
   );
 }
 
