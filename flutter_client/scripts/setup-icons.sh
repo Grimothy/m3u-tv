@@ -68,6 +68,33 @@ composite_square() {
         -depth 8 "PNG32:$output"
 }
 
+# Composite a padded logo on a gradient-filled squircle (rounded rect with
+# transparent corners) for the desktop "app icon" treatment. The mobile/macOS
+# icon.png is a full-bleed opaque square; Windows/Linux get this instead.
+# Args: canvas_size, inset_px, corner_radius_px, logo_path, output_path
+composite_squircle() {
+    local size=$1 inset=$2 radius=$3 logo=$4 output=$5
+    local x2=$((size - inset - 1))
+    local panel="$TMP/squircle_panel_${size}_${inset}_${radius}.png"
+    local mask="$TMP/squircle_mask_${size}_${inset}_${radius}.png"
+
+    # Diagonal gradient pinned to the panel's corners.
+    magick -size "${size}x${size}" \
+        -define "gradient:vector=${inset},${inset},${x2},${x2}" \
+        gradient:"${GRADIENT_START}-${GRADIENT_END}" \
+        -alpha off "$panel"
+
+    # Rounded-rect alpha mask.
+    magick -size "${size}x${size}" xc:none -fill white \
+        -draw "roundrectangle ${inset},${inset},${x2},${x2},${radius},${radius}" \
+        "$mask"
+
+    # Clip the gradient to the mask, then drop the logo on top.
+    magick "$panel" "$mask" -alpha off -compose CopyOpacity -composite \
+        "$logo" -gravity center -compose Over -composite \
+        -depth 8 "PNG32:$output"
+}
+
 # Diagonal gradient background at exact pixel dimensions.
 # gradient:vector pins the start/end colours to the corners so ImageMagick
 # never extrapolates outside the specified range.
@@ -90,10 +117,11 @@ mkdir -p "$ICONS_DIR"
 #   adaptive-icon.png: 1024 px canvas, 20 % padding → 614 px logo
 #   splash-icon.png:    512 px canvas, 10 % padding → 409 px logo
 LOGO_819=$(render_logo 819)
+LOGO_800=$(render_logo 800)
 LOGO_614=$(render_logo 614)
 LOGO_409=$(render_logo 409)
 
-# icon.png — opaque dark background (required by iOS, macOS, Windows)
+# icon.png — opaque dark background (required by iOS, macOS)
 composite_square 1024 10 "$APP_BG" "$LOGO_819" "$ICONS_DIR/icon.png"
 
 # adaptive-icon.png — dark background + 20 % padding (Android adaptive safe zone)
@@ -102,7 +130,11 @@ composite_square 1024 20 "$APP_BG" "$LOGO_614" "$ICONS_DIR/adaptive-icon.png"
 # splash-icon.png — dark background + 10 % padding
 composite_square 512 10 "$APP_BG" "$LOGO_409" "$ICONS_DIR/splash-icon.png"
 
-echo "  icon.png, adaptive-icon.png, splash-icon.png written to $ICONS_DIR"
+# icon-desktop.png — Windows/Linux app-icon look: gradient squircle, ~4 % edge
+# padding, transparent corners, logo filling ~85 % of the panel width.
+composite_squircle 1024 44 210 "$LOGO_800" "$ICONS_DIR/icon-desktop.png"
+
+echo "  icon.png, adaptive-icon.png, splash-icon.png, icon-desktop.png written to $ICONS_DIR"
 
 # ---------------------------------------------------------------------------
 echo ""
