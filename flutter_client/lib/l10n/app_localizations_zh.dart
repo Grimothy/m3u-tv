@@ -1235,4 +1235,24 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsDefaultStartPage => '默认启动页面';
+
+  @override
+  String get settingsHdrMode => 'HDR 模式';
+
+  @override
+  String get settingsHdrModeHint =>
+      '允许 HDR 视频将显示器切换到 HDR 模式。仅限 Windows 和 Linux。';
+
+  @override
+  String get settingsMatchRefreshRate => '匹配显示器刷新率';
+
+  @override
+  String get settingsMatchRefreshRateHint =>
+      '播放开始时将显示器切换为视频的帧率。可能会使屏幕短暂黑屏。仅限 Windows。';
+
+  @override
+  String get settingsToggleOn => '开';
+
+  @override
+  String get settingsToggleOff => '关';
 }

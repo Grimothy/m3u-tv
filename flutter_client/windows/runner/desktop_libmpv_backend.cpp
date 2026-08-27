@@ -703,6 +703,11 @@ struct PlayerInstance {
   // controls the OS-level display switch, which is the one HDR decision mpv
   // cannot make for itself.
   bool hdr_user_enabled = true;
+  // User-facing override, set once from the `matchRefreshRate` load arg (the
+  // Dart-side `ViewSettingsService.matchRefreshRate` setting). Gates whether
+  // MaybeMatchRefreshRate may switch the monitor to the source's frame rate;
+  // defaults off because that mode switch briefly blanks the whole display.
+  bool refresh_rate_match_user_enabled = false;
 };
 
 LibmpvApi g_api;
@@ -1048,6 +1053,10 @@ void AddExternalSubtitles(LibmpvApi& api, mpv_handle* handle, const flutter::Enc
 void MaybeMatchRefreshRate(PlayerInstance* player) {
   // See the comment on the equivalent gate in ApplyHdrForVideoParams above.
   if (player == nullptr || player->display_mode_manager == nullptr) return;
+  // Opt-in only: the display-mode change blanks the whole monitor for a
+  // second or two, which is jarring on a desktop and was reported as "my
+  // whole screen goes blank before playback starts" for ~30fps sources.
+  if (!player->refresh_rate_match_user_enabled) return;
   if (player->refresh_rate_matched) return;
   player->refresh_rate_matched = true;
   double fps = 0.0;
@@ -1171,6 +1180,10 @@ bool TryLoadGpuTexture(LibmpvApi& api, HWND hwnd,
   const int64_t id = g_next_handle++;
   auto player = std::make_unique<PlayerInstance>(&api, g_texture_registrar, dispatcher, event_sink_state,
                                                  gpu_handle, render_context, hwnd, surface_manager, id);
+  // Mirrored from the Dart-side view settings; both must be in place before
+  // StartEventThread below wires up the video-params/container-fps observers.
+  player->hdr_user_enabled = BoolArg(args, "hdrEnabled", true);
+  player->refresh_rate_match_user_enabled = BoolArg(args, "matchRefreshRate", false);
 
   auto ctx = player->copy_context;
   ctx->gpu_descriptor.struct_size = sizeof(FlutterDesktopGpuSurfaceDescriptor);
@@ -1324,6 +1337,8 @@ ProbeMap Load(const flutter::EncodableMap* args, HWND hwnd,
           const int64_t id = g_next_handle++;
           auto player =
               std::make_unique<PlayerInstance>(&api, dispatcher, event_sink_state, gpu_handle, video_hwnd, hwnd, id);
+          player->hdr_user_enabled = BoolArg(args, "hdrEnabled", true);
+          player->refresh_rate_match_user_enabled = BoolArg(args, "matchRefreshRate", false);
           player->StartEventThread();
           AddExternalSubtitles(api, gpu_handle, args);
           if (api.command(gpu_handle, load_args) >= 0) {

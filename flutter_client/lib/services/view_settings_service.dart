@@ -84,6 +84,7 @@ class ViewSettingsService extends ChangeNotifier {
   static const epgStartViewKey = 'm3ue_tv_epg_start_view';
   static const channelColumnLayoutKey = 'm3ue_tv_channel_column_layout';
   static const hdrEnabledKey = 'm3ue_tv_hdr_enabled';
+  static const matchRefreshRateKey = 'm3ue_tv_match_refresh_rate';
   static const defaultStartPageKey = 'm3ue_tv_default_start_page';
 
   final Map<String, Object?> _memory;
@@ -169,6 +170,28 @@ class ViewSettingsService extends ChangeNotifier {
     bool enabled,
   ) async {
     await _write(hdrEnabledKey, enabled);
+    notifyListeners();
+  }
+
+  /// Whether the Windows desktop backend may switch the monitor to a refresh
+  /// rate matching the source frame rate when playback starts (the classic
+  /// "24Hz mode" home-theater feature). Defaults off: the display mode change
+  /// briefly blanks the whole screen, which is disruptive on a desktop
+  /// monitor. Ignored on every platform other than the Windows mpv backend.
+  Future<bool> matchRefreshRate() async {
+    final raw = await _read(matchRefreshRateKey);
+    return raw as bool? ?? false;
+  }
+
+  /// Synchronous access to the in-memory cached refresh-rate-match setting.
+  bool get matchRefreshRateSync =>
+      (_memory[matchRefreshRateKey] as bool?) ?? false;
+
+  Future<void> setMatchRefreshRate(
+    // ignore: avoid_positional_boolean_parameters
+    bool enabled,
+  ) async {
+    await _write(matchRefreshRateKey, enabled);
     notifyListeners();
   }
 

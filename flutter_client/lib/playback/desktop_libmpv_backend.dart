@@ -144,6 +144,11 @@ class DesktopLibmpvBackend
         'isLive': source.isLive,
         'userAgent': source.userAgent,
         'headers': source.headers,
+        // Passed with the load so the native side has the right value before
+        // it observes `video-params`/`container-fps` -- a later control-method
+        // round trip would lose the race with the first-frame display switch.
+        'hdrEnabled': source.hdrEnabled,
+        'matchRefreshRate': source.matchDisplayRefreshRate,
         'externalSubtitles': source.externalSubtitles
             .map(
               (subtitle) => <String, Object?>{

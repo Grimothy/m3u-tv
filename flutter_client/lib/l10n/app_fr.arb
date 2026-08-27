@@ -701,5 +701,11 @@
   "settingsEpgStartView": "Le guide démarre à",
   "settingsEpgStartViewCurrentTime": "Heure actuelle",
   "settingsEpgStartViewPrimeTime": "Prime time",
-  "settingsDefaultStartPage": "Page de démarrage par défaut"
+  "settingsDefaultStartPage": "Page de démarrage par défaut",
+  "settingsHdrMode": "Mode HDR",
+  "settingsHdrModeHint": "Autoriser les vidéos HDR à basculer l'écran en mode HDR. Windows et Linux uniquement.",
+  "settingsMatchRefreshRate": "Adapter la fréquence de rafraîchissement",
+  "settingsMatchRefreshRateHint": "Bascule le moniteur sur la fréquence d'images de la vidéo au démarrage de la lecture. Peut brièvement rendre l'écran noir. Windows uniquement.",
+  "settingsToggleOn": "Activé",
+  "settingsToggleOff": "Désactivé"
 }

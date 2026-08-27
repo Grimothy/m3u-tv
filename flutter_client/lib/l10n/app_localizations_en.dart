@@ -1274,4 +1274,24 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsDefaultStartPage => 'Default start page';
+
+  @override
+  String get settingsHdrMode => 'HDR mode';
+
+  @override
+  String get settingsHdrModeHint =>
+      'Let HDR videos switch the display into HDR mode. Windows and Linux only.';
+
+  @override
+  String get settingsMatchRefreshRate => 'Match display refresh rate';
+
+  @override
+  String get settingsMatchRefreshRateHint =>
+      'Switch the monitor to the video\'s frame rate when playback starts. Can briefly blank the screen. Windows only.';
+
+  @override
+  String get settingsToggleOn => 'On';
+
+  @override
+  String get settingsToggleOff => 'Off';
 }

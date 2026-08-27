@@ -701,5 +701,11 @@
   "settingsEpgStartView": "EPG startet um",
   "settingsEpgStartViewCurrentTime": "Aktuelle Uhrzeit",
   "settingsEpgStartViewPrimeTime": "Prime Time",
-  "settingsDefaultStartPage": "Standardstartseite"
+  "settingsDefaultStartPage": "Standardstartseite",
+  "settingsHdrMode": "HDR-Modus",
+  "settingsHdrModeHint": "HDR-Videos dürfen das Display in den HDR-Modus schalten. Nur Windows und Linux.",
+  "settingsMatchRefreshRate": "Bildwiederholrate anpassen",
+  "settingsMatchRefreshRateHint": "Schaltet den Monitor beim Start der Wiedergabe auf die Bildrate des Videos. Kann den Bildschirm kurz schwarz werden lassen. Nur Windows.",
+  "settingsToggleOn": "Ein",
+  "settingsToggleOff": "Aus"
 }

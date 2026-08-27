@@ -481,6 +481,8 @@ class PlaybackOrchestrator {
       isLive: source.isLive,
       userAgent: source.userAgent,
       headers: source.headers,
+      hdrEnabled: source.hdrEnabled,
+      matchDisplayRefreshRate: source.matchDisplayRefreshRate,
       metadata: <String, Object?>{
         ...source.metadata,
         'transcode_stream_id': response.streamId,

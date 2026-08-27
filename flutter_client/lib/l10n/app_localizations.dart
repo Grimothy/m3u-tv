@@ -2299,6 +2299,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Default start page'**
   String get settingsDefaultStartPage;
+
+  /// No description provided for @settingsHdrMode.
+  ///
+  /// In en, this message translates to:
+  /// **'HDR mode'**
+  String get settingsHdrMode;
+
+  /// No description provided for @settingsHdrModeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Let HDR videos switch the display into HDR mode. Windows and Linux only.'**
+  String get settingsHdrModeHint;
+
+  /// No description provided for @settingsMatchRefreshRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Match display refresh rate'**
+  String get settingsMatchRefreshRate;
+
+  /// No description provided for @settingsMatchRefreshRateHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch the monitor to the video\'s frame rate when playback starts. Can briefly blank the screen. Windows only.'**
+  String get settingsMatchRefreshRateHint;
+
+  /// No description provided for @settingsToggleOn.
+  ///
+  /// In en, this message translates to:
+  /// **'On'**
+  String get settingsToggleOn;
+
+  /// No description provided for @settingsToggleOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get settingsToggleOff;
 }
 
 class _AppLocalizationsDelegate

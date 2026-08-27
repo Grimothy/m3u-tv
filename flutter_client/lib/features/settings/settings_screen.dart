@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
@@ -2083,6 +2084,13 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
   EpgStartView _epgStartView = EpgStartView.currentTime;
   ChannelColumnLayout _channelColumnLayout = ChannelColumnLayout.logoOnly;
   DefaultStartPage _defaultStartPage = DefaultStartPage.home;
+  bool _hdrEnabled = true;
+  bool _matchRefreshRate = false;
+
+  // The mpv HDR override ships on the Linux and Windows desktop backends
+  // only; refresh-rate matching is Windows-only (see DisplayModeManager).
+  static final bool _showHdrToggle = Platform.isWindows || Platform.isLinux;
+  static final bool _showRefreshRateToggle = Platform.isWindows;
 
   @override
   void initState() {
@@ -2102,12 +2110,16 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
     final startView = await widget.service.epgStartView();
     final channelColumnLayout = await widget.service.channelColumnLayout();
     final defaultStartPage = await widget.service.defaultStartPage();
+    final hdrEnabled = await widget.service.hdrEnabled();
+    final matchRefreshRate = await widget.service.matchRefreshRate();
     if (!mounted) return;
     setState(() {
       _liveTvLayout = layout;
       _epgStartView = startView;
       _channelColumnLayout = channelColumnLayout;
       _defaultStartPage = defaultStartPage;
+      _hdrEnabled = hdrEnabled;
+      _matchRefreshRate = matchRefreshRate;
     });
   }
 
@@ -2224,9 +2236,78 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
                 ),
               ],
             ),
+            if (_showHdrToggle) ...[
+              const SizedBox(height: 16),
+              _BooleanSetting(
+                label: l.settingsHdrMode,
+                hint: l.settingsHdrModeHint,
+                value: _hdrEnabled,
+                onChanged: widget.service.setHdrEnabled,
+              ),
+            ],
+            if (_showRefreshRateToggle) ...[
+              const SizedBox(height: 16),
+              _BooleanSetting(
+                label: l.settingsMatchRefreshRate,
+                hint: l.settingsMatchRefreshRateHint,
+                value: _matchRefreshRate,
+                onChanged: widget.service.setMatchRefreshRate,
+              ),
+            ],
           ],
         ),
       ),
+    );
+  }
+}
+
+/// An on/off pair of [_IntervalChip]s with a label and explanatory hint,
+/// matching the rest of the View settings section's chip styling.
+class _BooleanSetting extends StatelessWidget {
+  const _BooleanSetting({
+    required this.label,
+    required this.hint,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String hint;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l = AppLocalizations.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: theme.textTheme.bodyMedium),
+        const SizedBox(height: 4),
+        Text(
+          hint,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            _IntervalChip(
+              label: l.settingsToggleOn,
+              isSelected: value,
+              onTap: () => onChanged(true),
+            ),
+            _IntervalChip(
+              label: l.settingsToggleOff,
+              isSelected: !value,
+              onTap: () => onChanged(false),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

@@ -823,7 +823,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _openSource(PlayerArgs args) {
-    unawaited(_openAndSeek(args.toPlaybackSource()));
+    unawaited(
+      _openAndSeek(
+        args.toPlaybackSource().copyWith(
+          hdrEnabled: _hdrEnabled,
+          matchDisplayRefreshRate:
+              widget.viewSettingsService?.matchRefreshRateSync ?? false,
+        ),
+      ),
+    );
   }
 
   Future<void> _openAndSeek(PlaybackSource source) async {

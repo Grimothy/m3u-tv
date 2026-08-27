@@ -702,5 +702,11 @@
   "settingsEpgStartView": "EPG starts at",
   "settingsEpgStartViewCurrentTime": "Current time",
   "settingsEpgStartViewPrimeTime": "Prime time",
-  "settingsDefaultStartPage": "Default start page"
+  "settingsDefaultStartPage": "Default start page",
+  "settingsHdrMode": "HDR mode",
+  "settingsHdrModeHint": "Let HDR videos switch the display into HDR mode. Windows and Linux only.",
+  "settingsMatchRefreshRate": "Match display refresh rate",
+  "settingsMatchRefreshRateHint": "Switch the monitor to the video's frame rate when playback starts. Can briefly blank the screen. Windows only.",
+  "settingsToggleOn": "On",
+  "settingsToggleOff": "Off"
 }
