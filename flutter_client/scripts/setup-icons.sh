@@ -130,9 +130,10 @@ composite_square 1024 20 "$APP_BG" "$LOGO_614" "$ICONS_DIR/adaptive-icon.png"
 # splash-icon.png — dark background + 10 % padding
 composite_square 512 10 "$APP_BG" "$LOGO_409" "$ICONS_DIR/splash-icon.png"
 
-# icon-desktop.png — Windows/Linux app-icon look: gradient squircle, ~4 % edge
-# padding, transparent corners, logo filling ~85 % of the panel width.
-composite_squircle 1024 44 210 "$LOGO_800" "$ICONS_DIR/icon-desktop.png"
+# icon-desktop.png — Windows/Linux app-icon look: full-bleed gradient squircle
+# (Windows doesn't frame/mask icons, so no outer padding - only the rounded
+# corners are transparent), logo filling ~78 % of the canvas.
+composite_squircle 1024 0 210 "$LOGO_800" "$ICONS_DIR/icon-desktop.png"
 
 echo "  icon.png, adaptive-icon.png, splash-icon.png, icon-desktop.png written to $ICONS_DIR"
 
