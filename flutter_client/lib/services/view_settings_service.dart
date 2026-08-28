@@ -86,6 +86,7 @@ class ViewSettingsService extends ChangeNotifier {
   static const hdrEnabledKey = 'm3ue_tv_hdr_enabled';
   static const matchRefreshRateKey = 'm3ue_tv_match_refresh_rate';
   static const defaultStartPageKey = 'm3ue_tv_default_start_page';
+  static const windowBoundsKey = 'm3ue_tv_window_bounds';
 
   final Map<String, Object?> _memory;
   final PersistentJsonStore? store;
@@ -195,6 +196,19 @@ class ViewSettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Last persisted desktop window geometry (Windows/macOS/Linux only), or
+  /// null if the window has never been moved/resized on this install. Stored
+  /// as `{x, y, width, height, maximized}` so a cold launch can reopen where
+  /// the user left off.
+  Future<WindowBounds?> windowBounds() async {
+    final raw = await _read(windowBoundsKey);
+    return WindowBounds.fromJson(raw);
+  }
+
+  Future<void> setWindowBounds(WindowBounds bounds) async {
+    await _write(windowBoundsKey, bounds.toJson());
+  }
+
   Future<Object?> _read(String key) async {
     final store = this.store;
     if (store == null) return _memory[key];
@@ -207,4 +221,52 @@ class ViewSettingsService extends ChangeNotifier {
     _memory[key] = value;
     await store?.write(key, value);
   }
+}
+
+/// Persisted desktop window geometry. Position/size are in logical pixels as
+/// reported by `window_manager`; [maximized] takes precedence on restore.
+@immutable
+class WindowBounds {
+  const WindowBounds({
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.maximized,
+  });
+
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final bool maximized;
+
+  static WindowBounds? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final width = (raw['width'] as num?)?.toDouble();
+    final height = (raw['height'] as num?)?.toDouble();
+    final x = (raw['x'] as num?)?.toDouble();
+    final y = (raw['y'] as num?)?.toDouble();
+    if (width == null || height == null || x == null || y == null) return null;
+    // Guard against absurd or degenerate saved sizes (e.g. a minimized window
+    // that reported a near-zero rect) so restore never opens an unusable frame.
+    if (width < 400 || height < 300 || width > 20000 || height > 20000) {
+      return null;
+    }
+    return WindowBounds(
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+      maximized: raw['maximized'] == true,
+    );
+  }
+
+  Map<String, Object?> toJson() => {
+    'x': x,
+    'y': y,
+    'width': width,
+    'height': height,
+    'maximized': maximized,
+  };
 }

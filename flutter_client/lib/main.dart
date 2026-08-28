@@ -17,6 +17,7 @@ import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/persistent_store.dart';
 import 'package:m3u_tv/services/production_storage.dart';
+import 'package:m3u_tv/services/window_state_service.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/media_image_cache_manager.dart';
 import 'package:path_provider/path_provider.dart';
@@ -28,10 +29,10 @@ Future<void> main() async {
   tz_data.initializeTimeZones();
   final systemUiPolicy = SystemUiPolicy();
   await systemUiPolicy.applyBrowsing();
-  if (!kIsWeb && Platform.isMacOS) {
-    await _configureMacOSWindow();
-  }
   final appState = await _buildAppState();
+  if (_isDesktop) {
+    await _configureDesktopWindow(appState);
+  }
   final nativeTelevisionHint = await resolveNativeTelevisionHint();
   if (_isMobilePushCapable(nativeTelevisionHint)) {
     unawaited(_initPushNotifications(appState));
@@ -52,22 +53,35 @@ Future<void> main() async {
   );
 }
 
-/// Hides the native titlebar and lets app content extend under the traffic
-/// lights (macOS "hidden inline titlebar" look). AppShell paints the app's
-/// background color (0xFF09090b) into a DragToMoveArea + top inset for
-/// macOS desktop so the window stays draggable, the titlebar reads as a
-/// solid bar, and the sidebar logo doesn't sit under the traffic lights.
-Future<void> _configureMacOSWindow() async {
+bool get _isDesktop =>
+    !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+
+/// Initializes the desktop window: restores the size/position the user left it
+/// at last run, then keeps it in sync via a [WindowStateService] listener.
+///
+/// On macOS this also hides the native titlebar and lets app content extend
+/// under the traffic lights (the "hidden inline titlebar" look). AppShell
+/// paints the app's background color (0xFF09090b) into a DragToMoveArea + top
+/// inset for macOS desktop so the window stays draggable, the titlebar reads
+/// as a solid bar, and the sidebar logo doesn't sit under the traffic lights.
+Future<void> _configureDesktopWindow(AppStateController appState) async {
   await windowManager.ensureInitialized();
-  const windowOptions = WindowOptions(
-    titleBarStyle: TitleBarStyle.hidden,
-    windowButtonVisibility: true,
-  );
+  final windowOptions = Platform.isMacOS
+      ? const WindowOptions(
+          titleBarStyle: TitleBarStyle.hidden,
+          windowButtonVisibility: true,
+        )
+      : const WindowOptions();
+  final windowState = WindowStateService(appState.viewSettingsService);
   await windowManager.waitUntilReadyToShow(windowOptions, () async {
-    await windowManager.setTitle('');
+    if (Platform.isMacOS) {
+      await windowManager.setTitle('');
+    }
+    await windowState.restore();
     await windowManager.show();
     await windowManager.focus();
   });
+  windowManager.addListener(windowState);
 }
 
 /// Push is mobile-only: TV builds (Android TV, tvOS) rely on the existing

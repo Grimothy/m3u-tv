@@ -115,5 +115,50 @@ void main() {
         expect(reader.epgStartViewSync, EpgStartView.primeTime);
       },
     );
+
+    test(
+      'window bounds default to null before anything is persisted',
+      () async {
+        expect(await service.windowBounds(), isNull);
+      },
+    );
+
+    test('persists and restores window bounds', () async {
+      await service.setWindowBounds(
+        const WindowBounds(
+          x: 120,
+          y: 64,
+          width: 1280,
+          height: 800,
+          maximized: false,
+        ),
+      );
+
+      final restored = await ViewSettingsService(memory: memory).windowBounds();
+      expect(restored, isNotNull);
+      expect(restored!.x, 120);
+      expect(restored.y, 64);
+      expect(restored.width, 1280);
+      expect(restored.height, 800);
+      expect(restored.maximized, isFalse);
+    });
+
+    test('rejects degenerate or absurd saved window sizes', () {
+      expect(
+        WindowBounds.fromJson({
+          'x': 0,
+          'y': 0,
+          'width': 40,
+          'height': 30,
+          'maximized': false,
+        }),
+        isNull,
+      );
+      expect(
+        WindowBounds.fromJson({'x': 0, 'y': 0, 'width': 1024}),
+        isNull,
+      );
+      expect(WindowBounds.fromJson('not a map'), isNull);
+    });
   });
 }
