@@ -921,38 +921,51 @@ jobs:
             flutter_client/m3u-tv-v${{ needs.validate.outputs.version }}-windows.zip
             flutter_client/m3u-tv-v${{ needs.validate.outputs.version }}-windows.zip.sha256
 
-      - name: Build MSIX package (Microsoft Store)
-        # --version overrides msix_config's msix_version in pubspec.yaml so the
-        # package version tracks the release tag instead of staying pinned to
-        # whatever was last hand-edited there. --output-path/--output-name write
-        # the file directly to the working directory under the release's naming
-        # convention instead of the default build\windows\x64\runner\Release\m3u_tv.msix.
-        # `store: true` is already set in pubspec.yaml msix_config (required for
-        # Partner Center to accept the package - see project memory on this), so
-        # no signing certificate is needed here; Partner Center signs on ingestion.
-        run: |
-          $V = "${{ needs.validate.outputs.version }}"
-          dart run msix:create --version="${V}.0" --output-path=. --output-name="m3u-tv-v${V}-windows"
+      # The Microsoft Store package (MSIX) is built and submitted manually, not in
+      # CI. Public releases ship the portable ZIP plus the per-user .exe installer
+      # below; users who want the fully trusted, warning-free path install from
+      # the Store.
 
-      - name: Verify MSIX package
+      - name: Build Windows installer (.exe)
+        # windows-latest ships Inno Setup preinstalled; fall back to Chocolatey if
+        # ISCC is ever dropped from the image. /DAppVersion stamps the release tag
+        # into the installer; /DSourceDir points ISCC at the Flutter Release bundle.
         run: |
           $V = "${{ needs.validate.outputs.version }}"
-          $Msix = "m3u-tv-v${V}-windows.msix"
-          if (-not (Test-Path $Msix -PathType Leaf)) {
-            throw "Expected MSIX package not found: $Msix"
+          $Iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $Iscc)) {
+            choco install innosetup --no-progress -y
           }
-          if ((Get-Item $Msix).Length -eq 0) {
-            throw "MSIX package is empty: $Msix"
+          if (-not (Test-Path $Iscc)) {
+            $Iscc = (Get-Command ISCC.exe).Source
           }
-          $Hash = (Get-FileHash -Algorithm SHA256 $Msix).Hash.ToLowerInvariant()
-          "$Hash  $Msix" | Set-Content "$Msix.sha256"
+          & $Iscc `
+            "/DAppVersion=$V" `
+            "/DSourceDir=$(Resolve-Path 'build\windows\x64\runner\Release')" `
+            "/O$(Get-Location)" `
+            "/Fm3u-tv-v${V}-windows-setup" `
+            "windows\installer\m3u-tv.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+
+      - name: Verify Windows installer
+        run: |
+          $V = "${{ needs.validate.outputs.version }}"
+          $Setup = "m3u-tv-v${V}-windows-setup.exe"
+          if (-not (Test-Path $Setup -PathType Leaf)) {
+            throw "Expected installer not found: $Setup"
+          }
+          if ((Get-Item $Setup).Length -eq 0) {
+            throw "Installer is empty: $Setup"
+          }
+          $Hash = (Get-FileHash -Algorithm SHA256 $Setup).Hash.ToLowerInvariant()
+          "$Hash  $Setup" | Set-Content "$Setup.sha256"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: windows-msix
+          name: windows-installer
           path: |
-            flutter_client/m3u-tv-v${{ needs.validate.outputs.version }}-windows.msix
-            flutter_client/m3u-tv-v${{ needs.validate.outputs.version }}-windows.msix.sha256
+            flutter_client/m3u-tv-v${{ needs.validate.outputs.version }}-windows-setup.exe
+            flutter_client/m3u-tv-v${{ needs.validate.outputs.version }}-windows-setup.exe.sha256
 
   # ── GitHub Release ─────────────────────────────────────────────────────────
   release:
@@ -989,11 +1002,11 @@ jobs:
           name: windows-zip
           path: artifacts/windows-zips/
 
-      - name: Download Windows MSIX
+      - name: Download Windows installer
         uses: actions/download-artifact@v8
         with:
-          name: windows-msix
-          path: artifacts/windows-msix/
+          name: windows-installer
+          path: artifacts/windows-installer/
 
       - name: Verify non-Apple assets
         run: |
@@ -1003,7 +1016,7 @@ jobs:
             "artifacts/android-apks/m3u-tv-v${V}-android.apk" \
             "artifacts/linux-zips/m3u-tv-v${V}-linux.zip" \
             "artifacts/windows-zips/m3u-tv-v${V}-windows.zip" \
-            "artifacts/windows-msix/m3u-tv-v${V}-windows.msix"; do
+            "artifacts/windows-installer/m3u-tv-v${V}-windows-setup.exe"; do
             test -s "$asset"
             test -s "$asset.sha256"
             (cd "$(dirname "$asset")" && sha256sum -c "$(basename "$asset").sha256")
@@ -1035,8 +1048,8 @@ jobs:
             "artifacts/linux-zips/m3u-tv-v${V}-linux.zip.sha256"
             "artifacts/windows-zips/m3u-tv-v${V}-windows.zip"
             "artifacts/windows-zips/m3u-tv-v${V}-windows.zip.sha256"
-            "artifacts/windows-msix/m3u-tv-v${V}-windows.msix"
-            "artifacts/windows-msix/m3u-tv-v${V}-windows.msix.sha256"
+            "artifacts/windows-installer/m3u-tv-v${V}-windows-setup.exe"
+            "artifacts/windows-installer/m3u-tv-v${V}-windows-setup.exe.sha256"
           )
 
           if gh release view "$TAG" > /dev/null 2>&1; then
@@ -1061,7 +1074,7 @@ jobs:
           echo "| Android + Android TV | \`m3u-tv-${V}-android.apk\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Linux | \`m3u-tv-${V}-linux.zip\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Windows (portable, unsigned) | \`m3u-tv-${V}-windows.zip\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Windows (Microsoft Store, signed by Partner Center) | \`m3u-tv-${V}-windows.msix\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows (installer, unsigned) | \`m3u-tv-${V}-windows-setup.exe\` |" >> $GITHUB_STEP_SUMMARY
 
   # ── Apple Release ─────────────────────────────────────────────────────────
   release-apple:
