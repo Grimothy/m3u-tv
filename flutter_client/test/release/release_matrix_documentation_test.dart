@@ -534,7 +534,7 @@ void main() {
       );
       expect(
         releaseSummary,
-        contains('| Windows (Microsoft Store, signed by Partner Center) |'),
+        contains('| Windows (installer, unsigned) |'),
       );
     },
   );
