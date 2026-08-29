@@ -48,6 +48,7 @@ class LiveTvScreen extends ConsumerStatefulWidget {
     this.onSidebarActivate,
     this.onScheduleProgram,
     this.onEnsureEpg,
+    this.onCatchupEpgRequested,
     this.onCancelRecording,
     this.onCancelAndDeleteRecording,
     this.onRecordSeries,
@@ -104,6 +105,14 @@ class LiveTvScreen extends ConsumerStatefulWidget {
   /// if not already fresh. Called per-item as the visible list/grid builds,
   /// so only channels actually scrolled into view get fetched.
   final EnsureEpg? onEnsureEpg;
+
+  /// Fetches the full catchup-retention window of EPG programs for a channel
+  /// when the user opens the catchup dialog. The default-guide fetch driven by
+  /// [onEnsureEpg] only asks for today+tomorrow, so without this the dialog
+  /// would only ever show history that happened to land in the cache. Nullable
+  /// so the screen works unwired - the dialog falls back to cache-only when
+  /// the callback is null.
+  final Future<void> Function(Channel)? onCatchupEpgRequested;
 
   /// Wired from AppShell to `AppShell._enterFullScreenDetail`/
   /// `_exitFullScreenDetail`. Multiview opens via a plain `Navigator.push`
@@ -597,13 +606,13 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
       case _ChannelContextAction.toggleFavorite:
         await _toggleFavorite(channel);
       case _ChannelContextAction.catchupShows:
-        final programs = ref
-            .read(epgServiceProvider)
-            .catchupProgramsForChannel(channel);
+        final epgService = ref.read(epgServiceProvider);
+        final epgLoad = widget.onCatchupEpgRequested?.call(channel);
         final program = await showCatchupShowsDialog(
           context,
           channel: channel,
-          programs: programs,
+          epgService: epgService,
+          epgLoad: epgLoad,
         );
         if (program != null) {
           widget.onCatchupProgramSelect?.call(channel, program);

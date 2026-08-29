@@ -154,6 +154,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get catchupShowsEmpty => 'Aucun programme de rattrapage disponible';
 
   @override
+  String get catchupShowsLoading => 'Chargement des programmes de rattrapage…';
+
+  @override
   String get liveTvAddMultiview => 'Ajouter à Multivue';
 
   @override

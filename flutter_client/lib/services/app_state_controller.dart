@@ -390,6 +390,7 @@ class AppStateController extends ChangeNotifier {
   final Set<int> _pendingEpgChannelIds = <int>{};
   final Set<int> _pendingForcedEpgChannelIds = <int>{};
   final Map<String, DateTime> _fetchedEpgRanges = <String, DateTime>{};
+  final Map<int, DateTime> _catchupEpgFetchedAt = <int, DateTime>{};
   Timer? _epgFetchDebounce;
   DateTime? _pendingEpgStartDate;
   DateTime? _pendingEpgEndDate;
@@ -2995,6 +2996,55 @@ class AppStateController extends ChangeNotifier {
     if (!added) return;
     _epgFetchDebounce?.cancel();
     _epgFetchDebounce = Timer(_epgFetchDebounceDelay, _flushPendingEpgFetch);
+  }
+
+  /// Fetches the full retention window of EPG programs for [channel] so the
+  /// catchup dialog can list history beyond today+tomorrow (which is all
+  /// `ensureEpgForChannels` ever asks the server for).
+  ///
+  /// Deliberately does not read or write `_activeEpgRangeKey`,
+  /// `_pendingEpg*`, or `_epgRequestGeneration`: those gate the default-guide
+  /// range fetches that the list/grid itemBuilders kick off on every rebuild,
+  /// which would race a dialog-open fetch and discard the response.
+  Future<void> ensureCatchupEpgForChannel(Channel channel) async {
+    if (_sourceType != AppSourceType.xtream) return;
+    final retentionDays = EpgService.effectiveCatchupRetentionDays(
+      channel.catchupSupported,
+      channel.catchupDays,
+    );
+    if (retentionDays <= 0) return;
+    final lastSuccess = _catchupEpgFetchedAt[channel.id];
+    final now = DateTime.now();
+    if (lastSuccess != null &&
+        now.difference(lastSuccess) < epgService.cacheTtl) {
+      return;
+    }
+    final today = DateTime(now.year, now.month, now.day);
+    // canReplay admits programs starting as far back as now - retentionDays,
+    // a timestamp on calendar day (today - retentionDays) — so that partial
+    // day must be fetched too; canReplay filters out its too-old programs.
+    final start = DateTime.utc(
+      today.year,
+      today.month,
+      today.day - retentionDays,
+    );
+    final end = DateTime.utc(today.year, today.month, today.day);
+    try {
+      final programs = await xtreamService.getEpgBatch(
+        [channel],
+        startDate: start,
+        endDate: end,
+      );
+      epgService.mergePrograms(
+        programs,
+        channelIds: [_epgChannelId(channel)],
+        replaceExisting: false,
+        markFresh: false,
+      );
+      _catchupEpgFetchedAt[channel.id] = DateTime.now();
+    } on Object catch (_) {
+      _catchupEpgFetchedAt.remove(channel.id);
+    }
   }
 
   Future<void> _flushPendingEpgFetch() async {

@@ -78,6 +78,7 @@
   "liveTvRemoveFavorite": "Retirer des favoris",
   "liveTvCatchupShows": "Programmes de rattrapage",
   "catchupShowsEmpty": "Aucun programme de rattrapage disponible",
+  "catchupShowsLoading": "Chargement des programmes de rattrapage…",
   "liveTvAddMultiview": "Ajouter à Multivue",
   "liveTvRemoveMultiview": "Retirer de Multivue",
   "liveTvMultiviewFull": "Multivue est complet (9 flux max)",

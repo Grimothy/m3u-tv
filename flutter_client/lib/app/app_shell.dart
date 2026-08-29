@@ -1178,6 +1178,7 @@ class AppShellState extends ConsumerState<AppShell>
         onScheduleProgram: (channel, program) =>
             unawaited(_scheduleDvr(context, channel, program)),
         onEnsureEpg: _appState.ensureEpgForChannels,
+        onCatchupEpgRequested: _appState.ensureCatchupEpgForChannel,
         onCancelRecording: (uuid) => _appState.cancelDvrRecording(uuid),
         onCancelAndDeleteRecording: _cancelAndDeleteRecording,
         onRecordSeries: (channel, program) => _createDvrSeriesRule(

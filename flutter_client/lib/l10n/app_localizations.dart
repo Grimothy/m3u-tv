@@ -362,6 +362,12 @@ abstract class AppLocalizations {
   /// **'No catchup shows available'**
   String get catchupShowsEmpty;
 
+  /// No description provided for @catchupShowsLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading catchup shows…'**
+  String get catchupShowsLoading;
+
   /// No description provided for @liveTvAddMultiview.
   ///
   /// In en, this message translates to:

@@ -78,6 +78,7 @@
   "liveTvRemoveFavorite": "Aus Favoriten entfernen",
   "liveTvCatchupShows": "Catchup-Sendungen",
   "catchupShowsEmpty": "Keine Catchup-Sendungen verfügbar",
+  "catchupShowsLoading": "Catchup-Sendungen werden geladen…",
   "liveTvAddMultiview": "Zu Multiview hinzufügen",
   "liveTvRemoveMultiview": "Aus Multiview entfernen",
   "liveTvMultiviewFull": "Multiview ist voll (max. 9 Streams)",

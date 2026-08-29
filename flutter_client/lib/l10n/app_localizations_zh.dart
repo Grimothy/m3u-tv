@@ -148,6 +148,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get catchupShowsEmpty => '暂无可回看节目';
 
   @override
+  String get catchupShowsLoading => '正在加载回看节目…';
+
+  @override
   String get liveTvAddMultiview => '添加到多画面';
 
   @override
