@@ -73,10 +73,14 @@ class _CatchupShowsListState extends State<_CatchupShowsList> {
     final load = widget.epgLoad;
     if (load != null) {
       unawaited(
-        load.whenComplete(() {
-          if (!mounted) return;
-          setState(() => _loading = false);
-        }),
+        load
+            .whenComplete(() {
+              if (!mounted) return;
+              setState(() => _loading = false);
+            })
+            // The fetch swallows its own errors, but guard anyway so a future
+            // contract change can't surface here as an unhandled async error.
+            .catchError((Object _) {}),
       );
     } else {
       _loading = false;
@@ -167,7 +171,7 @@ class _CatchupShowsListState extends State<_CatchupShowsList> {
         final endFormat = DateFormat.jm(languageTag);
         String times(EpgProgram p) =>
             '${startFormat.format(p.start.toLocal())} '
-            '– ${endFormat.format(p.end.toLocal())}';
+            '- ${endFormat.format(p.end.toLocal())}';
 
         return DpadRegion(
           child: SizedBox(

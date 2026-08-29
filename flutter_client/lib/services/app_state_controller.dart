@@ -391,6 +391,7 @@ class AppStateController extends ChangeNotifier {
   final Set<int> _pendingForcedEpgChannelIds = <int>{};
   final Map<String, DateTime> _fetchedEpgRanges = <String, DateTime>{};
   final Map<int, DateTime> _catchupEpgFetchedAt = <int, DateTime>{};
+  final Set<int> _inFlightCatchupEpgChannelIds = <int>{};
   Timer? _epgFetchDebounce;
   DateTime? _pendingEpgStartDate;
   DateTime? _pendingEpgEndDate;
@@ -3005,8 +3006,26 @@ class AppStateController extends ChangeNotifier {
   /// Deliberately does not read or write `_activeEpgRangeKey`,
   /// `_pendingEpg*`, or `_epgRequestGeneration`: those gate the default-guide
   /// range fetches that the list/grid itemBuilders kick off on every rebuild,
-  /// which would race a dialog-open fetch and discard the response.
+  /// which would race a dialog-open fetch and discard the response. It does
+  /// re-check `_sourceOperationGeneration` after the network round-trips so a
+  /// source switch mid-fetch can't merge stale programs back into a guide
+  /// that `_resetEpgSession` just cleared.
+  ///
+  /// Concurrent calls for the same channel collapse to one fetch, and
+  /// successes are memoized against [EpgService.cacheTtl] (the memo is cleared
+  /// by `_resetEpgSession`).
   Future<void> ensureCatchupEpgForChannel(Channel channel) async {
+    // A second open while a fetch is still running returns right away; the
+    // dialog's ListenableBuilder picks up the merged history when it lands.
+    if (!_inFlightCatchupEpgChannelIds.add(channel.id)) return;
+    try {
+      await _fetchCatchupEpgForChannel(channel);
+    } finally {
+      _inFlightCatchupEpgChannelIds.remove(channel.id);
+    }
+  }
+
+  Future<void> _fetchCatchupEpgForChannel(Channel channel) async {
     if (_sourceType != AppSourceType.xtream) return;
     final retentionDays = EpgService.effectiveCatchupRetentionDays(
       channel.catchupSupported,
@@ -3019,9 +3038,10 @@ class AppStateController extends ChangeNotifier {
         now.difference(lastSuccess) < epgService.cacheTtl) {
       return;
     }
+    final sourceGeneration = _sourceOperationGeneration.current;
     final today = DateTime(now.year, now.month, now.day);
     // canReplay admits programs starting as far back as now - retentionDays,
-    // a timestamp on calendar day (today - retentionDays) — so that partial
+    // a timestamp on calendar day (today - retentionDays), so that partial
     // day must be fetched too; canReplay filters out its too-old programs.
     final start = DateTime.utc(
       today.year,
@@ -3035,6 +3055,9 @@ class AppStateController extends ChangeNotifier {
         startDate: start,
         endDate: end,
       );
+      if (_disposed || _sourceOperationGeneration.isStale(sourceGeneration)) {
+        return;
+      }
       epgService.mergePrograms(
         programs,
         channelIds: [_epgChannelId(channel)],
@@ -3203,6 +3226,7 @@ class AppStateController extends ChangeNotifier {
     _pendingEpgChannelIds.clear();
     _pendingForcedEpgChannelIds.clear();
     _fetchedEpgRanges.clear();
+    _catchupEpgFetchedAt.clear();
     _pendingEpgStartDate = null;
     _pendingEpgEndDate = null;
     _activeEpgRangeKey = '';
