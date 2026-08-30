@@ -1089,11 +1089,17 @@ class XtreamService {
     );
   }
 
+  /// [dropPlaceholders] skips m3u-editor's synthetic gap-fill programmes
+  /// (`dummy-` ids, titled with the channel name, "No information available").
+  /// The catchup dialog asks for this: a retention day with no real cached
+  /// EPG otherwise comes back as ~24 hourly placeholder rows, each of which
+  /// would start a timeshift stream over dead air.
   Future<List<EpgProgram>> getEpgBatch(
     List<Channel> channels, {
     int limit = 8,
     DateTime? startDate,
     DateTime? endDate,
+    bool dropPlaceholders = false,
   }) async {
     if (channels.isEmpty) return const <EpgProgram>[];
     final dates = <DateTime?>[null];
@@ -1145,7 +1151,11 @@ class XtreamService {
           },
         );
         programs.addAll(
-          _parseEpgPrograms(response, channelIdsByStream: channelIdsByStream),
+          _parseEpgPrograms(
+            response,
+            channelIdsByStream: channelIdsByStream,
+            dropPlaceholders: dropPlaceholders,
+          ),
         );
       }
     }
@@ -1403,6 +1413,7 @@ List<EpgProgram> _parseEpgPrograms(
   Object? response, {
   String? fallbackChannelId,
   Map<String, String> channelIdsByStream = const <String, String>{},
+  bool dropPlaceholders = false,
 }) {
   final programs = <EpgProgram>[];
   void addPrograms(Object? raw, String? channelId) {
@@ -1411,6 +1422,7 @@ List<EpgProgram> _parseEpgPrograms(
         _asMap(item),
         channelId,
         channelIdsByStream,
+        dropPlaceholders: dropPlaceholders,
       );
       if (program != null) programs.add(program);
     }
@@ -1455,8 +1467,15 @@ List<Object?> _epgListingList(Object? value) {
 EpgProgram? _epgProgramFromMap(
   Map<String, Object?> json,
   String? fallbackChannelId,
-  Map<String, String> channelIdsByStream,
-) {
+  Map<String, String> channelIdsByStream, {
+  bool dropPlaceholders = false,
+}) {
+  if (dropPlaceholders) {
+    // m3u-editor fills EPG gaps with synthetic hourly rows whose id is
+    // `dummy-<md5>` (see XtreamApiController get_epg_batch).
+    final id = _stringOrNull(json['id']);
+    if (id != null && id.startsWith('dummy-')) return null;
+  }
   final streamId = _stringOrNull(json['stream_id']);
   // Prefer the caller-resolved key (fallbackChannelId, derived from the
   // stream→channel mapping) so that EpgService stores programs under the same

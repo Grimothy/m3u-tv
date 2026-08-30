@@ -172,6 +172,72 @@ void main() {
   );
 
   test(
+    'synthetic dummy- gap-fill programmes are filtered out of the merge',
+    () async {
+      final transport = _CatchupTransport()..includeDummyRow = true;
+      final controller = _controller(transport);
+      addTearDown(controller.dispose);
+      expect(await controller.connectXtream(_credentials), isTrue);
+
+      await controller.ensureCatchupEpgForChannel(_catchupChannel);
+
+      final titles = controller.epgService
+          .programsForChannel(_catchupChannel)
+          .map((program) => program.title)
+          .toSet();
+      expect(titles, contains('Catchup Fixture'));
+      // The dummy row is titled with the channel name - it must not survive.
+      expect(titles, isNot(contains('Route News')));
+    },
+  );
+
+  test(
+    'a successful catchup fetch marks the channel fresh so a later default '
+    'guide fetch will not replace the retention window back out',
+    () async {
+      final transport = _CatchupTransport();
+      final controller = _controller(transport);
+      addTearDown(controller.dispose);
+      expect(await controller.connectXtream(_credentials), isTrue);
+
+      expect(
+        controller.epgService.hasFreshDataForChannel(_catchupChannel),
+        isFalse,
+      );
+
+      await controller.ensureCatchupEpgForChannel(_catchupChannel);
+
+      expect(
+        controller.epgService.hasFreshDataForChannel(_catchupChannel),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'a second concurrent open resolves only when the shared fetch does',
+    () async {
+      final transport = _CatchupTransport();
+      final gate = Completer<void>();
+      transport.beforeEpgBatch = gate.future;
+      final controller = _controller(transport);
+      addTearDown(controller.dispose);
+      expect(await controller.connectXtream(_credentials), isTrue);
+
+      final first = controller.ensureCatchupEpgForChannel(_catchupChannel);
+      final second = controller.ensureCatchupEpgForChannel(_catchupChannel);
+      var secondDone = false;
+      unawaited(second.then((_) => secondDone = true));
+      await pumpEventQueue();
+      expect(secondDone, isFalse);
+
+      gate.complete();
+      await Future.wait([first, second]);
+      expect(secondDone, isTrue);
+    },
+  );
+
+  test(
     'a response that lands after a source switch is not merged into the new '
     'guide',
     () async {
@@ -228,6 +294,7 @@ AppStateController _controller(_CatchupTransport transport) {
 
 class _CatchupTransport {
   bool failEpgBatch = false;
+  bool includeDummyRow = false;
   Future<void>? beforeEpgBatch;
   final List<String> epgDates = <String>[];
 
@@ -280,7 +347,19 @@ class _CatchupTransport {
         final start = DateTime.parse('${date}T09:00:00Z');
         return <String, Object?>{
           '101': <Map<String, Object?>>[
+            if (includeDummyRow)
+              <String, Object?>{
+                'id': 'dummy-${date.replaceAll('-', '')}',
+                'stream_id': 101,
+                'title': 'Route News',
+                'description': 'No information available',
+                'start': start
+                    .subtract(const Duration(hours: 1))
+                    .toIso8601String(),
+                'end': start.toIso8601String(),
+              },
             <String, Object?>{
+              'id': 'real-${date.replaceAll('-', '')}',
               'stream_id': 101,
               'title': 'Catchup Fixture',
               'description': 'Fixture',

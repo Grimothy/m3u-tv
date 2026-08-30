@@ -391,7 +391,8 @@ class AppStateController extends ChangeNotifier {
   final Set<int> _pendingForcedEpgChannelIds = <int>{};
   final Map<String, DateTime> _fetchedEpgRanges = <String, DateTime>{};
   final Map<int, DateTime> _catchupEpgFetchedAt = <int, DateTime>{};
-  final Set<int> _inFlightCatchupEpgChannelIds = <int>{};
+  final Map<int, Completer<void>> _inFlightCatchupEpgFetches =
+      <int, Completer<void>>{};
   Timer? _epgFetchDebounce;
   DateTime? _pendingEpgStartDate;
   DateTime? _pendingEpgEndDate;
@@ -3011,17 +3012,33 @@ class AppStateController extends ChangeNotifier {
   /// source switch mid-fetch can't merge stale programs back into a guide
   /// that `_resetEpgSession` just cleared.
   ///
-  /// Concurrent calls for the same channel collapse to one fetch, and
-  /// successes are memoized against [EpgService.cacheTtl] (the memo is cleared
-  /// by `_resetEpgSession`).
+  /// On success it also marks the channel fetched in [EpgService] so the
+  /// itemBuilders' no-date `ensureEpgForChannels` calls stop returning true
+  /// for it until [EpgService.cacheTtl] lapses. Without that, the very
+  /// `notifyListeners` this merge fires would rebuild the list, trigger a
+  /// default-guide fetch, and `replaceExisting` the retention window straight
+  /// back out. The freshness mark and the [_catchupEpgFetchedAt] memo share
+  /// the same TTL, so they lapse together: once the guide is allowed to wipe
+  /// history again, the next dialog open re-fetches it.
+  ///
+  /// Concurrent calls for the same channel await one shared fetch, and
+  /// successes are memoized against [EpgService.cacheTtl] (both the memo and
+  /// the in-flight map are cleared by `_resetEpgSession`).
   Future<void> ensureCatchupEpgForChannel(Channel channel) async {
-    // A second open while a fetch is still running returns right away; the
-    // dialog's ListenableBuilder picks up the merged history when it lands.
-    if (!_inFlightCatchupEpgChannelIds.add(channel.id)) return;
+    final existing = _inFlightCatchupEpgFetches[channel.id];
+    if (existing != null) {
+      await existing.future;
+      return;
+    }
+    final completer = Completer<void>();
+    _inFlightCatchupEpgFetches[channel.id] = completer;
     try {
       await _fetchCatchupEpgForChannel(channel);
     } finally {
-      _inFlightCatchupEpgChannelIds.remove(channel.id);
+      if (identical(_inFlightCatchupEpgFetches[channel.id], completer)) {
+        _inFlightCatchupEpgFetches.remove(channel.id);
+      }
+      completer.complete();
     }
   }
 
@@ -3043,6 +3060,8 @@ class AppStateController extends ChangeNotifier {
     // canReplay admits programs starting as far back as now - retentionDays,
     // a timestamp on calendar day (today - retentionDays), so that partial
     // day must be fetched too; canReplay filters out its too-old programs.
+    // The final day request also returns tomorrow (the server fetches
+    // date + date+1), so this covers the whole default-guide window too.
     final start = DateTime.utc(
       today.year,
       today.month,
@@ -3054,16 +3073,19 @@ class AppStateController extends ChangeNotifier {
         [channel],
         startDate: start,
         endDate: end,
+        dropPlaceholders: true,
       );
       if (_disposed || _sourceOperationGeneration.isStale(sourceGeneration)) {
         return;
       }
-      epgService.mergePrograms(
-        programs,
-        channelIds: [_epgChannelId(channel)],
-        replaceExisting: false,
-        markFresh: false,
-      );
+      epgService
+        ..markFetched([_epgChannelId(channel)])
+        ..mergePrograms(
+          programs,
+          channelIds: [_epgChannelId(channel)],
+          replaceExisting: false,
+          markFresh: false,
+        );
       _catchupEpgFetchedAt[channel.id] = DateTime.now();
     } on Object catch (_) {
       _catchupEpgFetchedAt.remove(channel.id);
@@ -3227,6 +3249,7 @@ class AppStateController extends ChangeNotifier {
     _pendingForcedEpgChannelIds.clear();
     _fetchedEpgRanges.clear();
     _catchupEpgFetchedAt.clear();
+    _inFlightCatchupEpgFetches.clear();
     _pendingEpgStartDate = null;
     _pendingEpgEndDate = null;
     _activeEpgRangeKey = '';
