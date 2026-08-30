@@ -154,6 +154,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get catchupShowsEmpty => 'No hay programas de catchup disponibles';
 
   @override
+  String get catchupShowsLoading => 'Cargando programas de catchup…';
+
+  @override
   String get liveTvAddMultiview => 'Añadir a Multivista';
 
   @override

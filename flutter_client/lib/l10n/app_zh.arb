@@ -78,6 +78,7 @@
   "liveTvRemoveFavorite": "取消收藏",
   "liveTvCatchupShows": "回看节目",
   "catchupShowsEmpty": "暂无可回看节目",
+  "catchupShowsLoading": "正在加载回看节目…",
   "liveTvAddMultiview": "添加到多画面",
   "liveTvRemoveMultiview": "从多画面移除",
   "liveTvMultiviewFull": "多画面已满（最多 9 路）",
