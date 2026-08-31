@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/domain_models.dart';
+import 'package:m3u_tv/shared/catalog_text_filter.dart';
 import 'package:m3u_tv/shared/dpad_tab_bar.dart';
 import 'package:m3u_tv/shared/epg_show_results.dart';
 import 'package:m3u_tv/shared/epg_show_search_controller.dart';
@@ -55,12 +58,29 @@ class SearchScreen extends ConsumerStatefulWidget {
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
+/// The three catalog filters only re-run once typing pauses for this long.
+/// [_SearchScreenState._query] still tracks every keystroke (it drives the
+/// text field and the EPG show search); [_SearchScreenState._appliedQuery]
+/// lags behind it by up to one debounce and drives the catalog filtering.
+const _searchDebounce = Duration(milliseconds: 200);
+
 class _SearchScreenState extends ConsumerState<SearchScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   String _query = '';
+  String _appliedQuery = '';
+  Timer? _debounce;
 
   final _showSearchController = EpgShowSearchController();
+  final CatalogTextFilter<Channel> _channelFilter = CatalogTextFilter(
+    (c) => c.name,
+  );
+  final CatalogTextFilter<VodItem> _vodFilter = CatalogTextFilter(
+    (v) => v.name,
+  );
+  final CatalogTextFilter<Series> _seriesFilter = CatalogTextFilter(
+    (s) => s.name,
+  );
 
   @override
   void initState() {
@@ -75,6 +95,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _tabController.dispose();
     _showSearchController
       ..removeListener(_onShowSearchChanged)
@@ -82,32 +103,41 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     super.dispose();
   }
 
+  void _onQueryChanged(String value) {
+    // The EPG show search runs its own 350ms debounce, so feed it every
+    // keystroke; only the synchronous catalog filter is debounced here.
+    _showSearchController.onQueryChanged(value, widget.onSearchShows);
+    _debounce?.cancel();
+    setState(() => _query = value);
+    if (value.trim().isEmpty) {
+      _appliedQuery = '';
+      return;
+    }
+    // Apply the first character of a fresh query immediately so results show
+    // without a debounce-length flash of the empty state; only throttle
+    // subsequent keystrokes while results are already on screen.
+    if (_appliedQuery.isEmpty) {
+      _appliedQuery = value;
+      return;
+    }
+    _debounce = Timer(_searchDebounce, () {
+      if (mounted && value != _appliedQuery) {
+        setState(() => _appliedQuery = value);
+      }
+    });
+  }
+
   String get _normalizedQuery => _query.trim().toLowerCase();
   bool get _hasQuery => _normalizedQuery.isNotEmpty;
 
-  List<Channel> _filterChannels(List<Channel> channels) => _hasQuery
-      ? channels
-            .where(
-              (c) => c.name.toLowerCase().contains(_normalizedQuery),
-            )
-            .toList(growable: false)
-      : const [];
+  List<Channel> _filterChannels(List<Channel> channels) =>
+      _channelFilter.filterWhole(channels, _appliedQuery);
 
-  List<VodItem> _filterVodItems(List<VodItem> vodItems) => _hasQuery
-      ? vodItems
-            .where(
-              (v) => v.name.toLowerCase().contains(_normalizedQuery),
-            )
-            .toList(growable: false)
-      : const [];
+  List<VodItem> _filterVodItems(List<VodItem> vodItems) =>
+      _vodFilter.filterWhole(vodItems, _appliedQuery);
 
-  List<Series> _filterSeriesList(List<Series> seriesList) => _hasQuery
-      ? seriesList
-            .where(
-              (s) => s.name.toLowerCase().contains(_normalizedQuery),
-            )
-            .toList(growable: false)
-      : const [];
+  List<Series> _filterSeriesList(List<Series> seriesList) =>
+      _seriesFilter.filterWhole(seriesList, _appliedQuery);
 
   /// Active when the EPG show search should render in place of (Live TV
   /// tab) or alongside (All tab) the synchronous channel-name filter.
@@ -161,13 +191,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
             child: InlineMediaSearchField(
               query: _query,
               hintText: AppLocalizations.of(context).searchHint,
-              onChanged: (value) {
-                setState(() => _query = value);
-                _showSearchController.onQueryChanged(
-                  value,
-                  widget.onSearchShows,
-                );
-              },
+              onChanged: _onQueryChanged,
             ),
           ),
           DpadTabBar(

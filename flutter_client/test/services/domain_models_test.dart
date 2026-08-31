@@ -300,7 +300,7 @@ void main() {
   });
 
   group('overlapping category_ids (dynamic TMDB categories)', () {
-    test('VodItem.fromXtream parses category_ids and matches membership', () {
+    test('VodItem.fromXtream stringifies the category_ids array', () {
       final item = VodItem.fromXtream(<String, Object?>{
         'stream_id': 1,
         'name': 'Flow',
@@ -311,13 +311,9 @@ void main() {
 
       expect(item.categoryId, '357');
       expect(item.categoryIds, <String>['357', '900000001']);
-      expect(item.isInCategory('357'), isTrue);
-      expect(item.isInCategory('900000001'), isTrue);
-      expect(item.isInCategory('999'), isFalse);
     });
 
-    test('VodItem.isInCategory falls back to categoryId when the '
-        'category_ids array is absent', () {
+    test('VodItem.categoryIds is empty when the array is absent', () {
       final item = VodItem.fromXtream(<String, Object?>{
         'stream_id': 1,
         'name': 'Flow',
@@ -325,11 +321,9 @@ void main() {
       }, 'http://example.com/1.mp4');
 
       expect(item.categoryIds, isEmpty);
-      expect(item.isInCategory('357'), isTrue);
-      expect(item.isInCategory('900000001'), isFalse);
     });
 
-    test('Series.fromXtream parses category_ids and matches membership', () {
+    test('Series.fromXtream stringifies the category_ids array', () {
       final series = Series.fromXtream(<String, Object?>{
         'series_id': 2,
         'name': 'Hot Show',
@@ -339,9 +333,6 @@ void main() {
 
       expect(series.categoryId, '30');
       expect(series.categoryIds, <String>['30', '900000002']);
-      expect(series.isInCategory('30'), isTrue);
-      expect(series.isInCategory('900000002'), isTrue);
-      expect(series.isInCategory('999'), isFalse);
     });
   });
 }

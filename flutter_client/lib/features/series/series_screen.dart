@@ -7,6 +7,7 @@ import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
+import 'package:m3u_tv/shared/category_browse_filter.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/media_category_nav.dart';
@@ -50,9 +51,21 @@ class _SeriesScreenState extends ConsumerState<SeriesScreen> {
   static const double _maxPosterCardWidth = 220;
   static const _kFavoritesCategoryId = '__FAVORITES__';
 
+  static const _searchDebounce = Duration(milliseconds: 200);
+
   String? _selectedCategory;
   String _query = '';
+  // Lags [_query] by up to one debounce; drives the actual filtering so fast
+  // typing over a large catalog does not re-scan it on every keystroke.
+  String _appliedQuery = '';
+  Timer? _debounce;
   Set<int> _favoriteIds = {};
+  final CategoryBrowseFilter<Series> _filter = CategoryBrowseFilter<Series>(
+    primaryCategoryId: (item) => item.categoryId,
+    extraCategoryIds: (item) => item.categoryIds,
+    name: (item) => item.name,
+    id: (item) => item.id,
+  );
   final FocusScopeNode _gridFocusNode = FocusScopeNode();
   final GlobalKey<MediaCategoryNavState> _navKey =
       GlobalKey<MediaCategoryNavState>();
@@ -65,8 +78,29 @@ class _SeriesScreenState extends ConsumerState<SeriesScreen> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _gridFocusNode.dispose();
     super.dispose();
+  }
+
+  void _onQueryChanged(String value) {
+    setState(() => _query = value);
+    _debounce?.cancel();
+    if (value.trim().isEmpty) {
+      _appliedQuery = '';
+      return;
+    }
+    // Apply the first character of a fresh query immediately; only throttle
+    // subsequent keystrokes while a filtered result is already on screen.
+    if (_appliedQuery.isEmpty) {
+      _appliedQuery = value;
+      return;
+    }
+    _debounce = Timer(_searchDebounce, () {
+      if (mounted && value != _appliedQuery) {
+        setState(() => _appliedQuery = value);
+      }
+    });
   }
 
   Future<void> _loadFavorites() async {
@@ -76,30 +110,13 @@ class _SeriesScreenState extends ConsumerState<SeriesScreen> {
     if (mounted) setState(() => _favoriteIds = ids);
   }
 
-  List<Series> _filteredItems(List<Series> seriesList) {
-    final selectedCategory = _selectedCategory;
-    final Iterable<Series> categoryFiltered;
-    if (selectedCategory == _kFavoritesCategoryId) {
-      categoryFiltered = seriesList.where(
-        (item) => _favoriteIds.contains(item.id),
-      );
-    } else if (selectedCategory == null || selectedCategory.isEmpty) {
-      categoryFiltered = seriesList;
-    } else {
-      categoryFiltered = seriesList.where(
-        (item) => item.isInCategory(selectedCategory),
-      );
-    }
-    final normalizedQuery = _query.trim().toLowerCase();
-    if (normalizedQuery.isEmpty) {
-      return categoryFiltered.toList(growable: false);
-    }
-    return categoryFiltered
-        .where(
-          (item) => item.name.toLowerCase().contains(normalizedQuery),
-        )
-        .toList(growable: false);
-  }
+  List<Series> _filteredItems(List<Series> seriesList) => _filter.members(
+    list: seriesList,
+    selectedCategory: _selectedCategory,
+    query: _appliedQuery,
+    favoriteIds: _favoriteIds,
+    favoritesCategoryId: _kFavoritesCategoryId,
+  );
 
   List<CategoryTabData> _tabs(List<Category> categories) {
     final l = AppLocalizations.of(context);
@@ -111,25 +128,11 @@ class _SeriesScreenState extends ConsumerState<SeriesScreen> {
     ];
   }
 
-  Map<String, int> _categoryCounts(List<Series> seriesList) {
-    final counts = <String, int>{'': seriesList.length};
-    if (_favoriteIds.isNotEmpty) {
-      counts[_kFavoritesCategoryId] = _favoriteIds.length;
-    }
-    for (final item in seriesList) {
-      final categoryId = item.categoryId;
-      if (categoryId != null) {
-        counts[categoryId] = (counts[categoryId] ?? 0) + 1;
-      }
-      // Overlapping memberships (dynamic TMDB categories) count too; the
-      // primary id is usually repeated in categoryIds, so skip it.
-      for (final id in item.categoryIds) {
-        if (id == categoryId) continue;
-        counts[id] = (counts[id] ?? 0) + 1;
-      }
-    }
-    return counts;
-  }
+  Map<String, int> _categoryCounts(List<Series> seriesList) => {
+    '': seriesList.length,
+    if (_favoriteIds.isNotEmpty) _kFavoritesCategoryId: _favoriteIds.length,
+    ..._filter.categoryCounts(seriesList),
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -160,7 +163,7 @@ class _SeriesScreenState extends ConsumerState<SeriesScreen> {
       key: _navKey,
       useSidebarLayout: widget.useSidebarLayout,
       query: _query,
-      onQueryChanged: (value) => setState(() => _query = value),
+      onQueryChanged: _onQueryChanged,
       searchHint: l.seriesSearchHint,
       tabs: _tabs(categories),
       selectedId: _selectedCategory ?? '',

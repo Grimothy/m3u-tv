@@ -144,9 +144,6 @@ class VodItem {
 
   final double? rating;
 
-  bool isInCategory(String categoryId) =>
-      this.categoryId == categoryId || categoryIds.contains(categoryId);
-
   factory VodItem.fromXtream(Map<String, Object?> json, String streamUrl) =>
       VodItem(
         id: _asInt(json['stream_id']),
@@ -264,16 +261,13 @@ class Series {
   final String? backdropUrl;
   final String? categoryId;
 
-  /// Extra category memberships from the Xtream `category_ids` array — see
+  /// Extra category memberships from the Xtream `category_ids` array - see
   /// [VodItem.categoryIds].
   final List<String> categoryIds;
 
   final String? plot;
   final double? rating;
   final int? tmdbId;
-
-  bool isInCategory(String categoryId) =>
-      this.categoryId == categoryId || categoryIds.contains(categoryId);
 
   factory Series.fromXtream(Map<String, Object?> json) => Series(
     id: _asInt(json['series_id']),

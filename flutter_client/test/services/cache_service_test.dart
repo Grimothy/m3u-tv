@@ -75,7 +75,6 @@ void main() {
 
       expect(item.categoryId, '357');
       expect(item.categoryIds, <String>['357', '900000001']);
-      expect(item.isInCategory('900000001'), isTrue);
     },
   );
 

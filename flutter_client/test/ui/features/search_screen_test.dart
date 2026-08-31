@@ -247,12 +247,15 @@ void main() {
       await tester.tap(find.text('BBC News'));
       await tester.pumpAndSettle();
 
+      // Replacing an existing query goes through the catalog-filter debounce.
       await tester.enterText(find.byType(TextField), 'matrix');
+      await tester.pump(const Duration(milliseconds: 250));
       await tester.pumpAndSettle();
       await tester.tap(find.text('The Matrix'));
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byType(TextField), 'bad');
+      await tester.pump(const Duration(milliseconds: 250));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Breaking Bad'));
       await tester.pumpAndSettle();

@@ -265,6 +265,33 @@ void main() {
       expect(find.text('Tears of Steel'), findsNothing);
     });
 
+    testWidgets('replacing a query is debounced; old results stay until the '
+        'pause', (tester) async {
+      await tester.pumpWidget(
+        _TestApp(vodItems: testVodItems, categories: testCategories),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+
+      // First query applies immediately (no debounce-length empty flash).
+      await tester.enterText(find.byType(TextField), 'sintel');
+      await tester.pumpAndSettle();
+      expect(find.text('Sintel'), findsOneWidget);
+
+      // Replacing it: the grid keeps showing the previous match for the
+      // debounce window, then switches once typing settles.
+      await tester.enterText(find.byType(TextField), 'steel');
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Sintel'), findsOneWidget);
+      expect(find.text('Tears of Steel'), findsNothing);
+
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('Sintel'), findsNothing);
+      expect(find.text('Tears of Steel'), findsOneWidget);
+    });
+
     testWidgets('inline search composes with category filter', (tester) async {
       await tester.pumpWidget(
         _TestApp(vodItems: testVodItems, categories: testCategories),
