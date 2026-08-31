@@ -87,7 +87,7 @@ class _SeriesScreenState extends ConsumerState<SeriesScreen> {
       categoryFiltered = seriesList;
     } else {
       categoryFiltered = seriesList.where(
-        (item) => item.categoryId == selectedCategory,
+        (item) => item.isInCategory(selectedCategory),
       );
     }
     final normalizedQuery = _query.trim().toLowerCase();
@@ -118,8 +118,15 @@ class _SeriesScreenState extends ConsumerState<SeriesScreen> {
     }
     for (final item in seriesList) {
       final categoryId = item.categoryId;
-      if (categoryId == null) continue;
-      counts[categoryId] = (counts[categoryId] ?? 0) + 1;
+      if (categoryId != null) {
+        counts[categoryId] = (counts[categoryId] ?? 0) + 1;
+      }
+      // Overlapping memberships (dynamic TMDB categories) count too; the
+      // primary id is usually repeated in categoryIds, so skip it.
+      for (final id in item.categoryIds) {
+        if (id == categoryId) continue;
+        counts[id] = (counts[id] ?? 0) + 1;
+      }
     }
     return counts;
   }

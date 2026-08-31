@@ -86,7 +86,7 @@ class _VodScreenState extends ConsumerState<VodScreen> {
       categoryFiltered = vodItems;
     } else {
       categoryFiltered = vodItems.where(
-        (item) => item.categoryId == selectedCategory,
+        (item) => item.isInCategory(selectedCategory),
       );
     }
     final normalizedQuery = _query.trim().toLowerCase();
@@ -117,8 +117,15 @@ class _VodScreenState extends ConsumerState<VodScreen> {
     }
     for (final item in vodItems) {
       final categoryId = item.categoryId;
-      if (categoryId == null) continue;
-      counts[categoryId] = (counts[categoryId] ?? 0) + 1;
+      if (categoryId != null) {
+        counts[categoryId] = (counts[categoryId] ?? 0) + 1;
+      }
+      // Overlapping memberships (dynamic TMDB categories) count too; the
+      // primary id is usually repeated in categoryIds, so skip it.
+      for (final id in item.categoryIds) {
+        if (id == categoryId) continue;
+        counts[id] = (counts[id] ?? 0) + 1;
+      }
     }
     return counts;
   }

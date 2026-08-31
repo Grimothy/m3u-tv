@@ -186,6 +186,7 @@ Object? _decodeCacheData(String key, Object? raw) {
               containerExtension: '${json['container_extension'] ?? 'mp4'}',
               logoUrl: _nullableString(json['stream_icon']),
               categoryId: _nullableString(json['category_id']),
+              categoryIds: _stringList(json['category_ids']),
               rating: _asDouble(json['rating']),
             );
           })
@@ -231,6 +232,7 @@ Map<String, Object?> _vodToJson(VodItem item) => <String, Object?>{
   'container_extension': item.containerExtension,
   if (item.logoUrl != null) 'stream_icon': item.logoUrl,
   if (item.categoryId != null) 'category_id': item.categoryId,
+  if (item.categoryIds.isNotEmpty) 'category_ids': item.categoryIds,
   if (item.rating != null) 'rating': item.rating,
 };
 
@@ -240,6 +242,8 @@ Map<String, Object?> _seriesToJson(Series series) => <String, Object?>{
   if (series.coverUrl != null) 'cover': series.coverUrl,
   if (series.backdropUrl != null) 'backdrop_path': series.backdropUrl,
   if (series.categoryId != null) 'category_id': series.categoryId,
+  // Decoded via Series.fromXtream, which reads `category_ids` natively.
+  if (series.categoryIds.isNotEmpty) 'category_ids': series.categoryIds,
   if (series.plot != null) 'plot': series.plot,
   if (series.rating != null) 'rating': series.rating,
   if (series.tmdbId != null) 'tmdb_id': series.tmdbId,
@@ -266,6 +270,10 @@ bool _asBool(Object? value) {
   final text = '$value'.trim().toLowerCase();
   return text == '1' || text == 'true' || text == 'yes';
 }
+
+List<String> _stringList(Object? value) => value is List
+    ? value.map(_nullableString).whereType<String>().toList(growable: false)
+    : const <String>[];
 
 String? _nullableString(Object? value) {
   if (value == null) return null;

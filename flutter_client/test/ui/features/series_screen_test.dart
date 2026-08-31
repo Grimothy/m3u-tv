@@ -105,6 +105,38 @@ void main() {
       expect(find.text('Breaking Bad'), findsOneWidget);
     });
 
+    testWidgets(
+      'dynamic category tab filters series by overlapping category_ids',
+      (tester) async {
+        // See the matching VodScreen test — dynamic TMDB categories overlap
+        // the regular category, carried via categoryIds.
+        final seriesList = [
+          const Series(
+            id: 1,
+            name: 'Breaking Bad',
+            categoryId: '30',
+            categoryIds: ['30', '900000002'],
+          ),
+          const Series(id: 2, name: 'Firefly', categoryId: '30'),
+        ];
+        final categories = [
+          const Category(id: '900000002', name: 'Trending Shows'),
+          const Category(id: '30', name: 'Thriller'),
+        ];
+
+        await tester.pumpWidget(
+          _TestApp(seriesList: seriesList, categories: categories),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Trending Shows'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Breaking Bad'), findsOneWidget);
+        expect(find.text('Firefly'), findsNothing);
+      },
+    );
+
     testWidgets('shows loading indicator only when there is nothing to show', (
       tester,
     ) async {
