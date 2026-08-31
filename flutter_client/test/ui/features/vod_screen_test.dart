@@ -138,6 +138,47 @@ void main() {
       expect(find.text('Tears of Steel'), findsOneWidget);
     });
 
+    testWidgets(
+      'dynamic category tab filters movies by overlapping category_ids',
+      (tester) async {
+        // m3u-editor's dynamic TMDB categories overlap the regular groups:
+        // a member keeps its primary categoryId and additionally carries the
+        // dynamic category id in categoryIds.
+        final items = [
+          const VodItem(
+            id: 1,
+            name: 'Big Buck Bunny',
+            streamUrl: 'http://example.com/1.mp4',
+            containerExtension: 'mp4',
+            categoryId: '20',
+            categoryIds: ['20', '900000001'],
+          ),
+          const VodItem(
+            id: 2,
+            name: 'Sintel',
+            streamUrl: 'http://example.com/2.mp4',
+            containerExtension: 'mp4',
+            categoryId: '20',
+          ),
+        ];
+        final categories = [
+          const Category(id: '900000001', name: 'Trending Now'),
+          const Category(id: '20', name: 'Action'),
+        ];
+
+        await tester.pumpWidget(
+          _TestApp(vodItems: items, categories: categories),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Trending Now'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Big Buck Bunny'), findsOneWidget);
+        expect(find.text('Sintel'), findsNothing);
+      },
+    );
+
     testWidgets('shows loading indicator only when there is nothing to show', (
       tester,
     ) async {

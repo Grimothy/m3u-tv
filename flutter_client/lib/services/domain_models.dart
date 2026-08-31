@@ -125,6 +125,7 @@ class VodItem {
     required this.containerExtension,
     this.logoUrl,
     this.categoryId,
+    this.categoryIds = const [],
     this.rating,
   });
 
@@ -134,7 +135,17 @@ class VodItem {
   final String containerExtension;
   final String? logoUrl;
   final String? categoryId;
+
+  /// Extra category memberships from the Xtream `category_ids` array.
+  /// m3u-editor's dynamic TMDB categories (Trending, Top Genre, …) overlap
+  /// the regular group, so an item can belong to several categories at once
+  /// while [categoryId] stays the primary group.
+  final List<String> categoryIds;
+
   final double? rating;
+
+  bool isInCategory(String categoryId) =>
+      this.categoryId == categoryId || categoryIds.contains(categoryId);
 
   factory VodItem.fromXtream(Map<String, Object?> json, String streamUrl) =>
       VodItem(
@@ -144,6 +155,7 @@ class VodItem {
         containerExtension: '${json['container_extension'] ?? 'mp4'}',
         logoUrl: _asNullableString(json['stream_icon']),
         categoryId: _asNullableString(json['category_id']),
+        categoryIds: _asStringList(json['category_ids']),
         rating: _asDoubleOrNull(json['rating']),
       );
 }
@@ -240,6 +252,7 @@ class Series {
     this.coverUrl,
     this.backdropUrl,
     this.categoryId,
+    this.categoryIds = const [],
     this.plot,
     this.rating,
     this.tmdbId,
@@ -250,9 +263,17 @@ class Series {
   final String? coverUrl;
   final String? backdropUrl;
   final String? categoryId;
+
+  /// Extra category memberships from the Xtream `category_ids` array — see
+  /// [VodItem.categoryIds].
+  final List<String> categoryIds;
+
   final String? plot;
   final double? rating;
   final int? tmdbId;
+
+  bool isInCategory(String categoryId) =>
+      this.categoryId == categoryId || categoryIds.contains(categoryId);
 
   factory Series.fromXtream(Map<String, Object?> json) => Series(
     id: _asInt(json['series_id']),
@@ -260,6 +281,7 @@ class Series {
     coverUrl: _asNullableString(json['cover']),
     backdropUrl: _asNullableString(_firstListItem(json['backdrop_path'])),
     categoryId: _asNullableString(json['category_id']),
+    categoryIds: _asStringList(json['category_ids']),
     plot: _asNullableString(json['plot']),
     rating: _asDoubleOrNull(json['rating'] ?? json['rating_5based']),
     tmdbId: _asIntOrNull(json['tmdb_id'] ?? json['tmdb']),
@@ -1376,6 +1398,10 @@ String? _asNullableString(Object? value) {
   if (value is num) return '$value';
   return null;
 }
+
+List<String> _asStringList(Object? value) => _asList(
+  value,
+).map(_asNullableString).whereType<String>().toList(growable: false);
 
 Map<String, Object?> _asMap(Object? value) {
   if (value is Map<String, Object?>) return value;

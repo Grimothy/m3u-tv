@@ -26,6 +26,7 @@ void main() {
           coverUrl: 'https://img/cover.jpg',
           backdropUrl: 'https://img/backdrop.jpg',
           categoryId: '7',
+          categoryIds: ['7', '900000002'],
           plot: 'A plot.',
           rating: 4.3,
           tmdbId: 99123,
@@ -43,9 +44,38 @@ void main() {
       expect(series.coverUrl, 'https://img/cover.jpg');
       expect(series.backdropUrl, 'https://img/backdrop.jpg');
       expect(series.categoryId, '7');
+      expect(series.categoryIds, <String>['7', '900000002']);
       expect(series.plot, 'A plot.');
       expect(series.rating, 4.3);
       expect(series.tmdbId, 99123);
+    },
+  );
+
+  test(
+    'vod overlapping category_ids survive a persist + cold hydrate round trip',
+    () async {
+      final store = await newStore('m3u-tv-vod-cache-roundtrip-');
+      final source = CacheService(store: store);
+      final original = <VodItem>[
+        const VodItem(
+          id: 7,
+          name: 'Flow',
+          streamUrl: 'http://example.com/7.mp4',
+          containerExtension: 'mp4',
+          categoryId: '357',
+          categoryIds: ['357', '900000001'],
+          rating: 4.1,
+        ),
+      ];
+      await source.set<List<VodItem>>('vodStreams', original);
+
+      final hydrated = CacheService(store: store);
+      final entry = await hydrated.get<List<VodItem>>('vodStreams');
+      final item = entry!.data.single;
+
+      expect(item.categoryId, '357');
+      expect(item.categoryIds, <String>['357', '900000001']);
+      expect(item.isInCategory('900000001'), isTrue);
     },
   );
 

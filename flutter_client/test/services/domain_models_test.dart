@@ -298,4 +298,50 @@ void main() {
       },
     );
   });
+
+  group('overlapping category_ids (dynamic TMDB categories)', () {
+    test('VodItem.fromXtream parses category_ids and matches membership', () {
+      final item = VodItem.fromXtream(<String, Object?>{
+        'stream_id': 1,
+        'name': 'Flow',
+        'category_id': '357',
+        // m3u-editor emits ints here; the model must stringify them.
+        'category_ids': <Object?>[357, 900000001],
+      }, 'http://example.com/1.mp4');
+
+      expect(item.categoryId, '357');
+      expect(item.categoryIds, <String>['357', '900000001']);
+      expect(item.isInCategory('357'), isTrue);
+      expect(item.isInCategory('900000001'), isTrue);
+      expect(item.isInCategory('999'), isFalse);
+    });
+
+    test('VodItem.isInCategory falls back to categoryId when the '
+        'category_ids array is absent', () {
+      final item = VodItem.fromXtream(<String, Object?>{
+        'stream_id': 1,
+        'name': 'Flow',
+        'category_id': '357',
+      }, 'http://example.com/1.mp4');
+
+      expect(item.categoryIds, isEmpty);
+      expect(item.isInCategory('357'), isTrue);
+      expect(item.isInCategory('900000001'), isFalse);
+    });
+
+    test('Series.fromXtream parses category_ids and matches membership', () {
+      final series = Series.fromXtream(<String, Object?>{
+        'series_id': 2,
+        'name': 'Hot Show',
+        'category_id': '30',
+        'category_ids': <Object?>[30, 900000002],
+      });
+
+      expect(series.categoryId, '30');
+      expect(series.categoryIds, <String>['30', '900000002']);
+      expect(series.isInCategory('30'), isTrue);
+      expect(series.isInCategory('900000002'), isTrue);
+      expect(series.isInCategory('999'), isFalse);
+    });
+  });
 }
