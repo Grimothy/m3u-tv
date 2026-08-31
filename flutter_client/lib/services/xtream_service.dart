@@ -1,6 +1,7 @@
 // ignore_for_file: prefer_initializing_formals
 
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:m3u_tv/services/async_lifecycle.dart';
 import 'package:m3u_tv/services/cache_service.dart';
@@ -182,6 +183,7 @@ class XtreamRequest {
     this.params = const {},
     this.body = const {},
     this.method = 'GET',
+    this.wantsRawText = false,
   });
 
   final UserCredentials credentials;
@@ -191,6 +193,13 @@ class XtreamRequest {
   final Map<String, String> headers;
   final String method;
 
+  /// When set, the caller intends to decode and map the JSON body itself on a
+  /// background isolate, so a transport that can should return the raw body
+  /// wrapped in an [XtreamRawResponse] instead of a decoded structure. It is
+  /// advisory: transports that do not honor it (the test fakes, the web stub)
+  /// keep returning decoded data and the caller falls back to parsing inline.
+  final bool wantsRawText;
+
   Map<String, Object?> toDebugMap() => {
     'server': credentials.server,
     'action': action,
@@ -198,6 +207,17 @@ class XtreamRequest {
     'body': body,
     'method': method,
   };
+}
+
+/// Wraps the raw, still-encoded JSON body of a successful response. Returned by
+/// the default IO transport only when [XtreamRequest.wantsRawText] is set, so
+/// the caller can run `jsonDecode` plus domain-object mapping in a single
+/// background-isolate hop instead of decoding on the transport isolate and
+/// mapping on the UI isolate.
+class XtreamRawResponse {
+  const XtreamRawResponse(this.text);
+
+  final String text;
 }
 
 class AIOStreamsCatalog {
@@ -511,7 +531,17 @@ class XtreamService {
     final response = await _request(
       'get_live_streams',
       params: {'category_id': ?categoryId},
+      wantsRawText: true,
     );
+    if (response is XtreamRawResponse) {
+      final c = _requireCredentials();
+      return _parseLiveStreams(
+        response.text,
+        c.server,
+        c.username,
+        c.password,
+      );
+    }
     return _asList(response)
         .map((item) {
           final json = _asMap(item);
@@ -525,7 +555,12 @@ class XtreamService {
     final response = await _request(
       'get_vod_streams',
       params: {'category_id': ?categoryId},
+      wantsRawText: true,
     );
+    if (response is XtreamRawResponse) {
+      final c = _requireCredentials();
+      return _parseVodStreams(response.text, c.server, c.username, c.password);
+    }
     return _asList(response)
         .map((item) {
           final json = _asMap(item);
@@ -548,7 +583,11 @@ class XtreamService {
     final response = await _request(
       'get_series',
       params: {'category_id': ?categoryId},
+      wantsRawText: true,
     );
+    if (response is XtreamRawResponse) {
+      return _parseSeries(response.text);
+    }
     return _asList(
       response,
     ).map((item) => Series.fromXtream(_asMap(item))).toList(growable: false);
@@ -1350,6 +1389,7 @@ class XtreamService {
     Map<String, String> params = const {},
     Map<String, Object?> body = const {},
     String method = 'GET',
+    bool wantsRawText = false,
   }) {
     return _requestWithCredentials(
       _requireCredentials(),
@@ -1357,6 +1397,7 @@ class XtreamService {
       params: params,
       body: body,
       method: method,
+      wantsRawText: wantsRawText,
     );
   }
 
@@ -1367,6 +1408,7 @@ class XtreamService {
     Map<String, Object?> body = const {},
     Map<String, String> headers = const {},
     String method = 'GET',
+    bool wantsRawText = false,
   }) {
     final requestHeaders = <String, String>{
       'Accept': 'application/json',
@@ -1381,6 +1423,7 @@ class XtreamService {
         body: body,
         headers: requestHeaders,
         method: method,
+        wantsRawText: wantsRawText,
       ),
     );
   }
@@ -1407,6 +1450,86 @@ int _asInt(Object? value) {
   if (value is int) return value;
   if (value is num) return value.toInt();
   return int.tryParse('$value') ?? 0;
+}
+
+// ---------------------------------------------------------------------------
+// Off-isolate catalog parsing.
+//
+// The default IO transport hands back the raw JSON body for the big list
+// endpoints (see [XtreamRequest.wantsRawText]). These helpers run `jsonDecode`
+// AND the domain-object mapping in one hop so neither the multi-hundred-KB
+// decode nor the construction of hundreds of thousands of model objects lands
+// on the UI isolate. Below the threshold the spawn/copy overhead outweighs the
+// work, so parse inline - mirrors `json_isolate.dart`.
+// ---------------------------------------------------------------------------
+
+const int _rawParseOffloadBytes = 32 * 1024;
+
+Future<List<Channel>> _parseLiveStreams(
+  String rawJson,
+  String server,
+  String username,
+  String password,
+) {
+  List<Channel> parse() {
+    final decoded = jsonDecode(rawJson);
+    if (decoded is! List) return const <Channel>[];
+    return decoded
+        .map((item) {
+          final json = _asMap(item);
+          final id = _asInt(json['stream_id']);
+          return Channel.fromXtream(
+            json,
+            '$server/live/$username/$password/$id.m3u8',
+          );
+        })
+        .toList(growable: false);
+  }
+
+  return rawJson.length < _rawParseOffloadBytes
+      ? Future.value(parse())
+      : Isolate.run(parse);
+}
+
+Future<List<VodItem>> _parseVodStreams(
+  String rawJson,
+  String server,
+  String username,
+  String password,
+) {
+  List<VodItem> parse() {
+    final decoded = jsonDecode(rawJson);
+    if (decoded is! List) return const <VodItem>[];
+    return decoded
+        .map((item) {
+          final json = _asMap(item);
+          final id = _asInt(json['stream_id']);
+          final extension = '${json['container_extension'] ?? 'mp4'}';
+          return VodItem.fromXtream(
+            json,
+            '$server/movie/$username/$password/$id.$extension',
+          );
+        })
+        .toList(growable: false);
+  }
+
+  return rawJson.length < _rawParseOffloadBytes
+      ? Future.value(parse())
+      : Isolate.run(parse);
+}
+
+Future<List<Series>> _parseSeries(String rawJson) {
+  List<Series> parse() {
+    final decoded = jsonDecode(rawJson);
+    if (decoded is! List) return const <Series>[];
+    return decoded
+        .map((item) => Series.fromXtream(_asMap(item)))
+        .toList(growable: false);
+  }
+
+  return rawJson.length < _rawParseOffloadBytes
+      ? Future.value(parse())
+      : Isolate.run(parse);
 }
 
 List<EpgProgram> _parseEpgPrograms(

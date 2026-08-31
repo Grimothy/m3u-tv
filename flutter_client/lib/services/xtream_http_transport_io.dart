@@ -29,8 +29,9 @@ Future<Object?> _send(HttpClient client, XtreamRequest request) async {
 
   final response = await httpRequest.close();
   final text = await utf8.decodeStream(response);
+  final isError = response.statusCode >= HttpStatus.badRequest;
   if (text.isEmpty) {
-    if (response.statusCode >= HttpStatus.badRequest) {
+    if (isError) {
       throw XtreamHttpException(
         statusCode: response.statusCode,
         reasonPhrase: response.reasonPhrase,
@@ -41,12 +42,19 @@ Future<Object?> _send(HttpClient client, XtreamRequest request) async {
     return null;
   }
 
+  // Fast path: the caller decodes and maps the body itself on a background
+  // isolate. Only for successful responses - an error body still needs
+  // decoding here to extract the server message.
+  if (request.wantsRawText && !isError) {
+    return XtreamRawResponse(text);
+  }
+
   final Object? body;
   try {
     body = await decodeJsonOffMainIsolate(text);
   } on FormatException {
     final serverMessage = _plainServerMessage(text);
-    if (response.statusCode >= HttpStatus.badRequest) {
+    if (isError) {
       throw XtreamHttpException(
         statusCode: response.statusCode,
         reasonPhrase: response.reasonPhrase,
@@ -62,7 +70,7 @@ Future<Object?> _send(HttpClient client, XtreamRequest request) async {
     );
   }
 
-  if (response.statusCode >= HttpStatus.badRequest) {
+  if (isError) {
     throw XtreamHttpException(
       statusCode: response.statusCode,
       reasonPhrase: response.reasonPhrase,

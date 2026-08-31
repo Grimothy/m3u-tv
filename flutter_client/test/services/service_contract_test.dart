@@ -60,6 +60,106 @@ void main() {
     );
 
     test(
+      'default transport parses bulk list endpoints off the calling isolate',
+      () async {
+        final server = await io.HttpServer.bind(
+          io.InternetAddress.loopbackIPv4,
+          0,
+        );
+        unawaited(
+          server.listen((request) {
+            request.response.headers.contentType = io.ContentType.json;
+            final body = switch (request.uri.queryParameters['action']) {
+              null => xtreamAuth(auth: 1),
+              'get_live_streams' => [
+                liveStream(101, 'BBC One', '10', 'bbc.one'),
+              ],
+              'get_vod_streams' => [vodItem(201, 'Big Buck Bunny', '20')],
+              'get_series' => [seriesItem(301, 'Fixture Show', '30')],
+              _ => <String, Object?>{'error': 'unexpected'},
+            };
+            request.response.write(jsonEncode(body));
+            unawaited(request.response.close());
+          }).asFuture<void>(),
+        );
+        addTearDown(() => server.close(force: true));
+
+        final service = XtreamService();
+        await service.authenticate(
+          UserCredentials(
+            server: 'http://${server.address.host}:${server.port}',
+            username: 'demo',
+            password: 'secret',
+          ),
+        );
+
+        final channels = await service.getLiveStreams();
+        final vod = await service.getVodStreams();
+        final series = await service.getSeries();
+
+        expect(channels.single.name, 'BBC One');
+        expect(
+          channels.single.streamUrl,
+          'http://${server.address.host}:${server.port}'
+          '/live/demo/secret/101.m3u8',
+        );
+        expect(vod.single.name, 'Big Buck Bunny');
+        expect(
+          vod.single.streamUrl,
+          'http://${server.address.host}:${server.port}'
+          '/movie/demo/secret/201.mp4',
+        );
+        expect(series.single.id, 301);
+      },
+    );
+
+    test(
+      'a large VOD list crosses the isolate-offload threshold and still maps',
+      () async {
+        // >32KB of JSON forces _parseVodStreams onto a background isolate
+        // rather than the inline fast path.
+        final items = [
+          for (var i = 0; i < 600; i++)
+            vodItem(1000 + i, 'Movie number $i with a padded title', '20'),
+        ];
+        final server = await io.HttpServer.bind(
+          io.InternetAddress.loopbackIPv4,
+          0,
+        );
+        unawaited(
+          server.listen((request) {
+            request.response.headers.contentType = io.ContentType.json;
+            final body = request.uri.queryParameters['action'] == null
+                ? xtreamAuth(auth: 1)
+                : items;
+            request.response.write(jsonEncode(body));
+            unawaited(request.response.close());
+          }).asFuture<void>(),
+        );
+        addTearDown(() => server.close(force: true));
+
+        final service = XtreamService();
+        await service.authenticate(
+          UserCredentials(
+            server: 'http://${server.address.host}:${server.port}',
+            username: 'demo',
+            password: 'secret',
+          ),
+        );
+
+        final vod = await service.getVodStreams();
+
+        expect(vod, hasLength(600));
+        expect(vod.first.id, 1000);
+        expect(
+          vod.last.streamUrl,
+          'http://${server.address.host}:${server.port}'
+          '/movie/demo/secret/1599.mp4',
+        );
+      },
+    );
+
+    test(
       'default transport reports unauthorized HTTP failures without credentials',
       () async {
         final server = await io.HttpServer.bind(
@@ -204,6 +304,37 @@ void main() {
       expect((await service.getSeries()).single.id, 301);
       expect(transport.lastHeaders['X-M3UE-Client'], 'm3u-tv');
     });
+
+    test(
+      'a transport returning XtreamRawResponse is decoded and mapped',
+      () async {
+        final transport = FakeXtreamTransport({'auth': xtreamAuth(auth: 1)})
+          ..onRequest = (request) {
+            if (request.action == null) return xtreamAuth(auth: 1);
+            expect(request.action, 'get_vod_streams');
+            expect(request.wantsRawText, isTrue);
+            return XtreamRawResponse(
+              jsonEncode([vodItem(201, 'Big Buck Bunny', '20')]),
+            );
+          };
+        final service = XtreamService(transport: transport.call);
+
+        await service.authenticate(
+          const UserCredentials(
+            server: 'https://xtream.example',
+            username: 'demo',
+            password: 'secret',
+          ),
+        );
+        final vod = await service.getVodStreams();
+
+        expect(vod.single.name, 'Big Buck Bunny');
+        expect(
+          vod.single.streamUrl,
+          'https://xtream.example/movie/demo/secret/201.mp4',
+        );
+      },
+    );
 
     test('live streams parse Xtream catchup metadata', () async {
       final service = XtreamService(
