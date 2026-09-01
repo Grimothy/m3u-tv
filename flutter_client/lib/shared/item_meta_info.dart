@@ -24,10 +24,13 @@ class ItemMetaInfo extends StatelessWidget {
     required this.onPlay,
     this.chips = const [],
     this.fullWidthButton = false,
+    this.hidePrimaryAction = false,
     this.progressValue,
     this.onStartOver,
     this.isLoading = false,
     this.plot,
+    this.plotMaxWidth,
+    this.plotMaxLines,
     this.credits = const [],
   });
 
@@ -41,6 +44,11 @@ class ItemMetaInfo extends StatelessWidget {
   final VoidCallback? onPlay;
   final bool fullWidthButton;
 
+  /// Suppresses the built-in play/resume + start-over button row. The caller
+  /// renders those actions itself elsewhere (the series detail lays them on
+  /// the same line as its season picker).
+  final bool hidePrimaryAction;
+
   /// Watched fraction (0-1). When set, renders inside the primary button as
   /// an inline progress track next to [buttonLabel] instead of a plain
   /// label-only button.
@@ -53,6 +61,15 @@ class ItemMetaInfo extends StatelessWidget {
 
   final bool isLoading;
   final String? plot;
+
+  /// Caps the synopsis line length. Null lets it run the full column width
+  /// (today's behavior); detail screens on wide layouts pass a value to keep
+  /// the text to a readable measure.
+  final double? plotMaxWidth;
+
+  /// Caps the synopsis height. Null shows the full text (today's behavior);
+  /// a value clamps it with a trailing ellipsis.
+  final int? plotMaxLines;
   final List<MetaCreditLine> credits;
 
   @override
@@ -102,18 +119,28 @@ class ItemMetaInfo extends StatelessWidget {
             runSpacing: MediaBrowsingMetrics.chipGap,
             children: chips.map((label) => MetadataChip(label: label)).toList(),
           ),
-        const SizedBox(height: MediaBrowsingMetrics.contentPadding),
-        buttonRow,
-        const SizedBox(height: MediaBrowsingMetrics.pagePadding),
+        if (!hidePrimaryAction) ...[
+          const SizedBox(height: MediaBrowsingMetrics.contentPadding),
+          buttonRow,
+          const SizedBox(height: MediaBrowsingMetrics.pagePadding),
+        ] else
+          const SizedBox(height: MediaBrowsingMetrics.contentPadding),
         if (isLoading) ...[
           const LinearProgressIndicator(),
           const SizedBox(height: MediaBrowsingMetrics.contentPadding),
         ],
         if (hasPlot)
-          Text(
-            plot!,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: plotMaxWidth ?? double.infinity,
+            ),
+            child: Text(
+              plot!,
+              maxLines: plotMaxLines,
+              overflow: plotMaxLines == null ? null : TextOverflow.ellipsis,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
         if (credits.isNotEmpty) ...[

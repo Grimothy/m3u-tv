@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart'
     show CachedNetworkImageProvider;
 import 'package:dpad/dpad.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
@@ -360,6 +361,7 @@ class ResilientMediaImage extends StatefulWidget {
   const ResilientMediaImage({
     required this.imageUrl,
     required this.fallbackIcon,
+    this.fallbackImageUrls = const <String>[],
     this.width,
     this.height,
     this.fit = BoxFit.cover,
@@ -371,6 +373,11 @@ class ResilientMediaImage extends StatefulWidget {
   });
 
   final String? imageUrl;
+
+  /// Alternate URLs to try, in order, once [imageUrl] has failed its retries
+  /// (a season poster that 404s falling back to the series poster, then the
+  /// backdrop). Only the icon fallback shows once every URL is exhausted.
+  final List<String> fallbackImageUrls;
   final IconData fallbackIcon;
   final double? width;
   final double? height;
@@ -399,17 +406,55 @@ class _ResilientMediaImageState extends State<ResilientMediaImage> {
   int _attempt = 0;
   bool _retryScheduled = false;
 
+  /// Index into [_urlChain] currently being displayed.
+  int _urlIndex = 0;
+
+  List<String> get _urlChain => [
+    ?_nonEmpty(widget.imageUrl),
+    ...widget.fallbackImageUrls.map(_nonEmpty).whereType<String>(),
+  ];
+
+  static String? _nonEmpty(String? value) =>
+      (value == null || value.trim().isEmpty) ? null : value;
+
+  String? get _currentUrl {
+    final chain = _urlChain;
+    return _urlIndex < chain.length ? chain[_urlIndex] : null;
+  }
+
   @override
   void didUpdateWidget(covariant ResilientMediaImage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.imageUrl != widget.imageUrl) {
+    if (oldWidget.imageUrl != widget.imageUrl ||
+        !listEquals(oldWidget.fallbackImageUrls, widget.fallbackImageUrls)) {
       _attempt = 0;
+      _urlIndex = 0;
       _retryScheduled = false;
     }
   }
 
   void _scheduleRetry() {
-    if (_retryScheduled || _attempt >= _maxRetries) return;
+    if (_retryScheduled) return;
+    final hasNextUrl = _urlIndex < _urlChain.length - 1;
+    // Give the last URL the full retry budget (transient-failure recovery);
+    // when a better candidate is waiting, fail over after a single quick retry.
+    final retryBudget = hasNextUrl ? 1 : _maxRetries;
+    if (_attempt >= retryBudget) {
+      if (!hasNextUrl) return;
+      _retryScheduled = true;
+      unawaited(
+        Future.microtask(() {
+          _retryScheduled = false;
+          if (mounted) {
+            setState(() {
+              _urlIndex++;
+              _attempt = 0;
+            });
+          }
+        }),
+      );
+      return;
+    }
     _retryScheduled = true;
     final delay = Duration(milliseconds: 500 * (1 << _attempt));
     _attempt++;
@@ -426,7 +471,7 @@ class _ResilientMediaImageState extends State<ResilientMediaImage> {
       icon: widget.fallbackIcon,
       title: widget.fallbackTitle,
     );
-    final url = widget.imageUrl;
+    final url = _currentUrl;
     // Oversample beyond raw pixel density so detailed logos (thin
     // text/wordmarks) survive downscaling instead of being crushed to a
     // blocky, aliased decode that no display-time FilterQuality can recover.
@@ -798,6 +843,7 @@ class MediaPreviewItem {
     this.overlayBadges = const <String>[],
     this.overlayLabel,
     this.emphasisLabel,
+    this.upNextLabel,
   });
 
   final String title;
@@ -815,6 +861,12 @@ class MediaPreviewItem {
 
   /// 0.0-1.0 progress shown as a bar along the bottom of the image.
   final double? progressFraction;
+
+  /// When non-null, landscape cards show this text as a primary-colour badge in
+  /// the top-right corner (where the progress percent normally sits) and
+  /// suppress the bottom progress bar. Used for synthetic "up next" episode
+  /// entries; the caller supplies the localized string.
+  final String? upNextLabel;
 
   /// Short text labels rendered as chips overlaid on the image (right-aligned).
   final List<String> overlayBadges;
@@ -1193,6 +1245,31 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
                       minHeight: 3,
                       backgroundColor: Colors.white24,
                       color: colorScheme.primary,
+                    ),
+                  ),
+                if (widget.item.upNextLabel != null)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        child: Text(
+                          widget.item.upNextLabel!,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: colorScheme.onPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
                     ),
                   ),
               ],

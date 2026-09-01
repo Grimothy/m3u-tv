@@ -290,6 +290,15 @@ class AppLocalizationsFr extends AppLocalizations {
   String get playerSkipIntro => 'Ignorer l\'intro';
 
   @override
+  String get playerUpNext => 'À suivre';
+
+  @override
+  String get playerUpNextPlay => 'Lire la suite';
+
+  @override
+  String get playerUpNextDismiss => 'Ignorer';
+
+  @override
   String get searchHint => 'Rechercher Télévision en direct, films et séries…';
 
   @override
@@ -591,6 +600,9 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
+  String get homeUpNext => 'À suivre';
+
+  @override
   String get homeNoLiveTv => 'Pas de Télévision en direct disponible';
 
   @override
@@ -675,6 +687,50 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String homeSeason(int number) {
     return 'Saison $number';
+  }
+
+  @override
+  String get seriesSeasons => 'Saisons';
+
+  @override
+  String seriesEpisodeCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count épisodes',
+      one: '1 épisode',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String seriesPlayEpisode(int season, int episode) {
+    return 'Lire S${season}E$episode';
+  }
+
+  @override
+  String seriesResumeEpisode(int season, int episode) {
+    return 'Reprendre S${season}E$episode';
+  }
+
+  @override
+  String get seriesMarkWatched => 'Marquer comme vu';
+
+  @override
+  String get seriesMarkUnwatched => 'Marquer comme non vu';
+
+  @override
+  String get seriesMarkedWatched => 'Marqué comme vu';
+
+  @override
+  String get seriesMarkedUnwatched => 'Marqué comme non vu';
+
+  @override
+  String get seriesMarkSyncFailed => 'Impossible de synchroniser le statut vu';
+
+  @override
+  String seriesMarkSeasonPrompt(int number) {
+    return 'Mettre à jour le statut vu pour tous les épisodes de la saison $number ?';
   }
 
   @override
