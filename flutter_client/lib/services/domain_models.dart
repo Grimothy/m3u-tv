@@ -264,11 +264,22 @@ class Season {
     required this.number,
     required this.name,
     this.episodeCount = 0,
+    this.coverUrl,
+    this.coverBigUrl,
   });
 
   final int number;
   final String name;
   final int episodeCount;
+
+  /// TMDB poster URL (`w500` size) for this season. The Xtream
+  /// `get_series_info` endpoint already returns it (`cover`), but it may be
+  /// null if TMDB enrichment hasn't run yet or returned no artwork.
+  final String? coverUrl;
+
+  /// TMDB poster URL (`original` size) for this season. Higher resolution
+  /// than [coverUrl] — use for the TV-wide dropdown's large poster thumb.
+  final String? coverBigUrl;
 
   factory Season.fromXtream(Map<String, Object?> json) {
     final number = _asInt(json['season_number']);
@@ -276,6 +287,8 @@ class Season {
       number: number,
       name: '${json['name'] ?? 'Season $number'}',
       episodeCount: _asInt(json['episode_count']),
+      coverUrl: _asNullableString(json['cover']),
+      coverBigUrl: _asNullableString(json['cover_big']),
     );
   }
 }
