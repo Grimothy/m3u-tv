@@ -12,6 +12,7 @@ import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/backdrop_detail_hero.dart';
 import 'package:m3u_tv/shared/cached_backdrop_image.dart';
+import 'package:m3u_tv/shared/cast_member_row.dart';
 import 'package:m3u_tv/shared/dominant_backdrop_color.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
@@ -614,6 +615,14 @@ class _SeriesDetailsBody extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         header,
+        if (info.series.richCast != null &&
+            info.series.richCast!.isNotEmpty) ...[
+          const SizedBox(height: MediaBrowsingMetrics.contentPadding),
+          CastMemberRow(
+            members: info.series.richCast,
+            semanticLabel: AppLocalizations.of(context).seriesCast,
+          ),
+        ],
         const SizedBox(height: 20),
         // Play / Start-from-beginning sit on the same line as the season
         // picker (wrapping to a second run on a phone).

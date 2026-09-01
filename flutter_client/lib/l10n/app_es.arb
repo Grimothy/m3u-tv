@@ -341,6 +341,7 @@
     }
   },
   "seriesSeasons": "Temporadas",
+  "seriesCast": "Reparto",
   "seriesEpisodeCount": "{count, plural, =1{1 episodio} other{{count} episodios}}",
   "@seriesEpisodeCount": {
     "placeholders": {
@@ -410,6 +411,7 @@
   "searchTypeToSearch": "Escribe para buscar",
   "vodPlayMovie": "Reproducir película",
   "vodContinueMovie": "Continuar película",
+  "vodCast": "Reparto",
   "vodTimeLeftMinutes": "{minutes, plural, =1{Queda 1 min} other{Quedan {minutes} min}}",
   "@vodTimeLeftMinutes": {
     "description": "Trailing label inside the resume button on a VOD detail screen, showing time remaining under an hour.",

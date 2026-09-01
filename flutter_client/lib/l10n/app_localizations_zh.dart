@@ -661,6 +661,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get seriesSeasons => '剧集季';
 
   @override
+  String get seriesCast => '演员阵容';
+
+  @override
   String seriesEpisodeCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -760,6 +763,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get vodContinueMovie => '继续播放';
+
+  @override
+  String get vodCast => '演员阵容';
 
   @override
   String vodTimeLeftMinutes(int minutes) {

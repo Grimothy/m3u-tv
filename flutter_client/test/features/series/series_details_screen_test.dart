@@ -6,6 +6,7 @@ import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
+import 'package:m3u_tv/shared/cast_member_row.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
@@ -611,5 +612,102 @@ void main() {
     expect(writes, 3); // sequential, one per episode
     expect(find.text("Couldn't sync watched status"), findsOneWidget);
     expect(find.text('Marked as watched'), findsNothing);
+  });
+
+  group('SeriesDetailsScreen — rich cast', () {
+    testWidgets(
+      'wide layout: renders CastMemberRow when series.richCast is populated',
+      (tester) async {
+        await tester.pumpWidget(
+          _app(
+            SeriesInfo(
+              series: const Series(
+                id: 7,
+                name: 'Rich Cast Show',
+                plot: 'A series with a populated rich cast.',
+                richCast: <CastMember>[
+                  CastMember(
+                    id: 1,
+                    name: 'Bryan Cranston',
+                    character: 'Walter White',
+                  ),
+                  CastMember(
+                    id: 2,
+                    name: 'Aaron Paul',
+                    character: 'Jesse Pinkman',
+                  ),
+                ],
+              ),
+              seasons: const [Season(number: 1, name: 'Season 1')],
+              episodesBySeason: {1: [_ep(1, 1)]},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CastMemberRow), findsOneWidget);
+        expect(find.text('Bryan Cranston'), findsOneWidget);
+        expect(find.text('Walter White'), findsOneWidget);
+        expect(find.text('Aaron Paul'), findsOneWidget);
+        expect(find.text('Jesse Pinkman'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'wide layout: hides CastMemberRow when series.richCast is null',
+      (tester) async {
+        await tester.pumpWidget(_app(_info()));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CastMemberRow), findsNothing);
+        // Plot still renders.
+        expect(find.text('First season synopsis'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'narrow layout: renders CastMemberRow when series.richCast is populated',
+      (tester) async {
+        tester.view.physicalSize = const Size(420, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _app(
+            SeriesInfo(
+              series: const Series(
+                id: 7,
+                name: 'Rich Cast Show',
+                richCast: <CastMember>[
+                  CastMember(name: 'Bryan Cranston', character: 'Walter White'),
+                ],
+              ),
+              seasons: const [Season(number: 1, name: 'Season 1')],
+              episodesBySeason: {1: [_ep(1, 1)]},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CastMemberRow), findsOneWidget);
+        expect(find.text('Bryan Cranston'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'narrow layout: hides CastMemberRow when series.richCast is null',
+      (tester) async {
+        tester.view.physicalSize = const Size(420, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(_app(_info()));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CastMemberRow), findsNothing);
+      },
+    );
   });
 }

@@ -5,6 +5,7 @@ import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
+import 'package:m3u_tv/shared/cast_member_row.dart';
 
 void main() {
   group('VodDetailsScreen', () {
@@ -123,6 +124,87 @@ void main() {
 
       expect(playerArgs?.startPosition, 0.0);
     });
+  });
+
+  group('VodDetailsScreen — rich cast', () {
+    testWidgets(
+      'renders rich cast row when richCast is populated',
+      (tester) async {
+        await tester.pumpWidget(
+          _TestApp(
+            service: _VodDetailsXtreamService(
+              info: const VodInfo(
+                id: 201,
+                name: 'Big Buck Bunny',
+                cast: 'Bunny, Frank, Rinky',
+                richCast: <CastMember>[
+                  CastMember(name: 'Bunny', character: 'Frank'),
+                  CastMember(name: 'Big Buck', character: 'The Squirrel'),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CastMemberRow), findsOneWidget);
+        expect(find.text('Bunny'), findsOneWidget);
+        expect(find.text('Frank'), findsOneWidget);
+        expect(find.text('Big Buck'), findsOneWidget);
+        expect(find.text('The Squirrel'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'hides rich cast row when richCast is null (unpatched server)',
+      (tester) async {
+        await tester.pumpWidget(
+          _TestApp(
+            service: _VodDetailsXtreamService(
+              info: const VodInfo(
+                id: 201,
+                name: 'Big Buck Bunny',
+                cast: 'Bunny, Frank, Rinky',
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CastMemberRow), findsNothing);
+        // Existing string-cast MetaCreditLine is preserved — RichText with
+        // the "Cast:" label is present in the tree.
+        expect(
+          find.byWidgetPredicate(
+            (w) =>
+                w is RichText &&
+                w.text.toPlainText().contains('Cast:') &&
+                w.text.toPlainText().contains('Bunny, Frank, Rinky'),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'hides rich cast row when richCast is empty list',
+      (tester) async {
+        await tester.pumpWidget(
+          _TestApp(
+            service: _VodDetailsXtreamService(
+              info: const VodInfo(
+                id: 201,
+                name: 'Big Buck Bunny',
+                richCast: <CastMember>[],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CastMemberRow), findsNothing);
+      },
+    );
   });
 }
 

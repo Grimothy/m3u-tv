@@ -7,6 +7,7 @@ import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/backdrop_detail_hero.dart';
+import 'package:m3u_tv/shared/cast_member_row.dart';
 import 'package:m3u_tv/shared/dominant_backdrop_color.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
 import 'package:m3u_tv/shared/item_meta_info.dart';
@@ -269,32 +270,42 @@ class _VodDetailsBody extends StatelessWidget {
     final buttonLabel = progress == null
         ? l.vodPlayMovie
         : (_timeLeftLabel(context, progress) ?? l.vodContinueMovie);
-    return ItemMetaInfo(
-      name: details.name,
-      chips: [
-        if (details.year != null) details.year!,
-        if (details.genre != null) details.genre!,
-        if (details.duration != null) details.duration!,
-        if (details.rating != null) '★ ${details.rating}',
-        if (details.containerExtension != null)
-          details.containerExtension!.toUpperCase(),
-      ],
-      buttonLabel: buttonLabel,
-      onPlay: () =>
-          _play(details, startPosition: progress?.positionSeconds.toDouble()),
-      onStartOver: progress == null
-          ? null
-          // ignore: prefer_int_literals
-          : () => _play(details, startPosition: 0.0),
-      fullWidthButton: fullWidthButton,
-      progressValue: _progressValue(progress),
-      isLoading: isLoading,
-      plot: details.plot ?? 'No synopsis available.',
-      credits: [
-        if (details.director != null)
-          MetaCreditLine(label: 'Director', value: details.director!),
-        if (details.cast != null)
-          MetaCreditLine(label: 'Cast', value: details.cast!),
+    final richCast = details.richCast;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ItemMetaInfo(
+          name: details.name,
+          chips: [
+            if (details.year != null) details.year!,
+            if (details.genre != null) details.genre!,
+            if (details.duration != null) details.duration!,
+            if (details.rating != null) '★ ${details.rating}',
+            if (details.containerExtension != null)
+              details.containerExtension!.toUpperCase(),
+          ],
+          buttonLabel: buttonLabel,
+          onPlay: () =>
+              _play(details, startPosition: progress?.positionSeconds.toDouble()),
+          onStartOver: progress == null
+              ? null
+              // ignore: prefer_int_literals
+              : () => _play(details, startPosition: 0.0),
+          fullWidthButton: fullWidthButton,
+          progressValue: _progressValue(progress),
+          isLoading: isLoading,
+          plot: details.plot ?? 'No synopsis available.',
+          credits: [
+            if (details.director != null)
+              MetaCreditLine(label: 'Director', value: details.director!),
+            if (details.cast != null)
+              MetaCreditLine(label: 'Cast', value: details.cast!),
+          ],
+        ),
+        if (richCast != null && richCast.isNotEmpty) ...[
+          const SizedBox(height: MediaBrowsingMetrics.contentPadding),
+          CastMemberRow(members: richCast, semanticLabel: l.vodCast),
+        ],
       ],
     );
   }
@@ -354,6 +365,7 @@ class _ResolvedVodDetails {
   String? get genre => _notEmpty(info?.genre);
   String? get director => _notEmpty(info?.director);
   String? get cast => _notEmpty(info?.cast);
+  List<CastMember>? get richCast => info?.richCast;
   String? get year => _notEmpty(info?.year) ?? _notEmpty(info?.releaseDate);
   String? get duration => _notEmpty(info?.duration);
   double? get rating => info?.rating ?? item.rating;
