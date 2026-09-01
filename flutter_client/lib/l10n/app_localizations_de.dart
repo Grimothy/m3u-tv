@@ -600,6 +600,12 @@ class AppLocalizationsDe extends AppLocalizations {
   String get vodContinueMovie => 'Film fortsetzen';
 
   @override
+  String get vodCast => 'Besetzung';
+
+  @override
+  String get seriesCast => 'Besetzung';
+
+  @override
   String get navAioStreams => 'AIOStreams';
 
   @override

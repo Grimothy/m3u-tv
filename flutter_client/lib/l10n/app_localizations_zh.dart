@@ -581,6 +581,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get vodContinueMovie => '继续播放';
 
   @override
+  String get vodCast => '演员阵容';
+
+  @override
+  String get seriesCast => '演员阵容';
+
+  @override
   String get navAioStreams => 'AIOStreams';
 
   @override

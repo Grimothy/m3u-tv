@@ -597,6 +597,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get vodContinueMovie => 'Continue movie';
 
   @override
+  String get vodCast => 'Cast';
+
+  @override
+  String get seriesCast => 'Cast';
+
+  @override
   String get navAioStreams => 'AIOStreams';
 
   @override

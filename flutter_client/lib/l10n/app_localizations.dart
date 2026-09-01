@@ -1184,6 +1184,18 @@ abstract class AppLocalizations {
   /// **'Continue movie'**
   String get vodContinueMovie;
 
+  /// No description provided for @vodCast.
+  ///
+  /// In en, this message translates to:
+  /// **'Cast'**
+  String get vodCast;
+
+  /// No description provided for @seriesCast.
+  ///
+  /// In en, this message translates to:
+  /// **'Cast'**
+  String get seriesCast;
+
   /// No description provided for @navAioStreams.
   ///
   /// In en, this message translates to:
