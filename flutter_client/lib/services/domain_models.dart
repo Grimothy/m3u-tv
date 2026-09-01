@@ -830,9 +830,18 @@ class EpgProgram {
   /// absent so display sites can fall back to [title].
   final String? subtitle;
 
-  /// The episode name when available, otherwise the show title. Prefer this
+  /// The show title, kept intact, with the episode / segment [subtitle]
+  /// appended as "Title - Subtitle" when the source exposes a distinct one
+  /// (see m3u-tv #263 - the sub-title must never replace the show title).
+  /// Falls back to [subtitle] alone only when [title] is blank. Prefer this
   /// over reading [title] directly at any display or persistence site.
-  String get displayTitle => subtitle ?? title;
+  String get displayTitle {
+    final show = title.trim();
+    final segment = subtitle?.trim() ?? '';
+    if (segment.isEmpty || segment == show) return show;
+    if (show.isEmpty) return segment;
+    return '$show - $segment';
+  }
 }
 
 class EpgCurrentNext {
