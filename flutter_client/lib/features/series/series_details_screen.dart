@@ -98,6 +98,11 @@ class _SeriesDetailsScreenState extends State<SeriesDetailsScreen> {
         return info;
       });
   int? _selectedSeason;
+
+  /// The season currently shown in the body (user pick or auto-resolved
+  /// default), reported back up by [_SeriesDetailsBody] so the AppBar title
+  /// can read "Show Name - S2".
+  int? _displayedSeason;
   SeriesInfo? _seriesInfo;
   Color? _dominantColor;
   final FocusNode _playFocusNode = FocusNode(debugLabel: 'seriesPlayButton');
@@ -153,8 +158,11 @@ class _SeriesDetailsScreenState extends State<SeriesDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final title = _displayedSeason != null
+        ? '${widget.seriesName} - S$_displayedSeason'
+        : widget.seriesName;
     return ItemDetailScaffold(
-      title: widget.seriesName,
+      title: title,
       onSidebarActivate: widget.onSidebarActivate,
       body: FutureBuilder<SeriesInfo>(
         future: _future,
@@ -180,6 +188,11 @@ class _SeriesDetailsScreenState extends State<SeriesDetailsScreen> {
             playFocusNode: _playFocusNode,
             onSeasonSelected: (season) =>
                 setState(() => _selectedSeason = season),
+            onSeasonResolved: (season) {
+              if (season != _displayedSeason) {
+                setState(() => _displayedSeason = season);
+              }
+            },
             onEpisodeSelected: _playEpisode,
             onMarkEpisode: _markEpisode,
             onMarkSeason: _markSeason,
@@ -289,6 +302,7 @@ class _SeriesDetailsBody extends StatelessWidget {
     required this.canMarkWatched,
     required this.playFocusNode,
     required this.onSeasonSelected,
+    required this.onSeasonResolved,
     required this.onEpisodeSelected,
     required this.onMarkEpisode,
     required this.onMarkSeason,
@@ -301,6 +315,11 @@ class _SeriesDetailsBody extends StatelessWidget {
   final bool canMarkWatched;
   final FocusNode playFocusNode;
   final ValueChanged<int> onSeasonSelected;
+
+  /// Fires (post-frame) with the season currently in view - the user's pick
+  /// or, before they touch the picker, the auto-resolved default - so the
+  /// screen's AppBar title can show which season is active.
+  final ValueChanged<int?> onSeasonResolved;
   final void Function(Episode episode, {double? startPosition})
   onEpisodeSelected;
   final void Function(Episode episode, {required bool watched}) onMarkEpisode;
@@ -562,6 +581,9 @@ class _SeriesDetailsBody extends StatelessWidget {
       ),
     );
     final meta = _seriesMetaInfo(context, target, description, plotMaxWidth);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      onSeasonResolved(seasonNumber);
+    });
     // Phone: poster stacked above the title / chips / description. TV and
     // desktop: poster beside them.
     final header = compact
@@ -600,6 +622,7 @@ class _SeriesDetailsBody extends StatelessWidget {
               seasons: info.seasons,
               selectedSeason: seasonNumber,
               canMarkWatched: canMarkWatched && episodes.isNotEmpty,
+              compact: compact,
               episodeCountFor: _episodeCountFor,
               fallbackPosterUrl: _trimmedOrNull(info.series.coverUrl),
               onSeasonSelected: onSeasonSelected,
@@ -943,20 +966,39 @@ class _ConfirmMarkDialogState extends State<_ConfirmMarkDialog> {
       title: Text(widget.title),
       content: Text(widget.message),
       actions: [
-        TextButton(
-          onPressed: () => _pop(null),
-          child: Text(l.cancel),
+        DpadRegion(
+          memoryKey: 'series/mark-watched-dialog-actions',
+          // OverflowBar (not Row) so the buttons stack vertically on a narrow
+          // dialog instead of overflowing. Same shared-button treatment as the
+          // resume and DVR modals.
+          child: OverflowBar(
+            alignment: MainAxisAlignment.end,
+            spacing: 8,
+            overflowSpacing: 8,
+            children: [
+              AppButton(
+                label: l.cancel,
+                onPressed: () => _pop(null),
+              ),
+              if (preset != true)
+                AppButton(
+                  label: l.seriesMarkUnwatched,
+                  variant: preset == false
+                      ? AppButtonVariant.primary
+                      : AppButtonVariant.tonal,
+                  autofocus: preset == false,
+                  onPressed: () => _pop(false),
+                ),
+              if (preset != false)
+                AppButton(
+                  label: l.seriesMarkWatched,
+                  variant: AppButtonVariant.primary,
+                  autofocus: true,
+                  onPressed: () => _pop(true),
+                ),
+            ],
+          ),
         ),
-        if (preset != true)
-          TextButton(
-            onPressed: () => _pop(false),
-            child: Text(l.seriesMarkUnwatched),
-          ),
-        if (preset != false)
-          FilledButton(
-            onPressed: () => _pop(true),
-            child: Text(l.seriesMarkWatched),
-          ),
       ],
     );
   }
@@ -967,6 +1009,7 @@ class _SeasonPicker extends StatelessWidget {
     required this.seasons,
     required this.selectedSeason,
     required this.canMarkWatched,
+    required this.compact,
     required this.episodeCountFor,
     required this.fallbackPosterUrl,
     required this.onSeasonSelected,
@@ -976,6 +1019,10 @@ class _SeasonPicker extends StatelessWidget {
   final List<Season> seasons;
   final int? selectedSeason;
   final bool canMarkWatched;
+
+  /// Phone layout: the picker opens as a bottom sheet instead of a centered
+  /// dialog.
+  final bool compact;
 
   /// Episode tally for a given season number (0 when unknown).
   final int Function(int seasonNumber) episodeCountFor;
@@ -1014,43 +1061,112 @@ class _SeasonPicker extends StatelessWidget {
     // Focus lands on the current season (or the first one) so the list is
     // immediately drivable by D-pad.
     final focusSeason = selectedSeason ?? seasons.first.number;
+
+    // Header (title + close affordance) and the season rows live in ONE
+    // DpadRegion, so D-pad up from the first row reaches the close button.
+    // Traversal stops at the region edges instead of escaping the
+    // sheet/dialog. The list is height-capped with a ConstrainedBox (not
+    // Flexible) so the layout stays deterministic inside AlertDialog's
+    // intrinsic sizing - a Flexible there lets the rows overflow the dialog's
+    // clip and drop out of hit-testing.
+    //
+    // [modalContext] is the sheet/dialog builder's own context: every dismiss
+    // (close button, a season pick) must pop through it, NOT the outer
+    // `_showPicker` context, which resolves to the screen's navigator and
+    // would pop the whole route while leaving the modal on the root navigator.
+    Widget pickerBody(
+      BuildContext modalContext, {
+      required EdgeInsetsGeometry listPadding,
+      required double maxListHeight,
+      bool showThumb = false,
+    }) {
+      return DpadRegion(
+        verticalEdge: DpadEdgeBehavior.stop,
+        horizontalEdge: DpadEdgeBehavior.stop,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 12, 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      l.seriesSeasons,
+                      style: Theme.of(modalContext).textTheme.titleLarge,
+                    ),
+                  ),
+                  AppIconButton(
+                    icon: Icons.close,
+                    dense: true,
+                    tooltip: l.cancel,
+                    onPressed: () => Navigator.of(modalContext).pop(),
+                  ),
+                ],
+              ),
+            ),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxListHeight),
+              child: Scrollbar(
+                thumbVisibility: showThumb,
+                child: ListView(
+                  shrinkWrap: true,
+                  // Inset so a focused row's gradient border sits clear of the
+                  // container edge and the scrollbar.
+                  padding: listPadding,
+                  children: seasons
+                      .map(
+                        (season) => _seasonTile(
+                          modalContext,
+                          season,
+                          autofocus: season.number == focusSeason,
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final viewportHeight = MediaQuery.sizeOf(context).height;
+
+    if (compact) {
+      // Phone: a bottom sheet reads more naturally than a centered dialog and
+      // keeps the tap targets in thumb reach.
+      unawaited(
+        showModalBottomSheet<void>(
+          context: context,
+          showDragHandle: true,
+          isScrollControlled: true,
+          builder: (sheetContext) => SafeArea(
+            child: pickerBody(
+              sheetContext,
+              listPadding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+              maxListHeight: viewportHeight * 0.7,
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
     unawaited(
       showDialog<void>(
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (dialogContext) => AlertDialog(
           clipBehavior: Clip.antiAlias,
-          title: Text(l.seriesSeasons),
-          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+          contentPadding: const EdgeInsets.fromLTRB(0, 16, 0, 12),
           content: SizedBox(
             width: 460,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * 0.65,
-              ),
-              child: Scrollbar(
-                thumbVisibility: true,
-                // Contain D-pad traversal to the list - up/down moves between
-                // rows and stops at the ends instead of escaping the dialog.
-                child: DpadRegion(
-                  verticalEdge: DpadEdgeBehavior.stop,
-                  horizontalEdge: DpadEdgeBehavior.stop,
-                  child: ListView(
-                    shrinkWrap: true,
-                    // Inset so a focused row's gradient border sits inside the
-                    // dialog's rounded corners and clear of the scrollbar.
-                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
-                    children: seasons
-                        .map(
-                          (season) => _seasonTile(
-                            context,
-                            season,
-                            autofocus: season.number == focusSeason,
-                          ),
-                        )
-                        .toList(growable: false),
-                  ),
-                ),
-              ),
+            child: pickerBody(
+              dialogContext,
+              listPadding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+              maxListHeight: viewportHeight * 0.65,
+              showThumb: true,
             ),
           ),
         ),

@@ -267,6 +267,30 @@ void main() {
     expect(find.text('Play S1E1'), findsNothing);
   });
 
+  testWidgets('app bar title carries the active season', (tester) async {
+    await tester.pumpWidget(_app(_info()));
+    await tester.pumpAndSettle();
+
+    final appBarTitle = find.descendant(
+      of: find.byType(AppBar),
+      matching: find.text('Fixture Show - S1'),
+    );
+    expect(appBarTitle, findsOneWidget);
+
+    await tester.tap(find.text('Season 1').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Season 3').last);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.text('Fixture Show - S3'),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('season picker switches the visible episode list', (
     tester,
   ) async {
@@ -302,6 +326,79 @@ void main() {
     expect(find.textContaining('S3E1 Title', findRichText: true), findsWidgets);
     expect(find.textContaining('S1E1 Title', findRichText: true), findsNothing);
     expect(find.text('Third season synopsis'), findsOneWidget);
+  });
+
+  testWidgets('season picker close icon dismisses the dialog only', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(_info()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Season 1').last);
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byIcon(Icons.close),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The dialog closes; the series screen stays put (no route pop).
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byType(SeriesDetailsScreen), findsOneWidget);
+    expect(find.text('Play S1E1'), findsOneWidget);
+  });
+
+  testWidgets('phone layout opens the season picker as a bottom sheet', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(420, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_app(_info()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Season 1').last);
+    await tester.pumpAndSettle();
+
+    // A bottom sheet, not a centered dialog.
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byType(AlertDialog), findsNothing);
+    final rows = find.descendant(
+      of: find.byType(BottomSheet),
+      matching: find.byType(DpadInkWell),
+    );
+    expect(rows, findsNWidgets(3));
+    expect(
+      tester.widget<DpadInkWell>(rows.first).autofocus,
+      isTrue,
+      reason: 'the selected season row should autofocus',
+    );
+
+    // The close icon dismisses without picking anything.
+    await tester.tap(
+      find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.byIcon(Icons.close),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.textContaining('S1E1 Title', findRichText: true), findsWidgets);
+
+    await tester.tap(find.text('Season 1').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Season 3').last);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.textContaining('S3E1 Title', findRichText: true), findsWidgets);
+    expect(find.textContaining('S1E1 Title', findRichText: true), findsNothing);
   });
 
   testWidgets('season picker shows an episode count badge and per-season '

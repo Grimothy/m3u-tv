@@ -27,6 +27,11 @@ const _kPadding = EdgeInsets.symmetric(horizontal: 20, vertical: 12);
 /// it, which is what keeps transport controls visually level with each other.
 const _kIconButtonSize = Size(56, 56);
 
+/// [AppIconButton.dense] footprint - for icon buttons that sit next to text
+/// rather than in a transport-control row (e.g. a modal's close affordance),
+/// where the full 56dp target looks oversized against a title.
+const _kDenseIconButtonSize = Size(40, 40);
+
 enum AppButtonVariant { primary, primaryInverted, tonal, destructive }
 
 const _kBlack = Color(0xFF09090b);
@@ -481,6 +486,7 @@ class AppIconButton extends StatelessWidget {
     this.autofocus = false,
     this.focusNode,
     this.autoScroll = true,
+    this.dense = false,
   });
 
   final IconData icon;
@@ -493,10 +499,17 @@ class AppIconButton extends StatelessWidget {
   /// See [_HoverFocusable.autoScroll].
   final bool autoScroll;
 
+  /// Smaller footprint + icon for buttons that sit beside text (e.g. a
+  /// modal's close affordance) rather than in a transport-control row.
+  final bool dense;
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final baseStyle = IconButton.styleFrom(fixedSize: _kIconButtonSize);
+    final baseStyle = IconButton.styleFrom(
+      fixedSize: dense ? _kDenseIconButtonSize : _kIconButtonSize,
+      iconSize: dense ? 20 : null,
+    );
     final style = switch (variant) {
       AppButtonVariant.destructive => _ghostStyle(
         baseStyle,
@@ -522,7 +535,7 @@ class AppIconButton extends StatelessWidget {
       final elevatedButton = ElevatedButton(
         style: style,
         onPressed: onPressed,
-        child: Icon(icon),
+        child: Icon(icon, size: dense ? 20 : null),
       );
       final tooltipMessage = tooltip;
       rawButton = tooltipMessage == null
