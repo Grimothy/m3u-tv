@@ -8,6 +8,7 @@ import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
+import 'package:m3u_tv/shared/cast_member_row.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
@@ -280,6 +281,14 @@ class _SeriesDetailsBody extends StatelessWidget {
                     ),
                   ),
                 ],
+                if (info.series.richCast != null &&
+                    info.series.richCast!.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  CastMemberRow(
+                    members: info.series.richCast,
+                    semanticLabel: AppLocalizations.of(context).seriesCast,
+                  ),
+                ],
                 const SizedBox(height: 20),
                 _SeasonChips(
                   seasons: info.seasons,
@@ -447,6 +456,16 @@ class _SeriesDetailsBody extends StatelessWidget {
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
+              ),
+            ),
+          ),
+        if (info.series.richCast != null && info.series.richCast!.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: CastMemberRow(
+                members: info.series.richCast,
+                semanticLabel: AppLocalizations.of(context).seriesCast,
               ),
             ),
           ),
