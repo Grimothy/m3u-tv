@@ -112,7 +112,6 @@ class _CastMemberCard extends StatelessWidget {
             // Decorative gradient ring + circular avatar + bottom-fade.
             _GradientRingAvatar(
               size: CastMemberRow._avatarSize,
-              ringWidth: 2,
               child: _AvatarWithFade(
                 imageUrl: member.photo,
                 size: CastMemberRow._avatarSize,
@@ -154,46 +153,30 @@ class _CastMemberCard extends StatelessWidget {
   }
 }
 
-/// Decorative primary→secondary gradient ring painted around a circular
-/// child (the avatar). Unfocused; focus is handled by [GradientBorderEffect]
-/// at the card level.
+/// Circular clip around the avatar child. No decorative ring — focus is
+/// handled by [GradientBorderEffect] at the card level.
 class _GradientRingAvatar extends StatelessWidget {
   const _GradientRingAvatar({
     required this.child,
     required this.size,
-    required this.ringWidth,
   });
 
   final Widget child;
   final double size;
-  final double ringWidth;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: size + ringWidth * 2,
-      height: size + ringWidth * 2,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-          colors: [scheme.primary, scheme.secondary],
-        ),
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(ringWidth),
-        child: ClipOval(child: child),
-      ),
+    return SizedBox(
+      width: size,
+      height: size,
+      child: ClipOval(child: child),
     );
   }
 }
 
-/// Circular clip containing the [ResilientMediaImage] headshot, with a
-/// transparent→surface fade across the bottom ~35%. The fade softens
-/// the [Icons.person] fallback when no photo loads, and gives loaded
-/// headshots a subtle poster-like depth.
+/// Circular clip containing the [ResilientMediaImage] headshot. No
+/// decorative overlay — a bottom→top surface fade was tried here and
+/// produced a visible dark half-circle on every avatar in dark theme.
 class _AvatarWithFade extends StatelessWidget {
   const _AvatarWithFade({
     required this.imageUrl,
@@ -210,31 +193,12 @@ class _AvatarWithFade extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: Stack(
-        children: [
-          ResilientMediaImage(
-            imageUrl: imageUrl,
-            fallbackIcon: Icons.person,
-            backgroundColor: surface,
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      surface.withValues(alpha: 0.6),
-                    ],
-                    stops: const [0.65, 1.0],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
+      child: ClipOval(
+        child: ResilientMediaImage(
+          imageUrl: imageUrl,
+          fallbackIcon: Icons.person,
+          backgroundColor: surface,
+        ),
       ),
     );
   }
