@@ -288,6 +288,9 @@
   "searchTypeToSearch": "Type to search",
   "vodPlayMovie": "Play movie",
   "vodContinueMovie": "Continue movie",
+
+  "vodCast": "Cast",
+  "seriesCast": "Cast",
   "navAioStreams": "AIOStreams",
   "aiostreamsGetStreams": "Get Streams",
   "aiostreamsLoadingStreams": "Loading streams…",

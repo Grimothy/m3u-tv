@@ -288,6 +288,8 @@
   "searchTypeToSearch": "Escribe para buscar",
   "vodPlayMovie": "Reproducir película",
   "vodContinueMovie": "Continuar película",
+  "vodCast": "Reparto",
+  "seriesCast": "Reparto",
   "navAioStreams": "AIOStreams",
   "aiostreamsGetStreams": "Obtener fuentes",
   "aiostreamsLoadingStreams": "Cargando fuentes…",

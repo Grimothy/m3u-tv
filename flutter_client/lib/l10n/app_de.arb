@@ -288,6 +288,8 @@
   "searchTypeToSearch": "Zum Suchen tippen",
   "vodPlayMovie": "Film abspielen",
   "vodContinueMovie": "Film fortsetzen",
+  "vodCast": "Besetzung",
+  "seriesCast": "Besetzung",
   "navAioStreams": "AIOStreams",
   "aiostreamsGetStreams": "Streams laden",
   "aiostreamsLoadingStreams": "Streams werden geladen…",
