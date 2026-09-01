@@ -538,7 +538,6 @@ class _SeriesDetailsBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bg = dominantColor ?? theme.colorScheme.surface;
     final season = _selectedSeasonObj;
     final seasonNumber = _resolvedSeason;
     final episodes = _episodes(seasonNumber);
@@ -558,6 +557,12 @@ class _SeriesDetailsBody extends StatelessWidget {
 
     final screenWidth = MediaQuery.sizeOf(context).width;
     final compact = screenWidth < _kSeriesCompactBreakpoint;
+    // Phone gets a lighter, more saturated wash - the deep full-bleed tone
+    // that reads as "a colour" on a TV just looks black on a small portrait
+    // screen where the backdrop is only a short band.
+    final bg = dominantColor != null
+        ? deepBackdropTone(dominantColor!, vivid: compact)
+        : theme.colorScheme.surface;
     final posterWidth = compact ? 120.0 : 200.0;
     // Keep the synopsis to a comfortable measure on TV/desktop (Nuvio-style);
     // let it run full width on a phone.
@@ -733,7 +738,9 @@ class _SeriesDetailsBody extends StatelessWidget {
     final bandHeight = MediaQuery.sizeOf(context).height * 0.5;
     // The band stays fixed (it lives outside the scroll view, not stacked
     // above it) while `content` scrolls over/past it - same mechanic as the
-    // wide layout below, just top-aligned instead of bottom-pinned.
+    // wide layout below, just top-aligned instead of bottom-pinned. Lighter
+    // top/mid scrim than the wide layout so the real backdrop colour still
+    // reads in the band on a portrait screen.
     return BackdropDetailHero(
       backdropUrl: backdrop,
       backdropHeight: bandHeight,
@@ -741,10 +748,10 @@ class _SeriesDetailsBody extends StatelessWidget {
       alwaysShowScrim: true,
       showBackgroundColorLayer: true,
       backgroundColor: bg,
-      scrimColors: [bg.withValues(alpha: 0.35), bg.withValues(alpha: 0.92), bg],
+      scrimColors: [bg.withValues(alpha: 0.2), bg.withValues(alpha: 0.8), bg],
       // Let the poster/title ride well up into the lower half of the
       // backdrop (standard mobile hero look) rather than clearing it.
-      contentPadding: EdgeInsets.only(top: bandHeight * 0.55, bottom: 24),
+      contentPadding: EdgeInsets.only(top: bandHeight * 0.44, bottom: 24),
       content: content,
     );
   }

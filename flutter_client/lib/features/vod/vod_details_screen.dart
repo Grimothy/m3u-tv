@@ -114,6 +114,8 @@ class _VodDetailsBody extends StatelessWidget {
 
   /// Palette-extracted tone from the backdrop/poster; falls back to the
   /// theme surface. Matches the Series detail page's colour-match treatment.
+  /// Raw dominant swatch from [resolveDominantBackdropColor]; toned per
+  /// layout below (a phone needs a lighter, more saturated wash than a TV).
   final Color? dominantColor;
 
   static const double _wideBreakpoint = 600;
@@ -121,12 +123,16 @@ class _VodDetailsBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bg = dominantColor ?? theme.colorScheme.surface;
     final details = _ResolvedVodDetails(item, info);
     final progress = _resumeProgress;
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < _wideBreakpoint) {
+        final compact = constraints.maxWidth < _wideBreakpoint;
+        final swatch = dominantColor;
+        final bg = swatch != null
+            ? deepBackdropTone(swatch, vivid: compact)
+            : theme.colorScheme.surface;
+        if (compact) {
           return _buildNarrow(context, theme, bg, details, progress);
         }
         return _buildWide(context, theme, bg, details, progress);
@@ -233,7 +239,9 @@ class _VodDetailsBody extends StatelessWidget {
     // Backdrop capped to half the viewport (not full height) so the poster/
     // title/synopsis aren't pushed below the fold, and stays fixed in place
     // - `content` scrolls over/past it - matching the Series detail page's
-    // mobile layout.
+    // mobile layout. A lighter top/mid scrim than the wide layout so the
+    // real backdrop colour still reads in the band (portrait shows so little
+    // of it that a heavy scrim leaves it near-black).
     final bandHeight = MediaQuery.sizeOf(context).height * 0.5;
     return BackdropDetailHero(
       backdropUrl: backdrop,
@@ -242,10 +250,10 @@ class _VodDetailsBody extends StatelessWidget {
       alwaysShowScrim: true,
       showBackgroundColorLayer: true,
       backgroundColor: bg,
-      scrimColors: [bg.withValues(alpha: 0.35), bg.withValues(alpha: 0.92), bg],
+      scrimColors: [bg.withValues(alpha: 0.2), bg.withValues(alpha: 0.8), bg],
       // Let the poster/title ride well up into the lower half of the
       // backdrop (standard mobile hero look) rather than clearing it.
-      contentPadding: EdgeInsets.only(top: bandHeight * 0.55, bottom: 24),
+      contentPadding: EdgeInsets.only(top: bandHeight * 0.44, bottom: 24),
       content: content,
     );
   }
