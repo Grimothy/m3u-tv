@@ -11,12 +11,13 @@ import 'package:m3u_tv/shared/cached_backdrop_image.dart';
 ///
 /// TV/desktop (default [contentAlignment] of `Alignment.bottomLeft`): the
 /// backdrop fills the whole hero and [content] sits pinned to the bottom
-/// edge, scrolling as one block only if it's taller than the viewport (see
-/// [scrollWhenTall]). Mobile ([contentAlignment] of `Alignment.topLeft`,
-/// paired with [backdropHeight]): the backdrop is capped to a band at the
-/// top instead of stretching full-height, and [content] always scrolls
-/// (starting below the band, via [contentPadding]) - the band itself never
-/// moves, since it lives outside the scroll view.
+/// edge. [content] is placed as-is, so a caller that needs it to scroll when
+/// the window is short passes a [content] that manages its own scrolling.
+/// Mobile ([contentAlignment] of `Alignment.topLeft`, paired with
+/// [backdropHeight]): the backdrop is capped to a band at the top instead of
+/// stretching full-height, and [content] always scrolls (starting below the
+/// band, via [contentPadding]) - the band itself never moves, since it lives
+/// outside the scroll view.
 ///
 /// When [backdropUrl] is null and [alwaysShowScrim] is false, [content] is
 /// returned bare with no Stack/scrim at all (VOD/AIOStreams movie default).
@@ -35,8 +36,6 @@ class BackdropDetailHero extends StatelessWidget {
     this.scrimStops = const [0.0, 0.5, 1.0],
     this.contentAlignment = Alignment.bottomLeft,
     this.contentPadding = EdgeInsets.zero,
-    this.contentPaddingBuilder,
-    this.scrollWhenTall = false,
   });
 
   final Widget content;
@@ -74,22 +73,7 @@ class BackdropDetailHero extends StatelessWidget {
 
   /// Padding around [content]. On mobile this is what pushes content below
   /// the (fixed) backdrop band - typically `top: backdropHeight - overlap`.
-  /// Ignored when [contentPaddingBuilder] is set.
   final EdgeInsetsGeometry contentPadding;
-
-  /// Same as [contentPadding] but computed from the hero's own layout
-  /// constraints (Series needs `bottom: constraints.maxHeight * 0.05` on
-  /// the bottom-aligned path, which isn't known until [scrollWhenTall]'s
-  /// LayoutBuilder runs).
-  final EdgeInsetsGeometry Function(BoxConstraints constraints)?
-  contentPaddingBuilder;
-
-  /// Bottom-aligned content taller than the viewport scrolls instead of
-  /// overflowing (Series, so the poster/title stay reachable on a short
-  /// window). Ignored when [contentAlignment] is `topLeft` - that content
-  /// always scrolls. VOD/AIOStreams manage their own inner scrolling on the
-  /// bottom-aligned path and pass false.
-  final bool scrollWhenTall;
 
   @override
   Widget build(BuildContext context) {
@@ -131,40 +115,13 @@ class BackdropDetailHero extends StatelessWidget {
 
     final isTopAligned = contentAlignment == Alignment.topLeft;
 
-    Widget paddedContent(EdgeInsetsGeometry padding) =>
-        Padding(padding: padding, child: content);
+    final paddedContent = Padding(padding: contentPadding, child: content);
 
-    Widget contentLayer;
-    if (isTopAligned) {
-      // Content lives outside the (fixed) backdrop layer entirely, so
-      // scrolling it never moves the band underneath.
-      contentLayer = SingleChildScrollView(
-        child: paddedContent(
-          contentPaddingBuilder?.call(const BoxConstraints()) ?? contentPadding,
-        ),
-      );
-    } else if (scrollWhenTall) {
-      contentLayer = LayoutBuilder(
-        builder: (context, constraints) => SingleChildScrollView(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: Align(
-              alignment: contentAlignment,
-              child: paddedContent(
-                contentPaddingBuilder?.call(constraints) ?? contentPadding,
-              ),
-            ),
-          ),
-        ),
-      );
-    } else {
-      contentLayer = Align(
-        alignment: contentAlignment,
-        child: paddedContent(
-          contentPaddingBuilder?.call(const BoxConstraints()) ?? contentPadding,
-        ),
-      );
-    }
+    final contentLayer = isTopAligned
+        // Content lives outside the (fixed) backdrop layer entirely, so
+        // scrolling it never moves the band underneath.
+        ? SingleChildScrollView(child: paddedContent)
+        : Align(alignment: contentAlignment, child: paddedContent);
 
     return Stack(
       fit: StackFit.expand,

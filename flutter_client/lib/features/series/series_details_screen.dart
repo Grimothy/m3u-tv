@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:intl/intl.dart';
 import 'package:m3u_tv/features/series/episode_player_args.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
@@ -578,10 +579,100 @@ class _SeriesDetailsBody extends StatelessWidget {
             ],
           );
 
-    // Bottom-aligned over a full-bleed backdrop, mirroring the VOD detail
-    // page: poster + meta (with resume progress) on top, season picker, then
-    // the episode cards (a horizontal strip on TV, a vertical list on a phone).
-    final content = Padding(
+    // poster + meta (with resume progress) and the play / season-picker row
+    // form the "upper" block; the episode cards sit directly below it (a
+    // horizontal strip on TV, a vertical list on a phone).
+    final upper = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        header,
+        const SizedBox(height: 20),
+        // Play / Start-from-beginning sit on the same line as the season
+        // picker (wrapping to a second run on a phone).
+        Wrap(
+          spacing: MediaBrowsingMetrics.itemGap,
+          runSpacing: MediaBrowsingMetrics.chipGap,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            ..._primaryActions(context, target),
+            _SeasonPicker(
+              seasons: info.seasons,
+              selectedSeason: seasonNumber,
+              canMarkWatched: canMarkWatched && episodes.isNotEmpty,
+              episodeCountFor: _episodeCountFor,
+              fallbackPosterUrl: _trimmedOrNull(info.series.coverUrl),
+              onSeasonSelected: onSeasonSelected,
+              onMarkSeason: (watched) =>
+                  onMarkSeason(_episodes(seasonNumber), watched: watched),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    final Widget episodeSection;
+    if (episodes.isEmpty) {
+      episodeSection = const Align(
+        alignment: Alignment.centerLeft,
+        child: Text('No episodes available'),
+      );
+    } else if (compact) {
+      episodeSection = _EpisodeStrip(
+        episodes: episodes,
+        progressList: progressList,
+        autofocusFirst: target == null,
+        canMarkWatched: canMarkWatched,
+        cardWidth: cardWidth,
+        horizontal: false,
+        onEpisodeSelected: onEpisodeSelected,
+        onMarkEpisode: onMarkEpisode,
+      );
+    } else {
+      episodeSection = SizedBox(
+        height: stripHeight,
+        child: _EpisodeStrip(
+          episodes: episodes,
+          progressList: progressList,
+          autofocusFirst: target == null,
+          canMarkWatched: canMarkWatched,
+          cardWidth: cardWidth,
+          onEpisodeSelected: onEpisodeSelected,
+          onMarkEpisode: onMarkEpisode,
+        ),
+      );
+    }
+
+    // On mobile the backdrop only sets the scene - a full-height image would
+    // push the poster/title/episodes below the fold. Cap it to half the
+    // viewport and let the rest of the page scroll on solid background
+    // colour underneath, like the VOD detail page's narrow layout.
+    if (compact) {
+      final content = Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: MediaBrowsingMetrics.pagePadding,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            upper,
+            const SizedBox(height: 12),
+            episodeSection,
+          ],
+        ),
+      );
+      return _buildCompact(context, bg, backdrop, content);
+    }
+
+    // TV / desktop: the episode strip is pinned directly below the upper
+    // block, which scrolls on its own only when the window is too short to
+    // fit it. Keeping the strip out of any vertical scrollable stops
+    // horizontal episode navigation from dragging the whole page up and down
+    // - dpad's ensure-visible reveal walks every scrollable ancestor of the
+    // focused card, so a wrapping vertical scroll view reacts to every
+    // left/right step.
+    final wideContent = Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: MediaBrowsingMetrics.pagePadding,
       ),
@@ -589,87 +680,24 @@ class _SeriesDetailsBody extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          header,
-          const SizedBox(height: 20),
-          // Play / Start-from-beginning sit on the same line as the season
-          // picker (wrapping to a second run on a phone).
-          Wrap(
-            spacing: MediaBrowsingMetrics.itemGap,
-            runSpacing: MediaBrowsingMetrics.chipGap,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              ..._primaryActions(context, target),
-              _SeasonPicker(
-                seasons: info.seasons,
-                selectedSeason: seasonNumber,
-                canMarkWatched: canMarkWatched && episodes.isNotEmpty,
-                episodeCountFor: _episodeCountFor,
-                fallbackPosterUrl: _trimmedOrNull(info.series.coverUrl),
-                onSeasonSelected: onSeasonSelected,
-                onMarkSeason: (watched) =>
-                    onMarkSeason(_episodes(seasonNumber), watched: watched),
-              ),
-            ],
-          ),
+          Flexible(child: SingleChildScrollView(child: upper)),
           const SizedBox(height: 12),
-          if (episodes.isEmpty)
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text('No episodes available'),
-            )
-          else if (compact)
-            _EpisodeStrip(
-              episodes: episodes,
-              progressList: progressList,
-              autofocusFirst: target == null,
-              canMarkWatched: canMarkWatched,
-              cardWidth: cardWidth,
-              horizontal: false,
-              onEpisodeSelected: onEpisodeSelected,
-              onMarkEpisode: onMarkEpisode,
-            )
-          else
-            SizedBox(
-              height: stripHeight,
-              child: _EpisodeStrip(
-                episodes: episodes,
-                progressList: progressList,
-                autofocusFirst: target == null,
-                canMarkWatched: canMarkWatched,
-                cardWidth: cardWidth,
-                onEpisodeSelected: onEpisodeSelected,
-                onMarkEpisode: onMarkEpisode,
-              ),
-            ),
+          episodeSection,
         ],
       ),
     );
 
-    // On mobile the backdrop only sets the scene - a full-height image would
-    // push the poster/title/episodes below the fold. Cap it to half the
-    // viewport and let the rest of the page scroll on solid background
-    // colour underneath, like the VOD detail page's narrow layout.
-    if (compact) {
-      return _buildCompact(context, bg, backdrop, content);
-    }
-
     // Scrim over the backdrop. Kept heavy enough that a bright still
     // (near-white kitchen shots etc.) still leaves the body text legible,
-    // while the top stays translucent so the art reads through. Bottom-
-    // aligned when it fits; scrolls up when the content is taller than the
-    // viewport (short windows) so the poster/title stay reachable.
+    // while the top stays translucent so the art reads through.
     return BackdropDetailHero(
       backdropUrl: backdrop,
       alwaysShowScrim: true,
       showBackgroundColorLayer: true,
       backgroundColor: bg,
       scrimColors: [bg.withValues(alpha: 0.35), bg.withValues(alpha: 0.92), bg],
-      scrollWhenTall: true,
-      contentPaddingBuilder: (constraints) => EdgeInsets.only(
-        top: 24,
-        bottom: constraints.maxHeight * 0.05,
-      ),
-      content: content,
+      contentPadding: const EdgeInsets.only(top: 24, bottom: 24),
+      content: wideContent,
     );
   }
 
@@ -1177,7 +1205,7 @@ class _EpisodeStrip extends StatefulWidget {
 }
 
 class _EpisodeStripState extends State<_EpisodeStrip> {
-  final ScrollController _controller = ScrollController();
+  final ScrollController _controller = _FrameSafeScrollController();
 
   @override
   void dispose() {
@@ -1248,6 +1276,12 @@ class _EpisodeStripState extends State<_EpisodeStrip> {
         ),
       );
     }
+    // TV / desktop: a real horizontal Scrollable (so a mouse wheel / drag
+    // works), but driven through a [_FrameSafeScrollController] so dpad's
+    // ensure-visible and scroll-for-more can never mutate the scroll position
+    // during the frame's build/layout/semantics phase - the race that threw
+    // the '!attached || !owner!._debugDoingSemantics' assertion storm when a
+    // card was held down. See that class for the mechanism.
     return DpadRegion(
       horizontalEdge: DpadEdgeBehavior.stop,
       child: Scrollbar(
@@ -1264,6 +1298,122 @@ class _EpisodeStripState extends State<_EpisodeStrip> {
         ),
       ),
     );
+  }
+}
+
+/// A [ScrollController] whose position defers any programmatic scroll that
+/// would otherwise land inside the frame pipeline.
+///
+/// dpad drives `DpadScroll.ensureVisible` (from a post-frame callback) and
+/// `_scrollForMore` (from a `Future.then` continuation, hard-coded to
+/// `animateTo`) on every focus move. Under a held D-pad key those fire fast
+/// enough that a `jumpTo`/`animateTo` lands while `ListView` is mid build /
+/// layout / semantics for the same frame. `ScrollPosition` mutation there
+/// synchronously toggles `RenderIgnorePointer.ignoring` / the semantic scroll
+/// actions -> `markNeedsSemanticsUpdate()` -> Flutter's
+/// `!attached || !owner!._debugDoingSemantics` assertion, which then repeats
+/// every frame because the driving animation ticker keeps running.
+///
+/// This mirrors the EPG grid's scroll-sync fix (`timeline_epg_view.dart`):
+/// coalesce a burst into one deferred jump that runs after the current
+/// frame has fully settled. `animateTo` is collapsed to the same deferred
+/// jump - fast repeat does not need the tween, and the tween's ticker is the
+/// part that races the pipeline. A normal user gesture (wheel, drag,
+/// ballistic fling) runs outside the persistent-callbacks phase and passes
+/// straight through untouched.
+class _FrameSafeScrollController extends ScrollController {
+  @override
+  ScrollPosition createScrollPosition(
+    ScrollPhysics physics,
+    ScrollContext context,
+    ScrollPosition? oldPosition,
+  ) {
+    return _FrameSafeScrollPosition(
+      physics: physics,
+      context: context,
+      initialPixels: initialScrollOffset,
+      keepScrollOffset: keepScrollOffset,
+      oldPosition: oldPosition,
+      debugLabel: debugLabel,
+    );
+  }
+}
+
+class _FrameSafeScrollPosition extends ScrollPositionWithSingleContext {
+  _FrameSafeScrollPosition({
+    required super.physics,
+    required super.context,
+    super.initialPixels,
+    super.keepScrollOffset,
+    super.oldPosition,
+    super.debugLabel,
+  });
+
+  bool _deferredScheduled = false;
+  bool _disposed = false;
+  double? _pendingTarget;
+  Completer<void>? _pendingCompleter;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _pendingCompleter?.complete();
+    _pendingCompleter = null;
+    super.dispose();
+  }
+
+  // Unsafe iff a frame's build/layout/paint/semantics is running right now:
+  // that whole pass executes in the persistent-callbacks phase, and it is the
+  // only window where a position mutation can re-enter the semantics compile.
+  bool get _safeNow =>
+      SchedulerBinding.instance.schedulerPhase !=
+      SchedulerPhase.persistentCallbacks;
+
+  @override
+  void jumpTo(double value) {
+    if (_safeNow && !_deferredScheduled) {
+      super.jumpTo(value);
+    } else {
+      unawaited(_deferJump(value));
+    }
+  }
+
+  @override
+  Future<void> animateTo(
+    double to, {
+    required Duration duration,
+    required Curve curve,
+  }) {
+    // Every programmatic animate here is a dpad focus-follow; on a D-pad UI an
+    // instant settle is fine, and the tween's ticker is exactly what races the
+    // pipeline under a held key. User gestures (wheel, drag, ballistic) never
+    // route through animateTo, so smooth manual scrolling is unaffected.
+    return _deferJump(to);
+  }
+
+  Future<void> _deferJump(double target) {
+    _pendingTarget = target;
+    final completer = _pendingCompleter ??= Completer<void>();
+    if (!_deferredScheduled) {
+      _deferredScheduled = true;
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        _deferredScheduled = false;
+        final value = _pendingTarget;
+        final pending = _pendingCompleter;
+        _pendingTarget = null;
+        _pendingCompleter = null;
+        if (!_disposed && value != null && hasPixels && hasContentDimensions) {
+          final clamped = value.clamp(minScrollExtent, maxScrollExtent);
+          if ((pixels - clamped).abs() > 0.5) super.jumpTo(clamped);
+        }
+        pending?.complete();
+      });
+      // addPostFrameCallback does not itself schedule a frame; when the app is
+      // otherwise idle (no pending animation/rebuild) the callback would never
+      // run without this.
+      SchedulerBinding.instance.ensureVisualUpdate();
+    }
+    return completer.future;
   }
 }
 
