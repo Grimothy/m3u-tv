@@ -342,6 +342,7 @@
     }
   },
   "seriesSeasons": "Seasons",
+  "seriesSeasonsSheetTitle": "Seasons",
   "seriesEpisodeCount": "{count, plural, =1{1 episode} other{{count} episodes}}",
   "@seriesEpisodeCount": {
     "placeholders": {

@@ -661,6 +661,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get seriesSeasons => '剧集季';
 
   @override
+  String get seriesSeasonsSheetTitle => '剧集季';
+
+  @override
   String seriesEpisodeCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,

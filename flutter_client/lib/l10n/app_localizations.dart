@@ -1328,6 +1328,12 @@ abstract class AppLocalizations {
   /// **'Seasons'**
   String get seriesSeasons;
 
+  /// No description provided for @seriesSeasonsSheetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Seasons'**
+  String get seriesSeasonsSheetTitle;
+
   /// No description provided for @seriesEpisodeCount.
   ///
   /// In en, this message translates to:

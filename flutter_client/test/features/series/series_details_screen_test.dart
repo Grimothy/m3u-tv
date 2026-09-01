@@ -1,4 +1,3 @@
-import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/features/series/series_details_screen.dart';
@@ -6,7 +5,6 @@ import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
-import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
 Episode _ep(int season, int number) => Episode(
@@ -258,9 +256,9 @@ void main() {
 
     expect(find.text('Play S1E1'), findsOneWidget);
 
-    await tester.tap(find.text('Season 1').last);
+    await tester.tap(find.byKey(const ValueKey('season-card-1')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Season 3').last);
+    await tester.tap(find.byKey(const ValueKey('season-card-3')));
     await tester.pumpAndSettle();
 
     expect(find.text('Play S3E1'), findsOneWidget);
@@ -273,30 +271,16 @@ void main() {
     await tester.pumpWidget(_app(_info()));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Season 1').last);
+    // Inline card row: tapping a card selects its season directly. No dialog.
+    await tester.tap(find.byKey(const ValueKey('season-card-1')));
     await tester.pumpAndSettle();
 
-    // Pick-list rows are D-pad targets, and the current season's row takes
-    // focus so the list is drivable by remote the moment it opens.
-    final rows = find.descendant(
-      of: find.byType(AlertDialog),
-      matching: find.byType(DpadInkWell),
-    );
-    expect(rows, findsNWidgets(3));
     expect(
-      find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.byType(DpadRegion),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      tester.widget<DpadInkWell>(rows.first).autofocus,
-      isTrue,
-      reason: 'Season 1 (the selected season) row should autofocus',
+      find.textContaining('S1E1 Title', findRichText: true),
+      findsWidgets,
     );
 
-    await tester.tap(find.text('Season 3').last);
+    await tester.tap(find.byKey(const ValueKey('season-card-3')));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('S3E1 Title', findRichText: true), findsWidgets);
@@ -304,24 +288,35 @@ void main() {
     expect(find.text('Third season synopsis'), findsOneWidget);
   });
 
-  testWidgets('season picker shows an episode count badge and per-season '
-      'counts in the pick-list', (tester) async {
+  testWidgets('season picker shows per-season episode counts under each card', (
+    tester,
+  ) async {
     await tester.pumpWidget(_app(_info()));
     await tester.pumpAndSettle();
 
-    // Default season (1) has 3 episodes -> badge on the picker button.
-    expect(find.text('3'), findsOneWidget);
-
-    await tester.tap(find.text('Season 1').last);
-    await tester.pumpAndSettle();
-
-    expect(find.text('3 episodes'), findsOneWidget);
-    expect(find.text('1 episode'), findsOneWidget);
-    expect(find.text('2 episodes'), findsOneWidget);
-    // Season overview rides under the count in the pick-list row (season 1's
-    // also shows in the page body since it is the default season).
-    expect(find.text('First season synopsis'), findsNWidgets(2));
-    expect(find.text('Third season synopsis'), findsOneWidget);
+    // Inline card subtitles: each card surfaces its episode count beneath the
+    // season name. Season 1 has 3, Season 2 has 1, Season 3 has 2.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('season-card-1')),
+        matching: find.text('3 episodes'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('season-card-2')),
+        matching: find.text('1 episode'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('season-card-3')),
+        matching: find.text('2 episodes'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('falls back to series plot when the season has no overview', (
@@ -330,9 +325,9 @@ void main() {
     await tester.pumpWidget(_app(_info()));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Season 1').last);
+    await tester.tap(find.byKey(const ValueKey('season-card-1')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Season 2').last);
+    await tester.tap(find.byKey(const ValueKey('season-card-2')));
     await tester.pumpAndSettle();
 
     expect(find.text('Series-level plot'), findsOneWidget);
@@ -506,7 +501,9 @@ void main() {
     await tester.pumpAndSettle();
 
     // Nothing watched -> the picker defaults to Season 1 (3 episodes).
-    await tester.longPress(find.text('Season 1'), warnIfMissed: false);
+    // Long-press the selected season's card to surface the mark-season prompt.
+    final selectedCard = find.byKey(const ValueKey('season-card-1'));
+    await tester.longPress(selectedCard, warnIfMissed: false);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Mark watched'));
     await tester.pumpAndSettle();

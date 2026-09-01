@@ -341,6 +341,7 @@
     }
   },
   "seriesSeasons": "剧集季",
+  "seriesSeasonsSheetTitle": "剧集季",
   "seriesEpisodeCount": "{count, plural, =1{1 集} other{{count} 集}}",
   "@seriesEpisodeCount": {
     "placeholders": {
