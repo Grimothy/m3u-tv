@@ -362,7 +362,7 @@ class TvZoomScale extends InheritedWidget {
 class _TvZoom extends StatelessWidget {
   const _TvZoom({required this.deviceType, required this.child});
 
-  static const double _scale = 1.6;
+  static const double _scale = 1.4;
 
   final DeviceType deviceType;
   final Widget child;
