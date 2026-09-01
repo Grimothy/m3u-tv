@@ -404,8 +404,20 @@ class AppStateController extends ChangeNotifier {
   // The two must both advance together in _resetEpgSession — a reset path
   // that bumps only one would let a stale fetch write into the new source.
   int _epgRequestGeneration = 0;
-  static const _epgPrimeCount = 60;
-  static const _epgFetchDebounceDelay = Duration(milliseconds: 250);
+  // Bumped whenever a background full-guide sweep should stop (source reset,
+  // dispose, or a newer sweep superseding this one). The sweep captures this
+  // and bails between chunks once it no longer matches.
+  int _epgSweepGeneration = 0;
+  static const _epgPrimeCount = 90;
+  static const _epgFetchDebounceDelay = Duration(milliseconds: 150);
+  // After priming the first screen's worth of channels, the rest of the guide
+  // is pulled in the background in [_epgSweepChunkSize] batches spaced by
+  // [_epgSweepChunkDelay], so scrolling a large playlist hits already-loaded
+  // EPG instead of waiting on a lazy fetch. [_epgSweepStartDelay] lets the
+  // prime response and first frame settle before the sweep adds load.
+  static const _epgSweepChunkSize = 100;
+  static const _epgSweepStartDelay = Duration(seconds: 2);
+  static const _epgSweepChunkDelay = Duration(milliseconds: 350);
   // Coalesce multiple DVR post-processing pushes that land in quick
   // succession (e.g. several recordings finishing back-to-back) into a
   // single re-fetch of VOD/Series. Mirrors the [_epgFetchDebounce] pattern.
@@ -2613,11 +2625,11 @@ class AppStateController extends ChangeNotifier {
             );
           }
 
-          // Prime EPG for the first screen's worth of channels only; the rest is
-          // fetched lazily as screens request it via [ensureEpgForChannels] (e.g.
-          // as the channel list scrolls into view). Fetching all channels' EPG
-          // upfront was the main bottleneck on large playlists.
-          unawaited(_loadXtreamEpg(channels.take(_epgPrimeCount).toList()));
+          // Prime EPG for the first screen's worth of channels, then sweep the
+          // rest in the background so scrolling a large playlist lands on
+          // already-loaded EPG. [ensureEpgForChannels] still fills any gaps the
+          // sweep has not reached yet as rows scroll into view.
+          unawaited(_primeAndSweepXtreamEpg(channels));
           return true;
         } on Object {
           await rollbackSource?.call();
@@ -3171,6 +3183,67 @@ class AppStateController extends ChangeNotifier {
     }
   }
 
+  /// Primes EPG for the first [_epgPrimeCount] channels, then - once that
+  /// response and the first frame have settled - sweeps the remaining channels
+  /// in the background so the guide is fully populated without the user having
+  /// to scroll each row into view.
+  Future<void> _primeAndSweepXtreamEpg(List<Channel> channels) async {
+    final generation = _epgRequestGeneration;
+    await _loadXtreamEpg(
+      channels.take(_epgPrimeCount).toList(growable: false),
+    );
+    if (_disposed ||
+        generation != _epgRequestGeneration ||
+        _sourceType != AppSourceType.xtream ||
+        channels.length <= _epgPrimeCount) {
+      return;
+    }
+    unawaited(
+      _sweepXtreamEpgInBackground(
+        channels.skip(_epgPrimeCount).toList(growable: false),
+      ),
+    );
+  }
+
+  /// Walks [channels] in [_epgSweepChunkSize] batches, spaced out so the sweep
+  /// never competes hard with foreground work. Bails between chunks on dispose,
+  /// a source/guide reset, or a newer sweep; yields to in-flight lazy fetches
+  /// (a user actively scrolling the guide) so those stay responsive.
+  Future<void> _sweepXtreamEpgInBackground(List<Channel> channels) async {
+    final sweepGeneration = ++_epgSweepGeneration;
+    final requestGeneration = _epgRequestGeneration;
+    await Future<void>.delayed(_epgSweepStartDelay);
+
+    var start = 0;
+    while (start < channels.length) {
+      if (_disposed ||
+          sweepGeneration != _epgSweepGeneration ||
+          requestGeneration != _epgRequestGeneration ||
+          _sourceType != AppSourceType.xtream) {
+        return;
+      }
+      // A foreground lazy fetch is queued or running - let it go first and
+      // re-check this same window on the next pass.
+      if (_pendingEpgChannelIds.isNotEmpty ||
+          (_epgFetchDebounce?.isActive ?? false)) {
+        await Future<void>.delayed(_epgSweepChunkDelay);
+        continue;
+      }
+      final chunk = channels
+          .skip(start)
+          .take(_epgSweepChunkSize)
+          .toList(growable: false);
+      await _loadXtreamEpg(chunk);
+      start += _epgSweepChunkSize;
+      await Future<void>.delayed(_epgSweepChunkDelay);
+    }
+    if (kDebugMode) {
+      debugPrint(
+        '[EPG] background sweep complete (${channels.length} channels)',
+      );
+    }
+  }
+
   Future<void> _loadXtreamEpg(List<Channel> channels) async {
     final generation = _epgRequestGeneration;
     final channelsToFetch = channels
@@ -3243,6 +3316,7 @@ class AppStateController extends ChangeNotifier {
 
   void _resetEpgSession({bool clearGuide = true}) {
     _epgRequestGeneration += 1;
+    _epgSweepGeneration += 1;
     _epgFetchDebounce?.cancel();
     _epgFetchDebounce = null;
     _pendingEpgChannelIds.clear();
@@ -3317,6 +3391,7 @@ class AppStateController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _epgRequestGeneration += 1;
+    _epgSweepGeneration += 1;
     _epgFetchDebounce?.cancel();
     _dvrContentRefreshDebounce?.cancel();
     _pushTokenSubscription?.cancel().ignore();

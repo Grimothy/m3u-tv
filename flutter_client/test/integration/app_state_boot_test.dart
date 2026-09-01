@@ -1881,6 +1881,88 @@ void main() {
     });
   });
 
+  group('EPG background sweep', () {
+    const credentials = UserCredentials(
+      server: 'https://fixture.example',
+      username: 'fixture-user',
+      password: 'fixture-password',
+    );
+
+    List<Map<String, Object?>> manyLiveStreams(int count) =>
+        <Map<String, Object?>>[
+          for (var i = 1; i <= count; i += 1)
+            <String, Object?>{
+              'stream_id': i,
+              'name': 'Channel $i',
+              'category_id': '10',
+              'epg_channel_id': 'chan.$i',
+            },
+        ];
+
+    test('pulls the whole guide in the background after the prime', () async {
+      var noDateBatches = 0;
+      final base = _FakeXtreamTransport.success().withResponse(
+        'get_live_streams',
+        manyLiveStreams(210),
+      );
+      Future<Object?> transport(XtreamRequest request) async {
+        if (request.action == 'get_epg_batch' &&
+            request.params['date'] == null) {
+          noDateBatches += 1;
+        }
+        return base.call(request);
+      }
+
+      final controller = _controller(
+        storage: InMemorySecureStorage(),
+        transport: transport,
+      );
+      addTearDown(controller.dispose);
+
+      expect(await controller.connectXtream(credentials), isTrue);
+
+      // Prime is one batch; the remaining 120 channels sweep in two more.
+      final swept = await _pollUntil(
+        () => noDateBatches >= 3,
+        timeout: const Duration(seconds: 8),
+      );
+      expect(swept, isTrue, reason: 'background sweep never covered the tail');
+
+      final tailChannel = controller.channels[200];
+      expect(
+        controller.epgService.hasFreshDataForChannel(tailChannel),
+        isTrue,
+      );
+    });
+
+    test('stops sweeping when the controller is disposed', () async {
+      var noDateBatches = 0;
+      final base = _FakeXtreamTransport.success().withResponse(
+        'get_live_streams',
+        manyLiveStreams(210),
+      );
+      Future<Object?> transport(XtreamRequest request) async {
+        if (request.action == 'get_epg_batch' &&
+            request.params['date'] == null) {
+          noDateBatches += 1;
+        }
+        return base.call(request);
+      }
+
+      final controller = _controller(
+        storage: InMemorySecureStorage(),
+        transport: transport,
+      );
+
+      expect(await controller.connectXtream(credentials), isTrue);
+      controller.dispose();
+
+      await Future<void>.delayed(const Duration(seconds: 3));
+      // Only the prime batch may have gone out; the sweep must not run.
+      expect(noDateBatches, lessThanOrEqualTo(1));
+    });
+  });
+
   group('DVR storage refresh', () {
     const credentials = UserCredentials(
       server: 'https://fixture.example',
@@ -2040,6 +2122,20 @@ Future<void> _pumpAppState(WidgetTester tester) async {
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 250));
   await tester.pump();
+}
+
+/// Polls [condition] every 50ms until it is true or [timeout] elapses,
+/// returning whether it became true.
+Future<bool> _pollUntil(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    if (condition()) return true;
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+  }
+  return condition();
 }
 
 Future<void> _waitForXtreamRefresh(
