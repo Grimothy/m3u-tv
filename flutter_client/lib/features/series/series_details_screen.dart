@@ -616,22 +616,26 @@ class _SeriesDetailsBody extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         header,
-        if (info.series.richCast != null &&
+        if (!compact &&
+            info.series.richCast != null &&
             info.series.richCast!.isNotEmpty) ...[
           const SizedBox(height: MediaBrowsingMetrics.contentPadding),
           CastMemberRow(
             members: info.series.richCast,
             semanticLabel: AppLocalizations.of(context).seriesCast,
-            compact: compact,
-            onShowAll: compact
-                ? () => _showAllCast(context, info.series.richCast!)
-                : null,
+            onShowAll: () => _showAllCast(
+              context,
+              info.series.richCast!,
+              asDialog: true,
+            ),
             allCastSemanticLabel: AppLocalizations.of(context).castShowAll,
           ),
         ],
         const SizedBox(height: 20),
         // Play / Start-from-beginning sit on the same line as the season
-        // picker (wrapping to a second run on a phone).
+        // picker (wrapping to a second run on a phone). On the narrow
+        // breakpoint the cast picker chip joins this row beside the
+        // season picker.
         Wrap(
           spacing: MediaBrowsingMetrics.itemGap,
           runSpacing: MediaBrowsingMetrics.chipGap,
@@ -649,6 +653,16 @@ class _SeriesDetailsBody extends StatelessWidget {
               onMarkSeason: (watched) =>
                   onMarkSeason(_episodes(seasonNumber), watched: watched),
             ),
+            if (compact &&
+                info.series.richCast != null &&
+                info.series.richCast!.isNotEmpty)
+              CastMemberRow(
+                members: info.series.richCast,
+                semanticLabel: AppLocalizations.of(context).seriesCast,
+                compact: true,
+                onShowAll: () => _showAllCast(context, info.series.richCast!),
+                allCastSemanticLabel: AppLocalizations.of(context).castShowAll,
+              ),
           ],
         ),
       ],
@@ -871,11 +885,16 @@ class _SeriesDetailsBody extends StatelessWidget {
     return '~${avg}m';
   }
 
-  /// Opens the "Show all cast" bottom sheet listing every member of
-  /// [cast] (avatar + name + character). Used by the compact cast row's
-  /// overflow tile on the narrow breakpoint — same sheet shape as the
-  /// season picker so D-pad / drag-handle behavior matches.
-  void _showAllCast(BuildContext context, List<CastMember> cast) {
+  /// Opens the "Show all cast" picker listing every member of [cast]
+  /// (avatar + name + character) — a bottom sheet from the narrow
+  /// layout's picker chip, a centered dialog ([asDialog]) from the wide
+  /// layout's "+N" overflow tile. Same modal split as the season picker
+  /// so D-pad / dismiss behavior matches.
+  void _showAllCast(
+    BuildContext context,
+    List<CastMember> cast, {
+    bool asDialog = false,
+  }) {
     final l = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
@@ -884,6 +903,7 @@ class _SeriesDetailsBody extends StatelessWidget {
         context,
         title: l.castShowAll,
         cancelLabel: l.cancel,
+        asDialog: asDialog,
         children: [
           for (final member in cast)
             _CastSheetRow(member: member, theme: theme, scheme: scheme),

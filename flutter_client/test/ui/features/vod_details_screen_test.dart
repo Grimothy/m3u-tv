@@ -207,7 +207,7 @@ void main() {
     );
 
     testWidgets(
-      'narrow layout: rich cast overflow tile opens bottom sheet listing all members',
+      'narrow layout: rich cast picker chip opens bottom sheet listing all members',
       (tester) async {
         // Phone width (below the 600px wide breakpoint).
         tester.view.physicalSize = const Size(420, 800);
@@ -225,33 +225,32 @@ void main() {
         await tester.pumpWidget(
           _TestApp(
             service: _VodDetailsXtreamService(
-              info: VodInfo(id: 201, name: 'Big Buck Bunny', richCast: richCast),
+              info: VodInfo(
+                id: 201,
+                name: 'Big Buck Bunny',
+                richCast: richCast,
+              ),
             ),
           ),
         );
         await tester.pumpAndSettle();
 
+        // Compact layout renders a single picker chip: the localized
+        // "Cast" label + a count badge. Member names live in the sheet.
         final l = AppLocalizations.of(
           tester.element(find.byType(CastMemberRow)),
         );
+        expect(find.text(l.vodCast), findsOneWidget);
+        expect(find.text('Bryan Cranston'), findsNothing);
+
+        await tester.tap(find.text(l.vodCast));
+        await tester.pumpAndSettle();
+
+        // Sheet lists all 5 members with their characters.
         expect(find.text(l.castShowAll), findsOneWidget);
-
-        // Tile is past the visible viewport (4 × 144 + gaps > 420).
-        await tester.scrollUntilVisible(
-          find.text(l.castShowAll),
-          200,
-          scrollable: find.byType(Scrollable).first,
-        );
-        await tester.pumpAndSettle();
-
-        await tester.tap(find.text(l.castShowAll));
-        await tester.pumpAndSettle();
-
-        // Sheet shows all 5 names; inline row duplicates the first 3.
-        expect(find.text(l.castShowAll), findsAtLeast(1));
-        expect(find.text('Bryan Cranston'), findsNWidgets(2));
-        expect(find.text('Aaron Paul'), findsNWidgets(2));
-        expect(find.text('Anna Gunn'), findsNWidgets(2));
+        expect(find.text('Bryan Cranston'), findsOneWidget);
+        expect(find.text('Aaron Paul'), findsOneWidget);
+        expect(find.text('Anna Gunn'), findsOneWidget);
         expect(find.text('Dean Norris'), findsOneWidget);
         expect(find.text('Betsy Brandt'), findsOneWidget);
         expect(find.text('Marie Schrader'), findsOneWidget);
@@ -259,8 +258,7 @@ void main() {
     );
 
     testWidgets(
-      'wide layout: rich cast never renders the overflow tile '
-      '(all cast visible inline)',
+      'wide layout: no overflow tile when every cast card fits',
       (tester) async {
         // Wide window: 1600×900, the LayoutBuilder's wide branch renders.
         tester.view.physicalSize = const Size(1600, 900);
@@ -277,20 +275,72 @@ void main() {
         await tester.pumpWidget(
           _TestApp(
             service: _VodDetailsXtreamService(
-              info: VodInfo(id: 201, name: 'Big Buck Bunny', richCast: richCast),
+              info: VodInfo(
+                id: 201,
+                name: 'Big Buck Bunny',
+                richCast: richCast,
+              ),
             ),
           ),
         );
         await tester.pumpAndSettle();
 
-        // All 4 names visible inline.
+        // All 4 names visible inline; 4 cards fit comfortably in 1600px.
         expect(find.text('Bryan Cranston'), findsOneWidget);
         expect(find.text('Dean Norris'), findsOneWidget);
-        // No overflow tile on wide layout, regardless of member count.
         final l = AppLocalizations.of(
           tester.element(find.byType(CastMemberRow)),
         );
         expect(find.text(l.castShowAll), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'wide layout: overflow tile opens the season-picker-style dialog '
+      'listing all members',
+      (tester) async {
+        // 900px window: the info column fits ~4 cast card slots, so 8
+        // members overflow into a "+N" tile as the last slot.
+        tester.view.physicalSize = const Size(900, 700);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final richCast = <CastMember>[
+          for (var i = 1; i <= 8; i++)
+            CastMember(name: 'Cast Member $i', character: 'Role $i'),
+        ];
+        await tester.pumpWidget(
+          _TestApp(
+            service: _VodDetailsXtreamService(
+              info: VodInfo(
+                id: 201,
+                name: 'Big Buck Bunny',
+                richCast: richCast,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // The trailing tile carries the localized show-all label; later
+        // members are not rendered inline.
+        final l = AppLocalizations.of(
+          tester.element(find.byType(CastMemberRow)),
+        );
+        expect(find.text(l.castShowAll), findsOneWidget);
+        expect(find.text('Cast Member 8'), findsNothing);
+
+        await tester.tap(find.text(l.castShowAll));
+        await tester.pumpAndSettle();
+
+        // Wide layout opens a centered dialog (season-picker chrome),
+        // not a bottom sheet, listing every member.
+        expect(find.byType(AlertDialog), findsOneWidget);
+        expect(find.byType(BottomSheet), findsNothing);
+        expect(find.text('Cast Member 1'), findsWidgets);
+        expect(find.text('Cast Member 8'), findsOneWidget);
+        expect(find.text('Role 8'), findsOneWidget);
       },
     );
   });

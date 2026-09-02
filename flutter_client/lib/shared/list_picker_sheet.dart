@@ -3,14 +3,16 @@ import 'package:flutter/material.dart';
 
 import 'package:m3u_tv/shared/app_button.dart';
 
-/// Generic bottom-sheet picker for "show all X" overflow scenarios on
-/// the narrow breakpoint. Mirrors the season picker's mobile form
-/// (one [DpadRegion] containing a title row + capped ListView, sheet
-/// anchored at the bottom with a drag handle).
+/// Generic picker for "show all X" overflow scenarios. Mirrors the
+/// season picker's two modal forms: a drag-handle bottom sheet on the
+/// narrow breakpoint ([show] with `asDialog: false`, the default) and a
+/// centered [AlertDialog] on the wide/TV breakpoint (`asDialog: true`).
+/// Either way it is one [DpadRegion] containing a title row + capped
+/// ListView.
 ///
-/// Used by the cast "Show all" overflow tile on VOD and Series detail
+/// Used by the cast "Show all" affordances on VOD and Series detail
 /// screens; also a natural fit for any future "more items" affordance
-/// that needs a scrollable mobile sheet. The picker's contents are
+/// that needs a scrollable picker. The picker's contents are
 /// caller-supplied via [children] — this widget owns only the modal
 /// chrome.
 ///
@@ -27,6 +29,7 @@ class ListPickerSheet extends StatelessWidget {
     required this.children,
     this.autofocusIndex = 0,
     this.cancelLabel,
+    this.asDialog = false,
   });
 
   /// Header text in the sheet's title row.
@@ -44,18 +47,44 @@ class ListPickerSheet extends StatelessWidget {
   /// to "Cancel" if null (callers should localize).
   final String? cancelLabel;
 
-  /// Show the sheet. Convenience wrapper that opens a drag-handle
-  /// bottom sheet (modally, anchored to the root navigator) sized to
-  /// the supplied [children]. The inner list caps at 70% of the
-  /// viewport so long lists scroll inside the sheet instead of
-  /// pushing it off-screen.
+  /// Dialog chrome instead of sheet chrome: tighter list metrics, a
+  /// slightly lower height cap and an always-visible scrollbar thumb —
+  /// matching the season picker's wide-layout dialog.
+  final bool asDialog;
+
+  /// Show the picker. Opens a drag-handle bottom sheet by default
+  /// (narrow breakpoint), or a centered 460px [AlertDialog] when
+  /// [asDialog] is true (wide/TV breakpoint) — the same split the
+  /// season picker uses. Either way the inner list is height-capped so
+  /// long lists scroll inside the modal instead of pushing it
+  /// off-screen.
   static Future<void> show(
     BuildContext context, {
     required String title,
     required List<Widget> children,
     int autofocusIndex = 0,
     String? cancelLabel,
+    bool asDialog = false,
   }) {
+    if (asDialog) {
+      return showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          clipBehavior: Clip.antiAlias,
+          contentPadding: const EdgeInsets.fromLTRB(0, 16, 0, 12),
+          content: SizedBox(
+            width: 460,
+            child: ListPickerSheet(
+              title: title,
+              autofocusIndex: autofocusIndex,
+              cancelLabel: cancelLabel,
+              asDialog: true,
+              children: children,
+            ),
+          ),
+        ),
+      );
+    }
     return showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -76,9 +105,14 @@ class ListPickerSheet extends StatelessWidget {
     final viewportHeight = MediaQuery.sizeOf(context).height;
     final scheme = Theme.of(context).colorScheme;
     final titleStyle = Theme.of(context).textTheme.titleLarge?.copyWith(
-          color: scheme.onSurface,
-        );
-    final maxListHeight = viewportHeight * 0.7;
+      color: scheme.onSurface,
+    );
+    // Same metric split as the season picker: 70% cap in the sheet,
+    // 65% + visible thumb + tighter bottom padding in the dialog.
+    final maxListHeight = viewportHeight * (asDialog ? 0.65 : 0.7);
+    final listPadding = asDialog
+        ? const EdgeInsets.fromLTRB(12, 4, 12, 4)
+        : const EdgeInsets.fromLTRB(12, 4, 12, 12);
 
     return DpadRegion(
       verticalEdge: DpadEdgeBehavior.stop,
@@ -104,9 +138,10 @@ class ListPickerSheet extends StatelessWidget {
           ConstrainedBox(
             constraints: BoxConstraints(maxHeight: maxListHeight),
             child: Scrollbar(
+              thumbVisibility: asDialog,
               child: ListView(
                 shrinkWrap: true,
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                padding: listPadding,
                 children: [
                   for (var i = 0; i < children.length; i++)
                     if (i == autofocusIndex)

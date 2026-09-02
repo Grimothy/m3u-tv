@@ -639,7 +639,9 @@ void main() {
                 ],
               ),
               seasons: const [Season(number: 1, name: 'Season 1')],
-              episodesBySeason: {1: [_ep(1, 1)]},
+              episodesBySeason: {
+                1: [_ep(1, 1)],
+              },
             ),
           ),
         );
@@ -684,14 +686,43 @@ void main() {
                 ],
               ),
               seasons: const [Season(number: 1, name: 'Season 1')],
-              episodesBySeason: {1: [_ep(1, 1)]},
+              episodesBySeason: {
+                1: [_ep(1, 1)],
+              },
             ),
           ),
         );
         await tester.pumpAndSettle();
 
+        // Compact layout is a single picker chip — only the "Cast"
+        // label and a count badge render; member names live inside
+        // the bottom sheet, not inline.
         expect(find.byType(CastMemberRow), findsOneWidget);
-        expect(find.text('Bryan Cranston'), findsOneWidget);
+        expect(find.text('Cast'), findsOneWidget);
+        // Scoped to the cast row — the season picker's episode-count
+        // badge also renders "1" for this single-episode fixture.
+        expect(
+          find.descendant(
+            of: find.byType(CastMemberRow),
+            matching: find.text('1'),
+          ),
+          findsOneWidget,
+        );
+        // No member name bleeds into the inline compact layout.
+        expect(find.text('Bryan Cranston'), findsNothing);
+        // The chip lives in the same Wrap as the season picker — beside
+        // it, not on its own row above the action buttons.
+        final actionWrap = find.ancestor(
+          of: find.text('Season 1'),
+          matching: find.byType(Wrap),
+        );
+        expect(
+          find.descendant(
+            of: actionWrap.first,
+            matching: find.byType(CastMemberRow),
+          ),
+          findsOneWidget,
+        );
       },
     );
 
@@ -711,14 +742,14 @@ void main() {
     );
 
     testWidgets(
-      'narrow layout: rich cast overflow tile opens bottom sheet listing all members',
+      'narrow layout: rich cast picker button opens bottom sheet listing all members',
       (tester) async {
         tester.view.physicalSize = const Size(420, 800);
         tester.view.devicePixelRatio = 1.0;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
 
-        // 5 members → narrow layout caps to 3 + overflow tile.
+        // 5 members → compact layout shows one chip with a "5" badge.
         final richCast = <CastMember>[
           const CastMember(name: 'Bryan Cranston', character: 'Walter White'),
           const CastMember(name: 'Aaron Paul', character: 'Jesse Pinkman'),
@@ -731,51 +762,40 @@ void main() {
             SeriesInfo(
               series: Series(id: 7, name: 'Rich Cast Show', richCast: richCast),
               seasons: const [Season(number: 1, name: 'Season 1')],
-              episodesBySeason: {1: [_ep(1, 1)]},
+              episodesBySeason: {
+                1: [_ep(1, 1)],
+              },
             ),
           ),
         );
         await tester.pumpAndSettle();
 
-        // The overflow tile uses the localized "Show all cast" label.
-        final l = AppLocalizations.of(
-          tester.element(find.byType(CastMemberRow)),
-        );
-        expect(find.text(l.castShowAll), findsOneWidget);
+        // The picker is the visible inline compact control — a button
+        // labelled "Cast" with a count badge showing all 5 members.
+        expect(find.text('Cast'), findsOneWidget);
+        expect(find.text('5'), findsOneWidget);
 
-        // The overflow tile is past the visible viewport on a 420-wide
-        // phone (4 × 144 + gaps = 612). Scroll it into view before tapping.
-        await tester.scrollUntilVisible(
-          find.text(l.castShowAll),
-          200,
-          scrollable: find.byType(Scrollable).first,
-        );
+        // Tap the picker → bottom sheet opens with every member
+        // listed (5 rows). Compact layout keeps member names inside
+        // the sheet only — no inline duplication.
+        await tester.tap(find.text('Cast'));
         await tester.pumpAndSettle();
 
-        // Tap → bottom sheet opens with every member (5 rows).
-        await tester.tap(find.text(l.castShowAll));
-        await tester.pumpAndSettle();
-
-        // Sheet title and all 5 names rendered (members beyond the 3
-        // visible in the inline row are now reachable). The inline row
-        // shows the first 3 cast cards, so those names appear twice
-        // (inline + sheet); only the trailing two are sheet-only.
-        expect(find.text(l.castShowAll), findsAtLeast(1));
-        expect(find.text('Bryan Cranston'), findsNWidgets(2));
-        expect(find.text('Aaron Paul'), findsNWidgets(2));
-        expect(find.text('Anna Gunn'), findsNWidgets(2));
+        expect(find.text('Bryan Cranston'), findsOneWidget);
+        expect(find.text('Aaron Paul'), findsOneWidget);
+        expect(find.text('Anna Gunn'), findsOneWidget);
         expect(find.text('Dean Norris'), findsOneWidget);
         expect(find.text('Betsy Brandt'), findsOneWidget);
-        // Character names are also rendered for each row (sheet-only
-        // for the trailing two members; inline ones show too).
+        expect(find.text('Walter White'), findsOneWidget);
+        expect(find.text('Jesse Pinkman'), findsOneWidget);
+        expect(find.text('Skyler White'), findsOneWidget);
+        expect(find.text('Hank Schrader'), findsOneWidget);
         expect(find.text('Marie Schrader'), findsOneWidget);
-        expect(find.text('Walter White'), findsNWidgets(2));
       },
     );
 
     testWidgets(
-      'wide layout: rich cast never renders the overflow tile '
-      '(all cast visible inline)',
+      'wide layout: no overflow tile when every cast card fits',
       (tester) async {
         final richCast = <CastMember>[
           const CastMember(name: 'Bryan Cranston', character: 'Walter White'),
@@ -788,20 +808,76 @@ void main() {
             SeriesInfo(
               series: Series(id: 7, name: 'Rich Cast Show', richCast: richCast),
               seasons: const [Season(number: 1, name: 'Season 1')],
-              episodesBySeason: {1: [_ep(1, 1)]},
+              episodesBySeason: {
+                1: [_ep(1, 1)],
+              },
             ),
           ),
         );
         await tester.pumpAndSettle();
 
-        // All 4 names visible inline.
+        // All 4 names visible inline — 4 cards fit the 800px surface.
         expect(find.text('Bryan Cranston'), findsOneWidget);
         expect(find.text('Dean Norris'), findsOneWidget);
-        // No overflow tile on wide layout, regardless of member count.
         final l = AppLocalizations.of(
           tester.element(find.byType(CastMemberRow)),
         );
         expect(find.text(l.castShowAll), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'wide layout: overflow tile opens the season-picker-style dialog '
+      'listing all members',
+      (tester) async {
+        final richCast = <CastMember>[
+          for (var i = 1; i <= 9; i++)
+            CastMember(name: 'Cast Member $i', character: 'Role $i'),
+        ];
+        await tester.pumpWidget(
+          _app(
+            SeriesInfo(
+              series: Series(id: 7, name: 'Rich Cast Show', richCast: richCast),
+              seasons: const [Season(number: 1, name: 'Season 1')],
+              episodesBySeason: {
+                1: [_ep(1, 1)],
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 9 members overflow the default 800px test surface, so the
+        // last slot is the "+N / show all" tile and later members stay
+        // out of the inline row.
+        final l = AppLocalizations.of(
+          tester.element(find.byType(CastMemberRow)),
+        );
+        expect(find.text(l.castShowAll), findsOneWidget);
+        expect(find.text('Cast Member 9'), findsNothing);
+
+        await tester.tap(find.text(l.castShowAll));
+        await tester.pumpAndSettle();
+
+        // Wide layout opens a centered dialog (season-picker chrome),
+        // not a bottom sheet, listing every member.
+        expect(find.byType(AlertDialog), findsOneWidget);
+        expect(find.byType(BottomSheet), findsNothing);
+        expect(find.text('Cast Member 1'), findsWidgets);
+        // The dialog's list is lazy and height-capped — scroll the last
+        // member into view before asserting on it.
+        await tester.scrollUntilVisible(
+          find.text('Cast Member 9'),
+          200,
+          scrollable: find
+              .descendant(
+                of: find.byType(AlertDialog),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        expect(find.text('Cast Member 9'), findsOneWidget);
+        expect(find.text('Role 9'), findsOneWidget);
       },
     );
   });

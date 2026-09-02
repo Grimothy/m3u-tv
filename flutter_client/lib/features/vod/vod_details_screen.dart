@@ -294,8 +294,10 @@ class _VodDetailsBody extends StatelessWidget {
               details.containerExtension!.toUpperCase(),
           ],
           buttonLabel: buttonLabel,
-          onPlay: () =>
-              _play(details, startPosition: progress?.positionSeconds.toDouble()),
+          onPlay: () => _play(
+            details,
+            startPosition: progress?.positionSeconds.toDouble(),
+          ),
           onStartOver: progress == null
               ? null
               // ignore: prefer_int_literals
@@ -317,9 +319,8 @@ class _VodDetailsBody extends StatelessWidget {
             members: richCast,
             semanticLabel: l.vodCast,
             compact: compact,
-            onShowAll: compact
-                ? () => _showAllCast(context, richCast)
-                : null,
+            onShowAll: () =>
+                _showAllCast(context, richCast, asDialog: !compact),
             allCastSemanticLabel: l.castShowAll,
           ),
         ],
@@ -327,11 +328,16 @@ class _VodDetailsBody extends StatelessWidget {
     );
   }
 
-  /// Opens the "Show all cast" bottom sheet listing every member of
-  /// [cast] (avatar + name + character). Used by the compact cast row's
-  /// overflow tile on the narrow breakpoint — same sheet shape as the
-  /// season picker so D-pad / drag-handle behavior matches.
-  void _showAllCast(BuildContext context, List<CastMember> cast) {
+  /// Opens the "Show all cast" picker listing every member of [cast]
+  /// (avatar + name + character) — a bottom sheet from the narrow
+  /// layout's picker chip, a centered dialog ([asDialog]) from the wide
+  /// layout's "+N" overflow tile. Same modal split as the season picker
+  /// so D-pad / dismiss behavior matches.
+  void _showAllCast(
+    BuildContext context,
+    List<CastMember> cast, {
+    bool asDialog = false,
+  }) {
     final l = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
@@ -340,6 +346,7 @@ class _VodDetailsBody extends StatelessWidget {
         context,
         title: l.castShowAll,
         cancelLabel: l.cancel,
+        asDialog: asDialog,
         children: [
           for (final member in cast)
             _VodCastSheetRow(member: member, theme: theme, scheme: scheme),
