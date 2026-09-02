@@ -803,6 +803,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get vodCast => 'Reparto';
 
   @override
+  String get castShowAll => 'Ver todo el reparto';
+
+  @override
   String vodTimeLeftMinutes(int minutes) {
     String _temp0 = intl.Intl.pluralLogic(
       minutes,

@@ -412,6 +412,7 @@
   "vodPlayMovie": "Reproducir película",
   "vodContinueMovie": "Continuar película",
   "vodCast": "Reparto",
+  "castShowAll": "Ver todo el reparto",
   "vodTimeLeftMinutes": "{minutes, plural, =1{Queda 1 min} other{Quedan {minutes} min}}",
   "@vodTimeLeftMinutes": {
     "description": "Trailing label inside the resume button on a VOD detail screen, showing time remaining under an hour.",

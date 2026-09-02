@@ -17,6 +17,7 @@ import 'package:m3u_tv/shared/dominant_backdrop_color.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
 import 'package:m3u_tv/shared/item_meta_info.dart';
+import 'package:m3u_tv/shared/list_picker_sheet.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
 /// Below this window width the series detail lays out for a phone: smaller
@@ -621,6 +622,11 @@ class _SeriesDetailsBody extends StatelessWidget {
           CastMemberRow(
             members: info.series.richCast,
             semanticLabel: AppLocalizations.of(context).seriesCast,
+            compact: compact,
+            onShowAll: compact
+                ? () => _showAllCast(context, info.series.richCast!)
+                : null,
+            allCastSemanticLabel: AppLocalizations.of(context).castShowAll,
           ),
         ],
         const SizedBox(height: 20),
@@ -864,6 +870,27 @@ class _SeriesDetailsBody extends StatelessWidget {
     }
     return '~${avg}m';
   }
+
+  /// Opens the "Show all cast" bottom sheet listing every member of
+  /// [cast] (avatar + name + character). Used by the compact cast row's
+  /// overflow tile on the narrow breakpoint — same sheet shape as the
+  /// season picker so D-pad / drag-handle behavior matches.
+  void _showAllCast(BuildContext context, List<CastMember> cast) {
+    final l = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    unawaited(
+      ListPickerSheet.show(
+        context,
+        title: l.castShowAll,
+        cancelLabel: l.cancel,
+        children: [
+          for (final member in cast)
+            _CastSheetRow(member: member, theme: theme, scheme: scheme),
+        ],
+      ),
+    );
+  }
 }
 
 String? _trimmedOrNull(String? value) {
@@ -1016,6 +1043,74 @@ class _ConfirmMarkDialogState extends State<_ConfirmMarkDialog> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Single row inside the "Show all cast" bottom sheet. 48px circular
+/// avatar + bold name (1 line, ellipsized) + muted character (1 line,
+/// ellipsized). Rendered via a plain [Padding] — the surrounding
+/// [ListPickerSheet] handles D-pad region / focus / scrolling, so a
+/// per-row [DpadInkWell] would just compete with that focus model.
+class _CastSheetRow extends StatelessWidget {
+  const _CastSheetRow({
+    required this.member,
+    required this.theme,
+    required this.scheme,
+  });
+
+  final CastMember member;
+  final ThemeData theme;
+  final ColorScheme scheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final character = member.character;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: ClipOval(
+              child: ResilientMediaImage(
+                imageUrl: member.photo,
+                fallbackIcon: Icons.person,
+                backgroundColor: scheme.surfaceContainerHighest,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  member.name,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (character != null && character.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    character,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

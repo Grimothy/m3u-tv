@@ -413,6 +413,7 @@
   "vodPlayMovie": "Play movie",
   "vodContinueMovie": "Continue movie",
   "vodCast": "Cast",
+  "castShowAll": "Show all cast",
   "vodTimeLeftMinutes": "{minutes, plural, =1{1 min left} other{{minutes} min left}}",
   "@vodTimeLeftMinutes": {
     "description": "Trailing label inside the resume button on a VOD detail screen, showing time remaining under an hour.",

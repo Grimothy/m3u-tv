@@ -412,6 +412,7 @@
   "vodPlayMovie": "播放电影",
   "vodContinueMovie": "继续播放",
   "vodCast": "演员阵容",
+  "castShowAll": "查看全部演员",
   "vodTimeLeftMinutes": "{minutes, plural, other{还剩{minutes}分钟}}",
   "@vodTimeLeftMinutes": {
     "description": "Trailing label inside the resume button on a VOD detail screen, showing time remaining under an hour.",

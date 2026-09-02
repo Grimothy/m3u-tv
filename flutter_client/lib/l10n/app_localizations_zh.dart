@@ -768,6 +768,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get vodCast => '演员阵容';
 
   @override
+  String get castShowAll => '查看全部演员';
+
+  @override
   String vodTimeLeftMinutes(int minutes) {
     String _temp0 = intl.Intl.pluralLogic(
       minutes,

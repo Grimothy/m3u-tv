@@ -205,6 +205,94 @@ void main() {
         expect(find.byType(CastMemberRow), findsNothing);
       },
     );
+
+    testWidgets(
+      'narrow layout: rich cast overflow tile opens bottom sheet listing all members',
+      (tester) async {
+        // Phone width (below the 600px wide breakpoint).
+        tester.view.physicalSize = const Size(420, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final richCast = <CastMember>[
+          const CastMember(name: 'Bryan Cranston', character: 'Walter White'),
+          const CastMember(name: 'Aaron Paul', character: 'Jesse Pinkman'),
+          const CastMember(name: 'Anna Gunn', character: 'Skyler White'),
+          const CastMember(name: 'Dean Norris', character: 'Hank Schrader'),
+          const CastMember(name: 'Betsy Brandt', character: 'Marie Schrader'),
+        ];
+        await tester.pumpWidget(
+          _TestApp(
+            service: _VodDetailsXtreamService(
+              info: VodInfo(id: 201, name: 'Big Buck Bunny', richCast: richCast),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final l = AppLocalizations.of(
+          tester.element(find.byType(CastMemberRow)),
+        );
+        expect(find.text(l.castShowAll), findsOneWidget);
+
+        // Tile is past the visible viewport (4 × 144 + gaps > 420).
+        await tester.scrollUntilVisible(
+          find.text(l.castShowAll),
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text(l.castShowAll));
+        await tester.pumpAndSettle();
+
+        // Sheet shows all 5 names; inline row duplicates the first 3.
+        expect(find.text(l.castShowAll), findsAtLeast(1));
+        expect(find.text('Bryan Cranston'), findsNWidgets(2));
+        expect(find.text('Aaron Paul'), findsNWidgets(2));
+        expect(find.text('Anna Gunn'), findsNWidgets(2));
+        expect(find.text('Dean Norris'), findsOneWidget);
+        expect(find.text('Betsy Brandt'), findsOneWidget);
+        expect(find.text('Marie Schrader'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'wide layout: rich cast never renders the overflow tile '
+      '(all cast visible inline)',
+      (tester) async {
+        // Wide window: 1600×900, the LayoutBuilder's wide branch renders.
+        tester.view.physicalSize = const Size(1600, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final richCast = <CastMember>[
+          const CastMember(name: 'Bryan Cranston', character: 'Walter White'),
+          const CastMember(name: 'Aaron Paul', character: 'Jesse Pinkman'),
+          const CastMember(name: 'Anna Gunn', character: 'Skyler White'),
+          const CastMember(name: 'Dean Norris', character: 'Hank Schrader'),
+        ];
+        await tester.pumpWidget(
+          _TestApp(
+            service: _VodDetailsXtreamService(
+              info: VodInfo(id: 201, name: 'Big Buck Bunny', richCast: richCast),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // All 4 names visible inline.
+        expect(find.text('Bryan Cranston'), findsOneWidget);
+        expect(find.text('Dean Norris'), findsOneWidget);
+        // No overflow tile on wide layout, regardless of member count.
+        final l = AppLocalizations.of(
+          tester.element(find.byType(CastMemberRow)),
+        );
+        expect(find.text(l.castShowAll), findsNothing);
+      },
+    );
   });
 }
 

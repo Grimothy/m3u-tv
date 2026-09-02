@@ -11,6 +11,7 @@ import 'package:m3u_tv/shared/cast_member_row.dart';
 import 'package:m3u_tv/shared/dominant_backdrop_color.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
 import 'package:m3u_tv/shared/item_meta_info.dart';
+import 'package:m3u_tv/shared/list_picker_sheet.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
 class VodDetailsScreen extends StatefulWidget {
@@ -232,7 +233,14 @@ class _VodDetailsBody extends StatelessWidget {
         children: [
           poster,
           const SizedBox(height: 16),
-          _infoColumn(context, theme, details, progress, fullWidthButton: true),
+          _infoColumn(
+            context,
+            theme,
+            details,
+            progress,
+            fullWidthButton: true,
+            compact: true,
+          ),
         ],
       ),
     );
@@ -265,6 +273,7 @@ class _VodDetailsBody extends StatelessWidget {
     _ResolvedVodDetails details,
     Progress? progress, {
     bool fullWidthButton = false,
+    bool compact = false,
   }) {
     final l = AppLocalizations.of(context);
     final buttonLabel = progress == null
@@ -304,9 +313,38 @@ class _VodDetailsBody extends StatelessWidget {
         ),
         if (richCast != null && richCast.isNotEmpty) ...[
           const SizedBox(height: MediaBrowsingMetrics.contentPadding),
-          CastMemberRow(members: richCast, semanticLabel: l.vodCast),
+          CastMemberRow(
+            members: richCast,
+            semanticLabel: l.vodCast,
+            compact: compact,
+            onShowAll: compact
+                ? () => _showAllCast(context, richCast)
+                : null,
+            allCastSemanticLabel: l.castShowAll,
+          ),
         ],
       ],
+    );
+  }
+
+  /// Opens the "Show all cast" bottom sheet listing every member of
+  /// [cast] (avatar + name + character). Used by the compact cast row's
+  /// overflow tile on the narrow breakpoint — same sheet shape as the
+  /// season picker so D-pad / drag-handle behavior matches.
+  void _showAllCast(BuildContext context, List<CastMember> cast) {
+    final l = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    unawaited(
+      ListPickerSheet.show(
+        context,
+        title: l.castShowAll,
+        cancelLabel: l.cancel,
+        children: [
+          for (final member in cast)
+            _VodCastSheetRow(member: member, theme: theme, scheme: scheme),
+        ],
+      ),
     );
   }
 
@@ -349,6 +387,75 @@ class _VodDetailsBody extends StatelessWidget {
           if (details.plot != null) 'plot': details.plot,
           if (details.edlUrl != null) 'edl_url': details.edlUrl,
         },
+      ),
+    );
+  }
+}
+
+/// Single row inside the VOD "Show all cast" bottom sheet. 48px
+/// circular avatar + bold name (1 line, ellipsized) + muted character
+/// (1 line, ellipsized). Rendered via a plain [Padding] — the
+/// surrounding ListPickerSheet handles D-pad region / focus /
+/// scrolling, so a per-row DpadInkWell would just compete with that
+/// focus model.
+class _VodCastSheetRow extends StatelessWidget {
+  const _VodCastSheetRow({
+    required this.member,
+    required this.theme,
+    required this.scheme,
+  });
+
+  final CastMember member;
+  final ThemeData theme;
+  final ColorScheme scheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final character = member.character;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: ClipOval(
+              child: ResilientMediaImage(
+                imageUrl: member.photo,
+                fallbackIcon: Icons.person,
+                backgroundColor: scheme.surfaceContainerHighest,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  member.name,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (character != null && character.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    character,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

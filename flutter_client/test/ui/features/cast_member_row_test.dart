@@ -12,10 +12,22 @@ CastMember _m({
   int? id,
 }) => CastMember(name: name, character: character, photo: photo, id: id);
 
-Widget _harness({List<CastMember>? members, String? semanticLabel}) {
+Widget _harness({
+  List<CastMember>? members,
+  String? semanticLabel,
+  bool compact = false,
+  VoidCallback? onShowAll,
+  String? allCastSemanticLabel,
+}) {
   return MaterialApp(
     home: Scaffold(
-      body: CastMemberRow(members: members, semanticLabel: semanticLabel),
+      body: CastMemberRow(
+        members: members,
+        semanticLabel: semanticLabel,
+        compact: compact,
+        onShowAll: onShowAll,
+        allCastSemanticLabel: allCastSemanticLabel,
+      ),
     ),
   );
 }
@@ -198,5 +210,130 @@ void main() {
         );
       },
     );
+
+    group('compact mode', () {
+      testWidgets(
+        'renders only 3 cast cards + the overflow tile when more than 3',
+        (tester) async {
+          final members = [
+            for (var i = 0; i < 8; i++) _m(name: 'Actor $i', character: 'Role $i'),
+          ];
+          await tester.pumpWidget(
+            _harness(
+              members: members,
+              compact: true,
+              onShowAll: () {},
+              allCastSemanticLabel: 'Show all cast',
+            ),
+          );
+
+          // First 3 render, others don't.
+          expect(find.text('Actor 0'), findsOneWidget);
+          expect(find.text('Actor 2'), findsOneWidget);
+          expect(find.text('Actor 3'), findsNothing);
+          expect(find.text('Actor 7'), findsNothing);
+          // The overflow tile's name label.
+          expect(find.text('Show all cast'), findsOneWidget);
+          // Underscore glyph on the badge.
+          expect(find.text('_'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'hides overflow tile when 3 or fewer members (nothing to expand to)',
+        (tester) async {
+          await tester.pumpWidget(
+            _harness(
+              members: [_m(name: 'Only One'), _m(name: 'Only Two')],
+              compact: true,
+              onShowAll: () {},
+              allCastSemanticLabel: 'Show all cast',
+            ),
+          );
+
+          expect(find.text('Only One'), findsOneWidget);
+          expect(find.text('Only Two'), findsOneWidget);
+          expect(find.text('Show all cast'), findsNothing);
+          expect(find.text('_'), findsNothing);
+        },
+      );
+
+      testWidgets(
+        'hides overflow tile when onShowAll is null even if members overflow',
+        (tester) async {
+          // Callers pass null when they don't want a sheet (e.g. compact
+          // disabled, or wide layout). No tile should appear regardless.
+          final members = [
+            for (var i = 0; i < 8; i++) _m(name: 'Actor $i'),
+          ];
+          await tester.pumpWidget(_harness(members: members, compact: true));
+
+          expect(find.text('Actor 7'), findsNothing);
+          expect(find.text('_'), findsNothing);
+        },
+      );
+
+      testWidgets(
+        'overflow tile fires onShowAll callback on tap',
+        (tester) async {
+          var tapCount = 0;
+          final members = [
+            for (var i = 0; i < 5; i++) _m(name: 'Actor $i'),
+          ];
+          await tester.pumpWidget(
+            _harness(
+              members: members,
+              compact: true,
+              onShowAll: () => tapCount++,
+              allCastSemanticLabel: 'Show all cast',
+            ),
+          );
+
+          await tester.tap(find.text('Show all cast'));
+          await tester.pump();
+          expect(tapCount, 1);
+        },
+      );
+
+      testWidgets(
+        'overflow tile sets Semantics button=true for screen readers',
+        (tester) async {
+          final members = [
+            for (var i = 0; i < 5; i++) _m(name: 'Actor $i'),
+          ];
+          await tester.pumpWidget(
+            _harness(
+              members: members,
+              compact: true,
+              onShowAll: () {},
+              allCastSemanticLabel: 'Show all cast',
+            ),
+          );
+
+          final buttonFinder = find.byWidgetPredicate(
+            (w) =>
+                w is Semantics &&
+                w.properties.label == 'Show all cast' &&
+                w.properties.button == true,
+          );
+          expect(buttonFinder, findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'wide layout shows full cast up to 15 without overflow tile',
+        (tester) async {
+          final members = [
+            for (var i = 0; i < 5; i++) _m(name: 'Actor $i', character: 'Role $i'),
+          ];
+          await tester.pumpWidget(_harness(members: members));
+
+          // All 5 render.
+          expect(find.text('Actor 4'), findsOneWidget);
+          expect(find.text('Show all cast'), findsNothing);
+          expect(find.text('_'), findsNothing);
+        },
+      );
+    });
   });
 }

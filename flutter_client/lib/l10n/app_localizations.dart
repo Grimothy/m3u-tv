@@ -1508,6 +1508,12 @@ abstract class AppLocalizations {
   /// **'Cast'**
   String get vodCast;
 
+  /// No description provided for @castShowAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Show all cast'**
+  String get castShowAll;
+
   /// Trailing label inside the resume button on a VOD detail screen, showing time remaining under an hour.
   ///
   /// In en, this message translates to:

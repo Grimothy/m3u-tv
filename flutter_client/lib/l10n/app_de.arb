@@ -412,6 +412,7 @@
   "vodPlayMovie": "Film abspielen",
   "vodContinueMovie": "Film fortsetzen",
   "vodCast": "Besetzung",
+  "castShowAll": "Alle Darsteller anzeigen",
   "vodTimeLeftMinutes": "{minutes, plural, =1{noch 1 Min.} other{noch {minutes} Min.}}",
   "@vodTimeLeftMinutes": {
     "description": "Trailing label inside the resume button on a VOD detail screen, showing time remaining under an hour.",
