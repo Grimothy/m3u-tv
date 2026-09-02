@@ -285,6 +285,19 @@ class EpgService extends ChangeNotifier {
     return programs.reversed.toList();
   }
 
+  /// A flat snapshot of every known program whose [EpgProgram.end] is at or
+  /// after [from], for offline persistence. Grouped by channel (map iteration
+  /// order), each channel's programs already sorted by start.
+  List<EpgProgram> programsEndingAfter(DateTime from) {
+    final result = <EpgProgram>[];
+    for (final programs in _programsByChannel.values) {
+      for (final program in programs) {
+        if (!program.end.isBefore(from)) result.add(program);
+      }
+    }
+    return result;
+  }
+
   void clear() {
     _programsByChannel.clear();
     _fetchedAtByChannel.clear();

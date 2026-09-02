@@ -404,8 +404,28 @@ class AppStateController extends ChangeNotifier {
   // The two must both advance together in _resetEpgSession — a reset path
   // that bumps only one would let a stale fetch write into the new source.
   int _epgRequestGeneration = 0;
-  static const _epgPrimeCount = 60;
-  static const _epgFetchDebounceDelay = Duration(milliseconds: 250);
+  // Bumped whenever a background full-guide sweep should stop (source reset,
+  // dispose, or a newer sweep superseding this one). The sweep captures this
+  // and bails between chunks once it no longer matches.
+  int _epgSweepGeneration = 0;
+  static const _epgPrimeCount = 90;
+  static const _epgFetchDebounceDelay = Duration(milliseconds: 150);
+  // After priming the first screen's worth of channels, the rest of the guide
+  // is pulled in the background in [_epgSweepChunkSize] batches spaced by
+  // [_epgSweepChunkDelay], so scrolling a large playlist hits already-loaded
+  // EPG instead of waiting on a lazy fetch. [_epgSweepStartDelay] lets the
+  // prime response and first frame settle before the sweep adds load.
+  static const _epgSweepChunkSize = 100;
+  static const _epgSweepStartDelay = Duration(seconds: 2);
+  static const _epgSweepChunkDelay = Duration(milliseconds: 350);
+  // The guide is written to the on-disk cache (debounced) as prime/sweep/lazy
+  // fetches land, so a cold start can paint the last-known EPG before any
+  // network round-trip. Only programmes still airing or upcoming are kept, and
+  // the flat list is capped so the blob stays bounded on huge playlists.
+  Timer? _epgGuidePersistDebounce;
+  static const _epgGuidePersistDelay = Duration(seconds: 12);
+  static const _epgPersistProgramCap = 50000;
+  static const _epgPersistPastSlack = Duration(hours: 2);
   // Coalesce multiple DVR post-processing pushes that land in quick
   // succession (e.g. several recordings finishing back-to-back) into a
   // single re-fetch of VOD/Series. Mirrors the [_epgFetchDebounce] pattern.
@@ -2506,6 +2526,12 @@ class AppStateController extends ChangeNotifier {
             'vodStreams': vodItems,
             'seriesStreams': seriesList,
             'viewers': viewers,
+            // replace() wipes every cache key not in this map, so carry the
+            // guide across a same-source refresh; drop it when the EPG source
+            // itself is changing (the reset below clears the in-memory guide).
+            'epgGuide': invalidateEpgFreshness
+                ? const <EpgProgram>[]
+                : _epgGuideForPersist(),
           });
           if (_sourceOperationGeneration.isStale(sourceGeneration)) {
             await rollbackSource?.call();
@@ -2613,11 +2639,11 @@ class AppStateController extends ChangeNotifier {
             );
           }
 
-          // Prime EPG for the first screen's worth of channels only; the rest is
-          // fetched lazily as screens request it via [ensureEpgForChannels] (e.g.
-          // as the channel list scrolls into view). Fetching all channels' EPG
-          // upfront was the main bottleneck on large playlists.
-          unawaited(_loadXtreamEpg(channels.take(_epgPrimeCount).toList()));
+          // Prime EPG for the first screen's worth of channels, then sweep the
+          // rest in the background so scrolling a large playlist lands on
+          // already-loaded EPG. [ensureEpgForChannels] still fills any gaps the
+          // sweep has not reached yet as rows scroll into view.
+          unawaited(_primeAndSweepXtreamEpg(channels));
           return true;
         } on Object {
           await rollbackSource?.call();
@@ -2746,6 +2772,11 @@ class AppStateController extends ChangeNotifier {
     final progress = activeViewer == null
         ? const <Progress>[]
         : await resumeService.all(activeViewer.ulid);
+    if (_sourceOperationGeneration.isStale(sourceGeneration) ||
+        _viewerOperationGeneration.isStale(viewerGeneration)) {
+      return false;
+    }
+    await _restoreCachedEpgGuide();
     if (_sourceOperationGeneration.isStale(sourceGeneration) ||
         _viewerOperationGeneration.isStale(viewerGeneration)) {
       return false;
@@ -3153,6 +3184,7 @@ class AppStateController extends ChangeNotifier {
           )
           ..markFetched(fetchIds);
       }
+      _scheduleEpgGuidePersist();
       if (kDebugMode) {
         debugPrint(
           '[EPG] lazy fetch → ${programs.length} programs for ${channels.length} channels',
@@ -3168,6 +3200,67 @@ class AppStateController extends ChangeNotifier {
         return;
       }
       if (kDebugMode) debugPrint('[EPG] lazy fetch failed: $e');
+    }
+  }
+
+  /// Primes EPG for the first [_epgPrimeCount] channels, then - once that
+  /// response and the first frame have settled - sweeps the remaining channels
+  /// in the background so the guide is fully populated without the user having
+  /// to scroll each row into view.
+  Future<void> _primeAndSweepXtreamEpg(List<Channel> channels) async {
+    final generation = _epgRequestGeneration;
+    await _loadXtreamEpg(
+      channels.take(_epgPrimeCount).toList(growable: false),
+    );
+    if (_disposed ||
+        generation != _epgRequestGeneration ||
+        _sourceType != AppSourceType.xtream ||
+        channels.length <= _epgPrimeCount) {
+      return;
+    }
+    unawaited(
+      _sweepXtreamEpgInBackground(
+        channels.skip(_epgPrimeCount).toList(growable: false),
+      ),
+    );
+  }
+
+  /// Walks [channels] in [_epgSweepChunkSize] batches, spaced out so the sweep
+  /// never competes hard with foreground work. Bails between chunks on dispose,
+  /// a source/guide reset, or a newer sweep; yields to in-flight lazy fetches
+  /// (a user actively scrolling the guide) so those stay responsive.
+  Future<void> _sweepXtreamEpgInBackground(List<Channel> channels) async {
+    final sweepGeneration = ++_epgSweepGeneration;
+    final requestGeneration = _epgRequestGeneration;
+    await Future<void>.delayed(_epgSweepStartDelay);
+
+    var start = 0;
+    while (start < channels.length) {
+      if (_disposed ||
+          sweepGeneration != _epgSweepGeneration ||
+          requestGeneration != _epgRequestGeneration ||
+          _sourceType != AppSourceType.xtream) {
+        return;
+      }
+      // A foreground lazy fetch is queued or running - let it go first and
+      // re-check this same window on the next pass.
+      if (_pendingEpgChannelIds.isNotEmpty ||
+          (_epgFetchDebounce?.isActive ?? false)) {
+        await Future<void>.delayed(_epgSweepChunkDelay);
+        continue;
+      }
+      final chunk = channels
+          .skip(start)
+          .take(_epgSweepChunkSize)
+          .toList(growable: false);
+      await _loadXtreamEpg(chunk);
+      start += _epgSweepChunkSize;
+      await Future<void>.delayed(_epgSweepChunkDelay);
+    }
+    if (kDebugMode) {
+      debugPrint(
+        '[EPG] background sweep complete (${channels.length} channels)',
+      );
     }
   }
 
@@ -3200,6 +3293,7 @@ class AppStateController extends ChangeNotifier {
         programs,
         sourceGeneration: sourceGeneration,
       );
+      _scheduleEpgGuidePersist();
     } on Object catch (e) {
       epgService.markFetchFailed(
         channelIds,
@@ -3209,6 +3303,52 @@ class AppStateController extends ChangeNotifier {
       // Don't clear existing EPG data on a batch failure. A transient network
       // error shouldn't wipe a previously loaded guide.
     }
+  }
+
+  /// The airing/upcoming slice of the in-memory guide, capped, for the on-disk
+  /// cache. Stale (already-ended) programmes are dropped so an old blob shrinks
+  /// to nothing on its own rather than restoring a guide full of dead air.
+  List<EpgProgram> _epgGuideForPersist() {
+    final cutoff = epgService.now.subtract(_epgPersistPastSlack);
+    final programs = epgService.programsEndingAfter(cutoff);
+    if (programs.length <= _epgPersistProgramCap) return programs;
+    return programs.sublist(0, _epgPersistProgramCap);
+  }
+
+  void _scheduleEpgGuidePersist() {
+    _epgGuidePersistDebounce?.cancel();
+    _epgGuidePersistDebounce = Timer(
+      _epgGuidePersistDelay,
+      () => unawaited(_persistEpgGuide()),
+    );
+  }
+
+  Future<void> _persistEpgGuide() async {
+    if (_disposed || _sourceType != AppSourceType.xtream) return;
+    try {
+      await cacheService.set('epgGuide', _epgGuideForPersist());
+    } on Object catch (e) {
+      if (kDebugMode) debugPrint('[EPG] guide persist failed: $e');
+    }
+  }
+
+  /// Merges the last-persisted guide into [epgService] on a cold start so the
+  /// grids can paint "now/next" before the network prime lands. Marked not
+  /// fresh, so the prime and background sweep still refresh every channel.
+  Future<void> _restoreCachedEpgGuide() async {
+    final cached = await cacheService.get<List<EpgProgram>>('epgGuide');
+    final programs = cached?.data;
+    if (programs == null || programs.isEmpty) return;
+    final cutoff = epgService.now.subtract(_epgPersistPastSlack);
+    final live = programs
+        .where((program) => program.end.isAfter(cutoff))
+        .toList(growable: false);
+    if (live.isEmpty) return;
+    epgService.mergePrograms(
+      live,
+      replaceExisting: false,
+      markFresh: false,
+    );
   }
 
   String _epgChannelId(Channel channel) =>
@@ -3243,7 +3383,9 @@ class AppStateController extends ChangeNotifier {
 
   void _resetEpgSession({bool clearGuide = true}) {
     _epgRequestGeneration += 1;
+    _epgSweepGeneration += 1;
     _epgFetchDebounce?.cancel();
+    _epgGuidePersistDebounce?.cancel();
     _epgFetchDebounce = null;
     _pendingEpgChannelIds.clear();
     _pendingForcedEpgChannelIds.clear();
@@ -3317,7 +3459,9 @@ class AppStateController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _epgRequestGeneration += 1;
+    _epgSweepGeneration += 1;
     _epgFetchDebounce?.cancel();
+    _epgGuidePersistDebounce?.cancel();
     _dvrContentRefreshDebounce?.cancel();
     _pushTokenSubscription?.cancel().ignore();
     unawaited(_tvNotificationController.close());

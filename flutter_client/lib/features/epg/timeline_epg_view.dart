@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:intl/intl.dart';
 
 import 'package:m3u_tv/features/epg/epg_recording_state.dart';
@@ -31,6 +32,18 @@ const double _kChannelColW = 128;
 const double _kTimeHeaderH = 28;
 const double _kRowH = 60;
 const double _kPxPerMin = 5; // 300 px per hour
+
+// When a row builds, also request EPG for this many channels past it so a
+// downward scroll lands on already-loaded data instead of waiting on a lazy
+// fetch. [onEnsureEpg] is debounced and de-duped, so the widened slice just
+// coalesces into one batched request.
+const int _kEpgPrefetchAhead = 12;
+
+// Build (and therefore prefetch) roughly this many rows beyond the viewport in
+// each direction.
+const ScrollCacheExtent _kEpgCacheExtent = ScrollCacheExtent.pixels(
+  _kRowH * 10,
+);
 
 /// Horizontal TV-guide style EPG with channels on Y and time on X.
 ///
@@ -627,6 +640,7 @@ class TimelineEpgViewState extends State<TimelineEpgView> {
                             controller: _rightVCtrl,
                             itemCount: widget.channels.length,
                             itemExtent: _kRowH,
+                            scrollCacheExtent: _kEpgCacheExtent,
                             itemBuilder: (_, i) {
                               final channel = widget.channels[i];
                               final catchupRetentionDays =
@@ -634,8 +648,15 @@ class TimelineEpgViewState extends State<TimelineEpgView> {
                                     channel.catchupSupported,
                                     channel.catchupDays,
                                   );
+                              // Request this row plus a look-ahead window so a
+                              // downward scroll hits loaded EPG. The call is
+                              // debounced and de-duped downstream.
+                              final prefetchEnd = math.min(
+                                widget.channels.length,
+                                i + 1 + _kEpgPrefetchAhead,
+                              );
                               widget.onEnsureEpg?.call(
-                                [channel],
+                                widget.channels.sublist(i, prefetchEnd),
                                 startDate: _selectedDate,
                                 endDate: _selectedDate,
                               );
