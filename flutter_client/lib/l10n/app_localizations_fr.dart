@@ -693,6 +693,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get seriesSeasons => 'Saisons';
 
   @override
+  String get seriesCast => 'Casting';
+
+  @override
   String seriesEpisodeCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -796,6 +799,12 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get vodContinueMovie => 'Continuer le film';
+
+  @override
+  String get vodCast => 'Casting';
+
+  @override
+  String get castShowAll => 'Voir tout le casting';
 
   @override
   String vodTimeLeftMinutes(int minutes) {

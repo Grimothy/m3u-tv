@@ -341,6 +341,7 @@
     }
   },
   "seriesSeasons": "Saisons",
+  "seriesCast": "Casting",
   "seriesEpisodeCount": "{count, plural, =1{1 épisode} other{{count} épisodes}}",
   "@seriesEpisodeCount": {
     "placeholders": {
@@ -410,6 +411,8 @@
   "searchTypeToSearch": "Saisir pour rechercher",
   "vodPlayMovie": "Lire le film",
   "vodContinueMovie": "Continuer le film",
+  "vodCast": "Casting",
+  "castShowAll": "Voir tout le casting",
   "vodTimeLeftMinutes": "{minutes, plural, =1{Il reste 1 min} other{Il reste {minutes} min}}",
   "@vodTimeLeftMinutes": {
     "description": "Trailing label inside the resume button on a VOD detail screen, showing time remaining under an hour.",

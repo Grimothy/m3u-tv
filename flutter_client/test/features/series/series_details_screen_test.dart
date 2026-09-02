@@ -6,6 +6,7 @@ import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
+import 'package:m3u_tv/shared/cast_member_row.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
@@ -611,5 +612,171 @@ void main() {
     expect(writes, 3); // sequential, one per episode
     expect(find.text("Couldn't sync watched status"), findsOneWidget);
     expect(find.text('Marked as watched'), findsNothing);
+  });
+
+  group('SeriesDetailsScreen - rich cast', () {
+    testWidgets(
+      'wide layout: never renders the cast rail (would break the episode '
+      'strip / height budget - cast is narrow-layout + VOD only)',
+      (tester) async {
+        await tester.pumpWidget(
+          _app(
+            SeriesInfo(
+              series: const Series(
+                id: 7,
+                name: 'Rich Cast Show',
+                plot: 'A series with a populated rich cast.',
+                richCast: <CastMember>[
+                  CastMember(
+                    id: 1,
+                    name: 'Bryan Cranston',
+                    character: 'Walter White',
+                  ),
+                ],
+              ),
+              seasons: const [Season(number: 1, name: 'Season 1')],
+              episodesBySeason: {
+                1: [_ep(1, 1)],
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CastMemberRow), findsNothing);
+        // The legacy string-cast line in the meta block is untouched.
+        expect(
+          find.text('A series with a populated rich cast.'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'narrow layout: renders CastMemberRow when series.richCast is populated',
+      (tester) async {
+        tester.view.physicalSize = const Size(420, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _app(
+            SeriesInfo(
+              series: const Series(
+                id: 7,
+                name: 'Rich Cast Show',
+                richCast: <CastMember>[
+                  CastMember(name: 'Bryan Cranston', character: 'Walter White'),
+                ],
+              ),
+              seasons: const [Season(number: 1, name: 'Season 1')],
+              episodesBySeason: {
+                1: [_ep(1, 1)],
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Compact layout is a single picker chip - only the "Cast"
+        // label and a count badge render; member names live inside
+        // the bottom sheet, not inline.
+        expect(find.byType(CastMemberRow), findsOneWidget);
+        expect(find.text('Cast'), findsOneWidget);
+        // Scoped to the cast row - the season picker's episode-count
+        // badge also renders "1" for this single-episode fixture.
+        expect(
+          find.descendant(
+            of: find.byType(CastMemberRow),
+            matching: find.text('1'),
+          ),
+          findsOneWidget,
+        );
+        // No member name bleeds into the inline compact layout.
+        expect(find.text('Bryan Cranston'), findsNothing);
+        // The chip lives in the same Wrap as the season picker - beside
+        // it, not on its own row above the action buttons.
+        final actionWrap = find.ancestor(
+          of: find.text('Season 1'),
+          matching: find.byType(Wrap),
+        );
+        expect(
+          find.descendant(
+            of: actionWrap.first,
+            matching: find.byType(CastMemberRow),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'narrow layout: hides CastMemberRow when series.richCast is null',
+      (tester) async {
+        tester.view.physicalSize = const Size(420, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(_app(_info()));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CastMemberRow), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'narrow layout: rich cast picker button opens bottom sheet listing all members',
+      (tester) async {
+        tester.view.physicalSize = const Size(420, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        // 5 members → compact layout shows one chip with a "5" badge.
+        final richCast = <CastMember>[
+          const CastMember(name: 'Bryan Cranston', character: 'Walter White'),
+          const CastMember(name: 'Aaron Paul', character: 'Jesse Pinkman'),
+          const CastMember(name: 'Anna Gunn', character: 'Skyler White'),
+          const CastMember(name: 'Dean Norris', character: 'Hank Schrader'),
+          const CastMember(name: 'Betsy Brandt', character: 'Marie Schrader'),
+        ];
+        await tester.pumpWidget(
+          _app(
+            SeriesInfo(
+              series: Series(id: 7, name: 'Rich Cast Show', richCast: richCast),
+              seasons: const [Season(number: 1, name: 'Season 1')],
+              episodesBySeason: {
+                1: [_ep(1, 1)],
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // The picker is the visible inline compact control - a button
+        // labelled "Cast" with a count badge showing all 5 members.
+        expect(find.text('Cast'), findsOneWidget);
+        expect(find.text('5'), findsOneWidget);
+
+        // Tap the picker → bottom sheet opens with every member
+        // listed (5 rows). Compact layout keeps member names inside
+        // the sheet only - no inline duplication.
+        await tester.tap(find.text('Cast'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Bryan Cranston'), findsOneWidget);
+        expect(find.text('Aaron Paul'), findsOneWidget);
+        expect(find.text('Anna Gunn'), findsOneWidget);
+        expect(find.text('Dean Norris'), findsOneWidget);
+        expect(find.text('Betsy Brandt'), findsOneWidget);
+        expect(find.text('Walter White'), findsOneWidget);
+        expect(find.text('Jesse Pinkman'), findsOneWidget);
+        expect(find.text('Skyler White'), findsOneWidget);
+        expect(find.text('Hank Schrader'), findsOneWidget);
+        expect(find.text('Marie Schrader'), findsOneWidget);
+      },
+    );
   });
 }

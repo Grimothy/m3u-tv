@@ -1328,6 +1328,12 @@ abstract class AppLocalizations {
   /// **'Seasons'**
   String get seriesSeasons;
 
+  /// No description provided for @seriesCast.
+  ///
+  /// In en, this message translates to:
+  /// **'Cast'**
+  String get seriesCast;
+
   /// No description provided for @seriesEpisodeCount.
   ///
   /// In en, this message translates to:
@@ -1495,6 +1501,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Continue movie'**
   String get vodContinueMovie;
+
+  /// No description provided for @vodCast.
+  ///
+  /// In en, this message translates to:
+  /// **'Cast'**
+  String get vodCast;
+
+  /// No description provided for @castShowAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Show all cast'**
+  String get castShowAll;
 
   /// Trailing label inside the resume button on a VOD detail screen, showing time remaining under an hour.
   ///

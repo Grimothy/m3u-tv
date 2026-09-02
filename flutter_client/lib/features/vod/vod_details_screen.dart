@@ -7,6 +7,7 @@ import 'package:m3u_tv/navigation/app_router.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/backdrop_detail_hero.dart';
+import 'package:m3u_tv/shared/cast_member_row.dart';
 import 'package:m3u_tv/shared/dominant_backdrop_color.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
 import 'package:m3u_tv/shared/item_meta_info.dart';
@@ -160,35 +161,56 @@ class _VodDetailsBody extends StatelessWidget {
     Progress? progress,
   ) {
     final backdrop = details.backdropUrl;
+    final richCast = details.richCast;
+    final l = AppLocalizations.of(context);
+    // The poster + details Row fills the available height (its own info column
+    // scrolls); the rich cast row is pinned full-width below it, kept out of
+    // that vertical scrollable so left/right card navigation never drags the
+    // page. Mirrors the Series detail layout.
     final content = Padding(
       padding: const EdgeInsets.all(MediaBrowsingMetrics.pagePadding),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            width: 220,
-            child: AspectRatio(
-              aspectRatio: 0.68,
-              child: ResilientMediaImage(
-                imageUrl: details.coverUrl,
-                fallbackIcon: Icons.movie,
-                borderRadius: MediaBrowsingMetrics.cardRadius,
-                fallbackTitle: details.name,
-              ),
-            ),
-          ),
-          const SizedBox(width: MediaBrowsingMetrics.pagePadding),
           Expanded(
-            child: SingleChildScrollView(
-              child: _infoColumn(context, theme, details, progress),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                SizedBox(
+                  width: 220,
+                  child: AspectRatio(
+                    aspectRatio: 0.68,
+                    child: ResilientMediaImage(
+                      imageUrl: details.coverUrl,
+                      fallbackIcon: Icons.movie,
+                      borderRadius: MediaBrowsingMetrics.cardRadius,
+                      fallbackTitle: details.name,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: MediaBrowsingMetrics.pagePadding),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: _infoColumn(context, theme, details, progress),
+                  ),
+                ),
+              ],
             ),
           ),
+          if (richCast != null && richCast.isNotEmpty) ...[
+            const SizedBox(height: MediaBrowsingMetrics.contentPadding),
+            CastMemberRow(
+              members: richCast,
+              semanticLabel: l.vodCast,
+              onShowAll: () => showAllCast(context, richCast, asDialog: true),
+              allCastSemanticLabel: l.castShowAll,
+            ),
+          ],
         ],
       ),
     );
 
-    // Always use the backdrop Stack layout so the poster stays bottom-aligned
-    // before and after the backdrop URL loads in, avoiding a layout jump.
     // Colour-matched scrim, same treatment as the Series detail page.
     return BackdropDetailHero(
       backdropUrl: backdrop,
@@ -196,9 +218,7 @@ class _VodDetailsBody extends StatelessWidget {
       showBackgroundColorLayer: true,
       backgroundColor: bg,
       scrimColors: [bg.withValues(alpha: 0.35), bg.withValues(alpha: 0.92), bg],
-      contentPadding: EdgeInsets.only(
-        bottom: MediaQuery.sizeOf(context).height * 0.1,
-      ),
+      contentPadding: const EdgeInsets.only(top: 24, bottom: 24),
       content: content,
     );
   }
@@ -231,7 +251,14 @@ class _VodDetailsBody extends StatelessWidget {
         children: [
           poster,
           const SizedBox(height: 16),
-          _infoColumn(context, theme, details, progress, fullWidthButton: true),
+          _infoColumn(
+            context,
+            theme,
+            details,
+            progress,
+            fullWidthButton: true,
+            compact: true,
+          ),
         ],
       ),
     );
@@ -264,37 +291,59 @@ class _VodDetailsBody extends StatelessWidget {
     _ResolvedVodDetails details,
     Progress? progress, {
     bool fullWidthButton = false,
+    bool compact = false,
   }) {
     final l = AppLocalizations.of(context);
     final buttonLabel = progress == null
         ? l.vodPlayMovie
         : (_timeLeftLabel(context, progress) ?? l.vodContinueMovie);
-    return ItemMetaInfo(
-      name: details.name,
-      chips: [
-        if (details.year != null) details.year!,
-        if (details.genre != null) details.genre!,
-        if (details.duration != null) details.duration!,
-        if (details.rating != null) '★ ${details.rating}',
-        if (details.containerExtension != null)
-          details.containerExtension!.toUpperCase(),
-      ],
-      buttonLabel: buttonLabel,
-      onPlay: () =>
-          _play(details, startPosition: progress?.positionSeconds.toDouble()),
-      onStartOver: progress == null
-          ? null
-          // ignore: prefer_int_literals
-          : () => _play(details, startPosition: 0.0),
-      fullWidthButton: fullWidthButton,
-      progressValue: _progressValue(progress),
-      isLoading: isLoading,
-      plot: details.plot ?? 'No synopsis available.',
-      credits: [
-        if (details.director != null)
-          MetaCreditLine(label: 'Director', value: details.director!),
-        if (details.cast != null)
-          MetaCreditLine(label: 'Cast', value: details.cast!),
+    final richCast = details.richCast;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ItemMetaInfo(
+          name: details.name,
+          chips: [
+            if (details.year != null) details.year!,
+            if (details.genre != null) details.genre!,
+            if (details.duration != null) details.duration!,
+            if (details.rating != null) '★ ${details.rating}',
+            if (details.containerExtension != null)
+              details.containerExtension!.toUpperCase(),
+          ],
+          buttonLabel: buttonLabel,
+          onPlay: () => _play(
+            details,
+            startPosition: progress?.positionSeconds.toDouble(),
+          ),
+          onStartOver: progress == null
+              ? null
+              // ignore: prefer_int_literals
+              : () => _play(details, startPosition: 0.0),
+          fullWidthButton: fullWidthButton,
+          progressValue: _progressValue(progress),
+          isLoading: isLoading,
+          plot: details.plot ?? 'No synopsis available.',
+          credits: [
+            if (details.director != null)
+              MetaCreditLine(label: 'Director', value: details.director!),
+            if (details.cast != null)
+              MetaCreditLine(label: 'Cast', value: details.cast!),
+          ],
+        ),
+        // Wide layout renders the cast row full-width below the poster +
+        // details block (see _buildWide); only the narrow layout keeps it
+        // inline here, as a compact picker chip under the synopsis.
+        if (compact && richCast != null && richCast.isNotEmpty) ...[
+          const SizedBox(height: MediaBrowsingMetrics.contentPadding),
+          CastMemberRow(
+            members: richCast,
+            semanticLabel: l.vodCast,
+            compact: true,
+            onShowAll: () => showAllCast(context, richCast),
+            allCastSemanticLabel: l.castShowAll,
+          ),
+        ],
       ],
     );
   }
@@ -354,6 +403,7 @@ class _ResolvedVodDetails {
   String? get genre => _notEmpty(info?.genre);
   String? get director => _notEmpty(info?.director);
   String? get cast => _notEmpty(info?.cast);
+  List<CastMember>? get richCast => info?.richCast;
   String? get year => _notEmpty(info?.year) ?? _notEmpty(info?.releaseDate);
   String? get duration => _notEmpty(info?.duration);
   double? get rating => info?.rating ?? item.rating;

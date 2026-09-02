@@ -165,6 +165,7 @@ class VodInfo {
     this.genre,
     this.director,
     this.cast,
+    this.richCast,
     this.releaseDate,
     this.year,
     this.duration,
@@ -182,6 +183,7 @@ class VodInfo {
   final String? genre;
   final String? director;
   final String? cast;
+  final List<CastMember>? richCast;
   final String? releaseDate;
   final String? year;
   final String? duration;
@@ -218,6 +220,7 @@ class VodInfo {
       genre: _asNullableString(pick(['genre'])),
       director: _asNullableString(pick(['director'])),
       cast: _asNullableString(pick(['cast', 'actors'])),
+      richCast: _parseCastList(pick(['cast_list'])),
       releaseDate: releaseDate,
       year: year,
       duration: _durationText(
@@ -242,6 +245,57 @@ class VodInfo {
   }
 }
 
+/// A single cast member on a VOD movie or series.
+///
+/// Mirrors m3u-editor's `cast_list` payload emitted by `get_vod_info` /
+/// `get_series_info` when the server can resolve a TMDB id for the title.
+/// Shape: `{id?: int, name: String, character?: String, photo?: String}`.
+///
+/// `cast_list` is a separate wire key from the existing string `cast`
+/// (comma-joined names). Keeping the keys distinct preserves backward
+/// compatibility for old m3u-tv clients that read `cast` via
+/// `_asNullableString(...)` - see plan `.omo/plans/cast-rich.md`.
+class CastMember {
+  const CastMember({
+    required this.name,
+    this.id,
+    this.character,
+    this.photo,
+  });
+
+  final String name;
+  final int? id;
+  final String? character;
+  final String? photo;
+
+  /// A static method rather than a `factory` because it returns null for
+  /// a malformed or nameless entry instead of throwing - callers filter
+  /// those out with `whereType<CastMember>()`.
+  static CastMember? fromXtream(Object? json) {
+    if (json is! Map) return null;
+    final map = json.cast<String, Object?>();
+    final rawName = _asNullableString(map['name']);
+    final trimmedName = rawName?.trim();
+    if (trimmedName == null || trimmedName.isEmpty) return null;
+    return CastMember(
+      id: _asIntOrNull(map['id']),
+      name: trimmedName,
+      character: _asNullableString(map['character']),
+      photo: _asNullableString(map['photo']),
+    );
+  }
+}
+
+List<CastMember>? _parseCastList(Object? raw) {
+  if (raw is! List) return null;
+  final parsed = raw
+      .whereType<Map<Object?, Object?>>()
+      .map(CastMember.fromXtream)
+      .whereType<CastMember>()
+      .toList(growable: false);
+  return parsed.isEmpty ? null : parsed;
+}
+
 class Series {
   const Series({
     required this.id,
@@ -253,6 +307,7 @@ class Series {
     this.plot,
     this.rating,
     this.tmdbId,
+    this.richCast,
   });
 
   final int id;
@@ -268,6 +323,7 @@ class Series {
   final String? plot;
   final double? rating;
   final int? tmdbId;
+  final List<CastMember>? richCast;
 
   factory Series.fromXtream(Map<String, Object?> json) => Series(
     id: _asInt(json['series_id']),
@@ -279,6 +335,7 @@ class Series {
     plot: _asNullableString(json['plot']),
     rating: _asDoubleOrNull(json['rating'] ?? json['rating_5based']),
     tmdbId: _asIntOrNull(json['tmdb_id'] ?? json['tmdb']),
+    richCast: _parseCastList(json['cast_list']),
   );
 }
 

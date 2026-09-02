@@ -12,6 +12,7 @@ import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/backdrop_detail_hero.dart';
 import 'package:m3u_tv/shared/cached_backdrop_image.dart';
+import 'package:m3u_tv/shared/cast_member_row.dart';
 import 'package:m3u_tv/shared/dominant_backdrop_color.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
@@ -616,7 +617,9 @@ class _SeriesDetailsBody extends StatelessWidget {
         header,
         const SizedBox(height: 20),
         // Play / Start-from-beginning sit on the same line as the season
-        // picker (wrapping to a second run on a phone).
+        // picker (wrapping to a second run on a phone). On the narrow
+        // breakpoint the cast picker chip joins this row beside the
+        // season picker.
         Wrap(
           spacing: MediaBrowsingMetrics.itemGap,
           runSpacing: MediaBrowsingMetrics.chipGap,
@@ -634,6 +637,16 @@ class _SeriesDetailsBody extends StatelessWidget {
               onMarkSeason: (watched) =>
                   onMarkSeason(_episodes(seasonNumber), watched: watched),
             ),
+            if (compact &&
+                info.series.richCast != null &&
+                info.series.richCast!.isNotEmpty)
+              CastMemberRow(
+                members: info.series.richCast,
+                semanticLabel: AppLocalizations.of(context).seriesCast,
+                compact: true,
+                onShowAll: () => showAllCast(context, info.series.richCast!),
+                allCastSemanticLabel: AppLocalizations.of(context).castShowAll,
+              ),
           ],
         ),
       ],
@@ -693,13 +706,15 @@ class _SeriesDetailsBody extends StatelessWidget {
       return _buildCompact(context, bg, backdrop, content);
     }
 
-    // TV / desktop: the episode strip is pinned directly below the upper
-    // block, which scrolls on its own only when the window is too short to
-    // fit it. Keeping the strip out of any vertical scrollable stops
-    // horizontal episode navigation from dragging the whole page up and down
-    // - dpad's ensure-visible reveal walks every scrollable ancestor of the
-    // focused card, so a wrapping vertical scroll view reacts to every
-    // left/right step.
+    // TV / desktop: only the header block (`upper`) lives in a vertical
+    // scrollable; the horizontal episode strip is pinned outside it so dpad's
+    // focus-follow `ensureVisible` - which walks every scrollable ancestor of
+    // the focused card - can't drag the page up and down on every left/right
+    // episode step. The rich cast rail is deliberately NOT added here: a third
+    // section breaks this height budget (squeezing `upper` until the Play
+    // button auto-focus scrolls the meta chips out of reach) and any wrapping
+    // vertical scroll reintroduces the episode-strip jank. Cast stays on the
+    // narrow layout (compact chip in the action row) and on VOD.
     final wideContent = Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: MediaBrowsingMetrics.pagePadding,
