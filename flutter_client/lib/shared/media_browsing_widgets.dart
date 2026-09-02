@@ -844,6 +844,7 @@ class MediaPreviewItem {
     this.overlayLabel,
     this.emphasisLabel,
     this.upNextLabel,
+    this.ratingLabel,
   });
 
   final String title;
@@ -867,6 +868,11 @@ class MediaPreviewItem {
   /// suppress the bottom progress bar. Used for synthetic "up next" episode
   /// entries; the caller supplies the localized string.
   final String? upNextLabel;
+
+  /// Short rating string (e.g. `★ 8.1`) appended to the muted line under the
+  /// title on default/poster cards, after [subtitle] and a `•` separator when
+  /// both are present. Read only by `_buildDefaultContent`.
+  final String? ratingLabel;
 
   /// Short text labels rendered as chips overlaid on the image (right-aligned).
   final List<String> overlayBadges;
@@ -1049,6 +1055,7 @@ class MediaPreviewCard extends StatefulWidget {
     this.landscapeStyle = false,
     this.autofocus = false,
     this.cardWidth,
+    this.keepAlive = true,
     super.key,
   });
 
@@ -1058,6 +1065,12 @@ class MediaPreviewCard extends StatefulWidget {
   final bool autofocus;
   final double? cardWidth;
 
+  /// Horizontal preview rows keep cards alive so sideways scrolling does not
+  /// re-decode their thumbnails. Vertical grids (Movies/Series listing pages)
+  /// pass false: those lists can run to thousands of items, where keeping every
+  /// scrolled-past card mounted is an unbounded memory cost.
+  final bool keepAlive;
+
   @override
   State<MediaPreviewCard> createState() => _MediaPreviewCardState();
 }
@@ -1065,7 +1078,7 @@ class MediaPreviewCard extends StatefulWidget {
 class _MediaPreviewCardState extends State<MediaPreviewCard>
     with AutomaticKeepAliveClientMixin {
   @override
-  bool get wantKeepAlive => true;
+  bool get wantKeepAlive => widget.keepAlive;
 
   @override
   Widget build(BuildContext context) {
@@ -1076,7 +1089,6 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
       !widget.landscapeStyle || item.emphasisLabel == null,
       'MediaPreviewItem.emphasisLabel is not rendered by landscape cards.',
     );
-    final isRating = item.subtitle?.startsWith('★') ?? false;
     final width =
         widget.cardWidth ??
         (widget.landscapeStyle
@@ -1093,10 +1105,14 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
         onLongTap: item.onLongTap,
         color: colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(MediaBrowsingMetrics.cardRadius),
-        clipBehavior: Clip.antiAlias,
+        // Landscape cards still edge-clip their full-bleed thumbnail. Default/
+        // poster cards deliberately do not clip: the card's rounded background
+        // stays visible behind the poster, which carries its own matching
+        // corner radius (see `_buildDefaultContent`) - the detail-page look.
+        clipBehavior: widget.landscapeStyle ? Clip.antiAlias : Clip.none,
         child: widget.landscapeStyle
             ? _buildLandscapeContent(context, colorScheme, width)
-            : _buildDefaultContent(context, colorScheme, isRating),
+            : _buildDefaultContent(context, colorScheme),
       ),
     );
   }
@@ -1307,13 +1323,16 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
     );
   }
 
-  Widget _buildDefaultContent(
-    BuildContext context,
-    ColorScheme colorScheme,
-    bool isRating,
-  ) {
+  Widget _buildDefaultContent(BuildContext context, ColorScheme colorScheme) {
     final item = widget.item;
     final posterStyle = widget.posterStyle;
+    // Year and rating share the muted line under the title, joined by a
+    // separator when both are present (e.g. "2004 • ★ 8.1").
+    final subtitleText = [
+      if (item.subtitle != null && item.subtitle!.isNotEmpty) item.subtitle!,
+      if (item.ratingLabel != null && item.ratingLabel!.isNotEmpty)
+        item.ratingLabel!,
+    ].join(' • ');
     final mediaImage = ResilientMediaImage(
       imageUrl: item.imageUrl,
       fallbackIcon: item.fallbackIcon,
@@ -1321,7 +1340,7 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
       aspectRatio: item.imageAspectRatio,
       fallbackTitle: item.fallbackTitle,
       backgroundColor: item.imageBackgroundColor,
-      borderRadius: 0,
+      borderRadius: MediaBrowsingMetrics.cardRadius,
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1364,7 +1383,7 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   fontWeight: posterStyle ? FontWeight.normal : FontWeight.w700,
                 ),
-                maxLines: posterStyle ? 2 : 1,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
               if (item.emphasisLabel != null) ...[
@@ -1383,17 +1402,13 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
                   ),
                 ),
               ],
-              if (item.subtitle != null) ...[
+              if (subtitleText.isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Text(
-                  item.subtitle!,
+                  subtitleText,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: posterStyle && isRating
-                        ? const Color(0xFFFFCC00)
-                        : colorScheme.onSurfaceVariant,
-                    fontWeight: posterStyle && isRating
-                        ? FontWeight.bold
-                        : FontWeight.normal,
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.normal,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

@@ -8,7 +8,6 @@ import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/shared/category_browse_filter.dart';
-import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/media_category_nav.dart';
 
@@ -228,17 +227,27 @@ class _SeriesScreenState extends ConsumerState<SeriesScreen> {
               itemCount: items.length,
               itemBuilder: (context, index) {
                 final item = items[index];
-                return _SeriesCard(
-                  item: item,
+                return MediaPreviewCard(
+                  posterStyle: true,
+                  keepAlive: false,
                   autofocus: index == 0,
-                  isFavorite: _favoriteIds.contains(item.id),
-                  onTap: () => widget.onSeriesSelect(item),
-                  onLongTap: widget.favoritesService == null
-                      ? null
-                      : () async {
-                          await widget.favoritesService!.toggle(item.id);
-                          await _loadFavorites();
-                        },
+                  item: MediaPreviewItem(
+                    title: item.name,
+                    imageUrl: item.coverUrl,
+                    subtitle: item.year,
+                    ratingLabel: item.rating == null
+                        ? null
+                        : '★ ${item.rating}',
+                    fallbackIcon: Icons.tv,
+                    isFavorite: _favoriteIds.contains(item.id),
+                    onTap: () => widget.onSeriesSelect(item),
+                    onLongTap: widget.favoritesService == null
+                        ? null
+                        : () async {
+                            await widget.favoritesService!.toggle(item.id);
+                            await _loadFavorites();
+                          },
+                  ),
                 );
               },
             ),
@@ -258,89 +267,5 @@ class _SeriesScreenState extends ConsumerState<SeriesScreen> {
                 (_minPosterCardWidth + MediaBrowsingMetrics.itemGap))
             .floor();
     return minimumColumns.clamp(1, maximumColumns.clamp(1, 100));
-  }
-}
-
-class _SeriesCard extends StatelessWidget {
-  const _SeriesCard({
-    required this.item,
-    required this.onTap,
-    this.onLongTap,
-    this.isFavorite = false,
-    this.autofocus = false,
-  });
-
-  final Series item;
-  final VoidCallback onTap;
-  final VoidCallback? onLongTap;
-  final bool isFavorite;
-  final bool autofocus;
-
-  @override
-  Widget build(BuildContext context) {
-    return DpadInkWell(
-      autofocus: autofocus,
-      onTap: onTap,
-      onLongTap: onLongTap,
-      borderRadius: BorderRadius.circular(8),
-      clipBehavior: Clip.antiAlias,
-      color: Theme.of(context).colorScheme.surfaceContainerHigh,
-      child: Stack(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: ResilientMediaImage(
-                  imageUrl: item.coverUrl,
-                  fallbackIcon: Icons.tv,
-                  borderRadius: 0,
-                ),
-              ),
-              // Title + rating
-              Padding(
-                padding: const EdgeInsets.all(6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.name,
-                      style: Theme.of(context).textTheme.bodySmall,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (item.rating != null)
-                      Text(
-                        '★ ${item.rating}',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: const Color(0xFFFFCC00),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (isFavorite)
-            Positioned(
-              top: 4,
-              left: 4,
-              child: Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.star,
-                  color: Colors.white,
-                  size: 14,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
   }
 }

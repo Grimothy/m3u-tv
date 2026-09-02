@@ -127,6 +127,7 @@ class VodItem {
     this.categoryId,
     this.categoryIds = const [],
     this.rating,
+    this.year,
   });
 
   final int id;
@@ -144,6 +145,10 @@ class VodItem {
 
   final double? rating;
 
+  /// Four-digit release year from m3u-editor's `get_vod_streams` `year` field
+  /// (emitted as an int by `VodFileNameService::resolveMovieYearAsInt`).
+  final String? year;
+
   factory VodItem.fromXtream(Map<String, Object?> json, String streamUrl) =>
       VodItem(
         id: _asInt(json['stream_id']),
@@ -154,6 +159,7 @@ class VodItem {
         categoryId: _asNullableString(json['category_id']),
         categoryIds: _asStringList(json['category_ids']),
         rating: _asDoubleOrNull(json['rating']),
+        year: _yearString(json['year']),
       );
 }
 
@@ -308,6 +314,7 @@ class Series {
     this.rating,
     this.tmdbId,
     this.richCast,
+    this.year,
   });
 
   final int id;
@@ -325,6 +332,10 @@ class Series {
   final int? tmdbId;
   final List<CastMember>? richCast;
 
+  /// Four-digit release year, derived from m3u-editor's `get_series`
+  /// `releaseDate` field (a date string) or a bare `year` when present.
+  final String? year;
+
   factory Series.fromXtream(Map<String, Object?> json) => Series(
     id: _asInt(json['series_id']),
     name: '${json['name'] ?? ''}',
@@ -336,6 +347,9 @@ class Series {
     rating: _asDoubleOrNull(json['rating'] ?? json['rating_5based']),
     tmdbId: _asIntOrNull(json['tmdb_id'] ?? json['tmdb']),
     richCast: _parseCastList(json['cast_list']),
+    year: _yearString(
+      json['releaseDate'] ?? json['release_date'] ?? json['year'],
+    ),
   );
 }
 
@@ -1539,6 +1553,18 @@ String? _yearFromDate(String? value) {
   if (value == null || value.length < 4) return null;
   final match = RegExp(r'\d{4}').firstMatch(value);
   return match?.group(0);
+}
+
+/// Normalizes the assorted "release year" shapes list endpoints emit - an int
+/// year from `get_vod_streams`, a `releaseDate` string from `get_series` - to a
+/// bare four-digit string, or null when the value is absent/zero/unparseable.
+String? _yearString(Object? value) {
+  if (value == null) return null;
+  if (value is num) return value > 0 ? '${value.toInt()}' : null;
+  final text = value.toString().trim();
+  if (text.isEmpty || text == '0') return null;
+  return _yearFromDate(text) ??
+      (RegExp(r'^\d{4}$').hasMatch(text) ? text : null);
 }
 
 /// Treats `null` and blank/whitespace-only strings as "absent" so optional

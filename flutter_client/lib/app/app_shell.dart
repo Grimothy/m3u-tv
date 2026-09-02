@@ -2352,7 +2352,8 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
             (item) => MediaPreviewItem(
               title: item.name,
               imageUrl: item.logoUrl,
-              subtitle: item.rating == null ? l.homeMovie : '★ ${item.rating}',
+              subtitle: item.year ?? l.homeMovie,
+              ratingLabel: item.rating == null ? null : '★ ${item.rating}',
               fallbackIcon: Icons.movie,
               fallbackTitle: item.name,
               isFavorite: _favoriteVodIds.contains(item.id),
@@ -2377,9 +2378,8 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
             (series) => MediaPreviewItem(
               title: series.name,
               imageUrl: series.coverUrl,
-              subtitle: series.rating == null
-                  ? l.navSeries
-                  : '★ ${series.rating}',
+              subtitle: series.year ?? l.navSeries,
+              ratingLabel: series.rating == null ? null : '★ ${series.rating}',
               fallbackIcon: Icons.tv,
               fallbackTitle: series.name,
               isFavorite: _favoriteSeriesIds.contains(series.id),
