@@ -126,7 +126,7 @@ void main() {
     });
   });
 
-  group('VodDetailsScreen — rich cast', () {
+  group('VodDetailsScreen - rich cast', () {
     testWidgets(
       'renders rich cast row when richCast is populated',
       (tester) async {
@@ -172,7 +172,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.byType(CastMemberRow), findsNothing);
-        // Existing string-cast MetaCreditLine is preserved — RichText with
+        // Existing string-cast MetaCreditLine is preserved - RichText with
         // the "Cast:" label is present in the tree.
         expect(
           find.byWidgetPredicate(

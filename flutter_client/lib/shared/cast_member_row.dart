@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 
+import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
+import 'package:m3u_tv/shared/list_picker_sheet.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
 /// Cast row used on the VOD movie detail and Series detail screens to
@@ -17,20 +20,20 @@ import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 /// **Wide layout** (`compact = false`, the default): a horizontal scroll
 /// row of 144×~140 cards. Each card is a 72×72 circular avatar with
 /// name (bold, 1 line) and character (muted, 1 line) in a billing-block
-/// layout — 144px fits ~21 characters so names like "Christoph Waltz"
+/// layout - 144px fits ~21 characters so names like "Christoph Waltz"
 /// and "Jesse Pinkman" don't truncate. When more members exist than
 /// cards fit the available width (and [onShowAll] is set), the last
 /// visible slot becomes a "+N / show all" tile that fires [onShowAll]
-/// — callers wire it to the same picker modal the season picker uses.
+/// - callers wire it to the same picker modal the season picker uses.
 /// Without [onShowAll] the row falls back to a plain horizontal scroll
 /// capped at [_maxMembers] (15). D-pad traversal is native: left/right
 /// moves focus between cards; the row stops at its edges so focus
 /// doesn't escape into the surrounding column. Focused cards get the
 /// canonical project-wide [GradientBorderEffect] glow. Member cards
-/// have no tap action — cast is informational on wide layouts.
+/// have no tap action - cast is informational on wide layouts.
 ///
 /// **Compact mode** (`compact = true`, phone breakpoint): a pill-shaped
-/// picker button mirroring the season picker's chrome — the localized
+/// picker button mirroring the season picker's chrome - the localized
 /// "Cast" label, a down-chevron, and a count badge showing how many cast
 /// members are in [members]. Tapping the button fires [onShowAll],
 /// which callers wire to the same bottom-drawer picker used by the
@@ -74,9 +77,16 @@ class CastMemberRow extends StatelessWidget {
 
   static const double _cardWidth = 144;
   static const double _avatarSize = 72;
-  static const double _cardHeight = 140;
+  static const double _cardHeight = 144;
   static const double _cardGap = 12;
   static const int _maxMembers = 15;
+
+  /// Padding between a card's focus border and its content, so the
+  /// [GradientBorderEffect] glow never hugs the avatar or a long name.
+  static const EdgeInsets _cardInset = EdgeInsets.symmetric(
+    vertical: 4,
+    horizontal: 3,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -164,7 +174,7 @@ class CastMemberRow extends StatelessWidget {
 /// Pill-shaped picker button matching the season picker's chrome:
 /// `label` text, a count badge, a down-chevron, focused via
 /// [GradientBorderEffect]. Tap fires [onTap]. Renders nothing different
-/// when [badgeCount] is 0 or 1 — the season picker shows the badge for
+/// when [badgeCount] is 0 or 1 - the season picker shows the badge for
 /// any positive count.
 class _CastPickerButton extends StatelessWidget {
   const _CastPickerButton({
@@ -184,7 +194,7 @@ class _CastPickerButton extends StatelessWidget {
       label: label,
       icon: Icons.arrow_drop_down,
       badgeCount: badgeCount > 0 ? badgeCount : null,
-      // Muted, not the default error red — this is a count, not an
+      // Muted, not the default error red - this is a count, not an
       // unwatched / new alert (matches how the season picker styles its
       // episode-count badge).
       badgeColor: scheme.surfaceContainerHighest,
@@ -225,31 +235,34 @@ class _ShowAllCastCard extends StatelessWidget {
             borderRadius: BorderRadius.all(Radius.circular(8)),
           ),
         ],
-        child: Column(
-          children: [
-            SizedBox(
-              width: CastMemberRow._avatarSize,
-              height: CastMemberRow._avatarSize,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: scheme.surfaceContainerHighest,
-                ),
-                child: Center(
-                  child: Text(
-                    '+$hiddenCount',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w700,
+        // Inset the content so the focus border has breathing room on every
+        // side, not just the text baseline.
+        child: Padding(
+          padding: CastMemberRow._cardInset,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: CastMemberRow._avatarSize,
+                height: CastMemberRow._avatarSize,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: scheme.surfaceContainerHighest,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '+$hiddenCount',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Text(
+              const SizedBox(height: 8),
+              Text(
                 label,
                 style: theme.textTheme.bodySmall?.copyWith(
                   fontWeight: FontWeight.w700,
@@ -258,8 +271,8 @@ class _ShowAllCastCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -283,28 +296,37 @@ class _CastMemberCard extends StatelessWidget {
           ? '$name as $character'
           : name,
       child: DpadInkWell(
-        // No tap action — cast is informational in v1.
+        // No tap action - cast is informational in v1.
         borderRadius: const BorderRadius.all(Radius.circular(8)),
         effects: const [
           GradientBorderEffect(
             borderRadius: BorderRadius.all(Radius.circular(8)),
           ),
         ],
-        child: Column(
-          children: [
-            // Decorative gradient ring + circular avatar + bottom-fade.
-            _GradientRingAvatar(
-              size: CastMemberRow._avatarSize,
-              child: _AvatarWithFade(
-                imageUrl: member.photo,
-                size: CastMemberRow._avatarSize,
-                surface: scheme.surface,
+        // Inset the content so the focus border has breathing room on every
+        // side, not just the text baseline.
+        child: Padding(
+          padding: CastMemberRow._cardInset,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Circular headshot. No decorative ring or fade - a gradient
+              // ring and a bottom-to-top surface fade were both tried here
+              // and left visible dark artifacts on avatars in dark theme.
+              // Focus is the card-level [GradientBorderEffect] only.
+              SizedBox(
+                width: CastMemberRow._avatarSize,
+                height: CastMemberRow._avatarSize,
+                child: ClipOval(
+                  child: ResilientMediaImage(
+                    imageUrl: member.photo,
+                    fallbackIcon: Icons.person,
+                    backgroundColor: scheme.surface,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Text(
+              const SizedBox(height: 8),
+              Text(
                 name,
                 style: theme.textTheme.bodySmall?.copyWith(
                   fontWeight: FontWeight.w700,
@@ -313,12 +335,9 @@ class _CastMemberCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
               ),
-            ),
-            if (character != null && character.isNotEmpty) ...[
-              const SizedBox(height: 2),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
+              if (character != null && character.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
                   character,
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: scheme.onSurfaceVariant,
@@ -327,61 +346,98 @@ class _CastMemberCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                 ),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// Circular clip around the avatar child. No decorative ring — focus is
-/// handled by [GradientBorderEffect] at the card level.
-class _GradientRingAvatar extends StatelessWidget {
-  const _GradientRingAvatar({
-    required this.child,
-    required this.size,
-  });
-
-  final Widget child;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: ClipOval(child: child),
-    );
-  }
+/// Opens the "Show all cast" picker listing every [cast] member (avatar +
+/// name + character). A drag-handle bottom sheet on the narrow
+/// breakpoint, a centered dialog when [asDialog] is true - the same modal
+/// split the season picker uses so D-pad / dismiss behavior matches.
+/// Shared by the VOD and Series detail screens.
+void showAllCast(
+  BuildContext context,
+  List<CastMember> cast, {
+  bool asDialog = false,
+}) {
+  final l = AppLocalizations.of(context);
+  unawaited(
+    ListPickerSheet.show(
+      context,
+      title: l.castShowAll,
+      cancelLabel: l.cancel,
+      asDialog: asDialog,
+      children: [
+        for (final member in cast) CastSheetRow(member: member),
+      ],
+    ),
+  );
 }
 
-/// Circular clip containing the [ResilientMediaImage] headshot. No
-/// decorative overlay — a bottom→top surface fade was tried here and
-/// produced a visible dark half-circle on every avatar in dark theme.
-class _AvatarWithFade extends StatelessWidget {
-  const _AvatarWithFade({
-    required this.imageUrl,
-    required this.size,
-    required this.surface,
-  });
+/// Single row inside the "Show all cast" picker: a 48px circular avatar,
+/// a bold name and a muted character line, both ellipsized to one line.
+/// Rendered as a plain [Padding] - the enclosing [ListPickerSheet] owns
+/// the D-pad region, focus and scrolling, so a per-row [DpadInkWell]
+/// would only compete with that focus model.
+class CastSheetRow extends StatelessWidget {
+  const CastSheetRow({super.key, required this.member});
 
-  final String? imageUrl;
-  final double size;
-  final Color surface;
+  final CastMember member;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: ClipOval(
-        child: ResilientMediaImage(
-          imageUrl: imageUrl,
-          fallbackIcon: Icons.person,
-          backgroundColor: surface,
-        ),
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final character = member.character;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: ClipOval(
+              child: ResilientMediaImage(
+                imageUrl: member.photo,
+                fallbackIcon: Icons.person,
+                backgroundColor: scheme.surfaceContainerHighest,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  member.name,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (character != null && character.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    character,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

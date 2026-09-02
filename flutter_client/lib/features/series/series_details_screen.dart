@@ -17,7 +17,6 @@ import 'package:m3u_tv/shared/dominant_backdrop_color.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
 import 'package:m3u_tv/shared/item_meta_info.dart';
-import 'package:m3u_tv/shared/list_picker_sheet.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
 /// Below this window width the series detail lays out for a phone: smaller
@@ -616,21 +615,6 @@ class _SeriesDetailsBody extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         header,
-        if (!compact &&
-            info.series.richCast != null &&
-            info.series.richCast!.isNotEmpty) ...[
-          const SizedBox(height: MediaBrowsingMetrics.contentPadding),
-          CastMemberRow(
-            members: info.series.richCast,
-            semanticLabel: AppLocalizations.of(context).seriesCast,
-            onShowAll: () => _showAllCast(
-              context,
-              info.series.richCast!,
-              asDialog: true,
-            ),
-            allCastSemanticLabel: AppLocalizations.of(context).castShowAll,
-          ),
-        ],
         const SizedBox(height: 20),
         // Play / Start-from-beginning sit on the same line as the season
         // picker (wrapping to a second run on a phone). On the narrow
@@ -660,7 +644,7 @@ class _SeriesDetailsBody extends StatelessWidget {
                 members: info.series.richCast,
                 semanticLabel: AppLocalizations.of(context).seriesCast,
                 compact: true,
-                onShowAll: () => _showAllCast(context, info.series.richCast!),
+                onShowAll: () => showAllCast(context, info.series.richCast!),
                 allCastSemanticLabel: AppLocalizations.of(context).castShowAll,
               ),
           ],
@@ -722,13 +706,15 @@ class _SeriesDetailsBody extends StatelessWidget {
       return _buildCompact(context, bg, backdrop, content);
     }
 
-    // TV / desktop: the episode strip is pinned directly below the upper
-    // block, which scrolls on its own only when the window is too short to
-    // fit it. Keeping the strip out of any vertical scrollable stops
-    // horizontal episode navigation from dragging the whole page up and down
-    // - dpad's ensure-visible reveal walks every scrollable ancestor of the
-    // focused card, so a wrapping vertical scroll view reacts to every
-    // left/right step.
+    // TV / desktop: only the header block (`upper`) lives in a vertical
+    // scrollable; the horizontal episode strip is pinned outside it so dpad's
+    // focus-follow `ensureVisible` - which walks every scrollable ancestor of
+    // the focused card - can't drag the page up and down on every left/right
+    // episode step. The rich cast rail is deliberately NOT added here: a third
+    // section breaks this height budget (squeezing `upper` until the Play
+    // button auto-focus scrolls the meta chips out of reach) and any wrapping
+    // vertical scroll reintroduces the episode-strip jank. Cast stays on the
+    // narrow layout (compact chip in the action row) and on VOD.
     final wideContent = Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: MediaBrowsingMetrics.pagePadding,
@@ -884,33 +870,6 @@ class _SeriesDetailsBody extends StatelessWidget {
     }
     return '~${avg}m';
   }
-
-  /// Opens the "Show all cast" picker listing every member of [cast]
-  /// (avatar + name + character) — a bottom sheet from the narrow
-  /// layout's picker chip, a centered dialog ([asDialog]) from the wide
-  /// layout's "+N" overflow tile. Same modal split as the season picker
-  /// so D-pad / dismiss behavior matches.
-  void _showAllCast(
-    BuildContext context,
-    List<CastMember> cast, {
-    bool asDialog = false,
-  }) {
-    final l = AppLocalizations.of(context);
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    unawaited(
-      ListPickerSheet.show(
-        context,
-        title: l.castShowAll,
-        cancelLabel: l.cancel,
-        asDialog: asDialog,
-        children: [
-          for (final member in cast)
-            _CastSheetRow(member: member, theme: theme, scheme: scheme),
-        ],
-      ),
-    );
-  }
 }
 
 String? _trimmedOrNull(String? value) {
@@ -1063,74 +1022,6 @@ class _ConfirmMarkDialogState extends State<_ConfirmMarkDialog> {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// Single row inside the "Show all cast" bottom sheet. 48px circular
-/// avatar + bold name (1 line, ellipsized) + muted character (1 line,
-/// ellipsized). Rendered via a plain [Padding] — the surrounding
-/// [ListPickerSheet] handles D-pad region / focus / scrolling, so a
-/// per-row [DpadInkWell] would just compete with that focus model.
-class _CastSheetRow extends StatelessWidget {
-  const _CastSheetRow({
-    required this.member,
-    required this.theme,
-    required this.scheme,
-  });
-
-  final CastMember member;
-  final ThemeData theme;
-  final ColorScheme scheme;
-
-  @override
-  Widget build(BuildContext context) {
-    final character = member.character;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 48,
-            height: 48,
-            child: ClipOval(
-              child: ResilientMediaImage(
-                imageUrl: member.photo,
-                fallbackIcon: Icons.person,
-                backgroundColor: scheme.surfaceContainerHighest,
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  member.name,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (character != null && character.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    character,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

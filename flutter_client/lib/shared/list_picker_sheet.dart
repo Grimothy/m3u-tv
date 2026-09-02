@@ -13,15 +13,16 @@ import 'package:m3u_tv/shared/app_button.dart';
 /// Used by the cast "Show all" affordances on VOD and Series detail
 /// screens; also a natural fit for any future "more items" affordance
 /// that needs a scrollable picker. The picker's contents are
-/// caller-supplied via [children] — this widget owns only the modal
+/// caller-supplied via [children] - this widget owns only the modal
 /// chrome.
 ///
-/// Focus lands on the [autofocusIndex] child (default 0) so the list is
-/// immediately drivable by D-pad. The list is height-capped with a
-/// [ConstrainedBox] (not a [Flexible]) so the layout stays
-/// deterministic inside the modal's intrinsic sizing — a Flexible
-/// there lets rows overflow the sheet's clip and drop out of
-/// hit-testing.
+/// Focus lands on the [autofocusIndex] child (default 0) so D-pad input
+/// starts inside the list rather than on the surrounding scrim; when the
+/// children are non-interactive (e.g. cast rows) this just seats the
+/// scroll position. The list is height-capped with a [ConstrainedBox]
+/// (not a [Flexible]) so the layout stays deterministic inside the
+/// modal's intrinsic sizing - a Flexible there lets rows overflow the
+/// sheet's clip and drop out of hit-testing.
 class ListPickerSheet extends StatelessWidget {
   const ListPickerSheet({
     super.key,
@@ -35,7 +36,7 @@ class ListPickerSheet extends StatelessWidget {
   /// Header text in the sheet's title row.
   final String title;
 
-  /// Scrollable row widgets. Caller owns their layout — typically one
+  /// Scrollable row widgets. Caller owns their layout - typically one
   /// ListTile or DpadInkWell per item.
   final List<Widget> children;
 
@@ -48,13 +49,13 @@ class ListPickerSheet extends StatelessWidget {
   final String? cancelLabel;
 
   /// Dialog chrome instead of sheet chrome: tighter list metrics, a
-  /// slightly lower height cap and an always-visible scrollbar thumb —
+  /// slightly lower height cap and an always-visible scrollbar thumb -
   /// matching the season picker's wide-layout dialog.
   final bool asDialog;
 
   /// Show the picker. Opens a drag-handle bottom sheet by default
   /// (narrow breakpoint), or a centered 460px [AlertDialog] when
-  /// [asDialog] is true (wide/TV breakpoint) — the same split the
+  /// [asDialog] is true (wide/TV breakpoint) - the same split the
   /// season picker uses. Either way the inner list is height-capped so
   /// long lists scroll inside the modal instead of pushing it
   /// off-screen.

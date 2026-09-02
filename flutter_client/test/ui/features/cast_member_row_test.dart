@@ -137,7 +137,7 @@ void main() {
       );
 
       // Find the row's Semantics widget by its label.
-      // (Skip asserting `container` — not on SemanticsProperties in this Flutter version.)
+      // (Skip asserting `container` - not on SemanticsProperties in this Flutter version.)
       final semanticsFinder = find.byWidgetPredicate(
         (w) => w is Semantics && w.properties.label == 'Cast',
       );
@@ -333,7 +333,7 @@ void main() {
           );
 
           // The button label is the row's semanticLabel ("Cast"),
-          // localized by the caller — never a hard-coded English fallback
+          // localized by the caller - never a hard-coded English fallback
           // pulled from inside the widget.
           expect(find.text('Cast'), findsOneWidget);
           // The chevron icon indicates the button opens a picker.
@@ -401,7 +401,7 @@ void main() {
           );
 
           // The AppButton's label is in the tree (it's the visible text
-          // of the button). Tapping it fires the callback — that's the
+          // of the button). Tapping it fires the callback - that's the
           // practical a11y contract. (AppButton internally wires its own
           // Semantics node with button=true; we don't assert on the
           // exact Semantics widget to keep the test resilient to the
@@ -452,7 +452,7 @@ void main() {
           expect(buttonFinder, findsOneWidget);
           expect(
             tester.getSize(buttonFinder).height,
-            // AppButton's default height — wider tolerance for future
+            // AppButton's default height - wider tolerance for future
             // updates as long as the assertion catches 0 / negative
             // regressions.
             greaterThan(0),

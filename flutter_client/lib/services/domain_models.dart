@@ -220,7 +220,7 @@ class VodInfo {
       genre: _asNullableString(pick(['genre'])),
       director: _asNullableString(pick(['director'])),
       cast: _asNullableString(pick(['cast', 'actors'])),
-      richCast: _parsecastList(pick(['cast_list'])),
+      richCast: _parseCastList(pick(['cast_list'])),
       releaseDate: releaseDate,
       year: year,
       duration: _durationText(
@@ -254,7 +254,7 @@ class VodInfo {
 /// `cast_list` is a separate wire key from the existing string `cast`
 /// (comma-joined names). Keeping the keys distinct preserves backward
 /// compatibility for old m3u-tv clients that read `cast` via
-/// `_asNullableString(...)` — see plan `.omo/plans/cast-rich.md`.
+/// `_asNullableString(...)` - see plan `.omo/plans/cast-rich.md`.
 class CastMember {
   const CastMember({
     required this.name,
@@ -268,6 +268,9 @@ class CastMember {
   final String? character;
   final String? photo;
 
+  /// A static method rather than a `factory` because it returns null for
+  /// a malformed or nameless entry instead of throwing - callers filter
+  /// those out with `whereType<CastMember>()`.
   static CastMember? fromXtream(Object? json) {
     if (json is! Map) return null;
     final map = json.cast<String, Object?>();
@@ -283,7 +286,7 @@ class CastMember {
   }
 }
 
-List<CastMember>? _parsecastList(Object? raw) {
+List<CastMember>? _parseCastList(Object? raw) {
   if (raw is! List) return null;
   final parsed = raw
       .whereType<Map<Object?, Object?>>()
@@ -332,7 +335,7 @@ class Series {
     plot: _asNullableString(json['plot']),
     rating: _asDoubleOrNull(json['rating'] ?? json['rating_5based']),
     tmdbId: _asIntOrNull(json['tmdb_id'] ?? json['tmdb']),
-    richCast: _parsecastList(json['cast_list']),
+    richCast: _parseCastList(json['cast_list']),
   );
 }
 

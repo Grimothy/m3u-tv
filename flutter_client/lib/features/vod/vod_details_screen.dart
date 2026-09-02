@@ -11,7 +11,6 @@ import 'package:m3u_tv/shared/cast_member_row.dart';
 import 'package:m3u_tv/shared/dominant_backdrop_color.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
 import 'package:m3u_tv/shared/item_meta_info.dart';
-import 'package:m3u_tv/shared/list_picker_sheet.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
 class VodDetailsScreen extends StatefulWidget {
@@ -162,35 +161,56 @@ class _VodDetailsBody extends StatelessWidget {
     Progress? progress,
   ) {
     final backdrop = details.backdropUrl;
+    final richCast = details.richCast;
+    final l = AppLocalizations.of(context);
+    // The poster + details Row fills the available height (its own info column
+    // scrolls); the rich cast row is pinned full-width below it, kept out of
+    // that vertical scrollable so left/right card navigation never drags the
+    // page. Mirrors the Series detail layout.
     final content = Padding(
       padding: const EdgeInsets.all(MediaBrowsingMetrics.pagePadding),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            width: 220,
-            child: AspectRatio(
-              aspectRatio: 0.68,
-              child: ResilientMediaImage(
-                imageUrl: details.coverUrl,
-                fallbackIcon: Icons.movie,
-                borderRadius: MediaBrowsingMetrics.cardRadius,
-                fallbackTitle: details.name,
-              ),
-            ),
-          ),
-          const SizedBox(width: MediaBrowsingMetrics.pagePadding),
           Expanded(
-            child: SingleChildScrollView(
-              child: _infoColumn(context, theme, details, progress),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                SizedBox(
+                  width: 220,
+                  child: AspectRatio(
+                    aspectRatio: 0.68,
+                    child: ResilientMediaImage(
+                      imageUrl: details.coverUrl,
+                      fallbackIcon: Icons.movie,
+                      borderRadius: MediaBrowsingMetrics.cardRadius,
+                      fallbackTitle: details.name,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: MediaBrowsingMetrics.pagePadding),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: _infoColumn(context, theme, details, progress),
+                  ),
+                ),
+              ],
             ),
           ),
+          if (richCast != null && richCast.isNotEmpty) ...[
+            const SizedBox(height: MediaBrowsingMetrics.contentPadding),
+            CastMemberRow(
+              members: richCast,
+              semanticLabel: l.vodCast,
+              onShowAll: () => showAllCast(context, richCast, asDialog: true),
+              allCastSemanticLabel: l.castShowAll,
+            ),
+          ],
         ],
       ),
     );
 
-    // Always use the backdrop Stack layout so the poster stays bottom-aligned
-    // before and after the backdrop URL loads in, avoiding a layout jump.
     // Colour-matched scrim, same treatment as the Series detail page.
     return BackdropDetailHero(
       backdropUrl: backdrop,
@@ -198,9 +218,7 @@ class _VodDetailsBody extends StatelessWidget {
       showBackgroundColorLayer: true,
       backgroundColor: bg,
       scrimColors: [bg.withValues(alpha: 0.35), bg.withValues(alpha: 0.92), bg],
-      contentPadding: EdgeInsets.only(
-        bottom: MediaQuery.sizeOf(context).height * 0.1,
-      ),
+      contentPadding: const EdgeInsets.only(top: 24, bottom: 24),
       content: content,
     );
   }
@@ -313,45 +331,20 @@ class _VodDetailsBody extends StatelessWidget {
               MetaCreditLine(label: 'Cast', value: details.cast!),
           ],
         ),
-        if (richCast != null && richCast.isNotEmpty) ...[
+        // Wide layout renders the cast row full-width below the poster +
+        // details block (see _buildWide); only the narrow layout keeps it
+        // inline here, as a compact picker chip under the synopsis.
+        if (compact && richCast != null && richCast.isNotEmpty) ...[
           const SizedBox(height: MediaBrowsingMetrics.contentPadding),
           CastMemberRow(
             members: richCast,
             semanticLabel: l.vodCast,
-            compact: compact,
-            onShowAll: () =>
-                _showAllCast(context, richCast, asDialog: !compact),
+            compact: true,
+            onShowAll: () => showAllCast(context, richCast),
             allCastSemanticLabel: l.castShowAll,
           ),
         ],
       ],
-    );
-  }
-
-  /// Opens the "Show all cast" picker listing every member of [cast]
-  /// (avatar + name + character) — a bottom sheet from the narrow
-  /// layout's picker chip, a centered dialog ([asDialog]) from the wide
-  /// layout's "+N" overflow tile. Same modal split as the season picker
-  /// so D-pad / dismiss behavior matches.
-  void _showAllCast(
-    BuildContext context,
-    List<CastMember> cast, {
-    bool asDialog = false,
-  }) {
-    final l = AppLocalizations.of(context);
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    unawaited(
-      ListPickerSheet.show(
-        context,
-        title: l.castShowAll,
-        cancelLabel: l.cancel,
-        asDialog: asDialog,
-        children: [
-          for (final member in cast)
-            _VodCastSheetRow(member: member, theme: theme, scheme: scheme),
-        ],
-      ),
     );
   }
 
@@ -394,75 +387,6 @@ class _VodDetailsBody extends StatelessWidget {
           if (details.plot != null) 'plot': details.plot,
           if (details.edlUrl != null) 'edl_url': details.edlUrl,
         },
-      ),
-    );
-  }
-}
-
-/// Single row inside the VOD "Show all cast" bottom sheet. 48px
-/// circular avatar + bold name (1 line, ellipsized) + muted character
-/// (1 line, ellipsized). Rendered via a plain [Padding] — the
-/// surrounding ListPickerSheet handles D-pad region / focus /
-/// scrolling, so a per-row DpadInkWell would just compete with that
-/// focus model.
-class _VodCastSheetRow extends StatelessWidget {
-  const _VodCastSheetRow({
-    required this.member,
-    required this.theme,
-    required this.scheme,
-  });
-
-  final CastMember member;
-  final ThemeData theme;
-  final ColorScheme scheme;
-
-  @override
-  Widget build(BuildContext context) {
-    final character = member.character;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 48,
-            height: 48,
-            child: ClipOval(
-              child: ResilientMediaImage(
-                imageUrl: member.photo,
-                fallbackIcon: Icons.person,
-                backgroundColor: scheme.surfaceContainerHighest,
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  member.name,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (character != null && character.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    character,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
