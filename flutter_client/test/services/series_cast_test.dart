@@ -2,18 +2,32 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 
 void main() {
-  Map<String, Object?> seriesJson({Object? castList, bool includeCastList = true}) =>
-      <String, Object?>{
-        'series_id': 99,
-        'name': 'Breaking Bad',
-        if (includeCastList) 'cast_list': castList,
-      };
+  Map<String, Object?> seriesJson({
+    Object? castList,
+    bool includeCastList = true,
+  }) => <String, Object?>{
+    'series_id': 99,
+    'name': 'Breaking Bad',
+    if (includeCastList) 'cast_list': castList,
+  };
 
   test('Series.richCast is parsed when cast_list is a list of maps', () {
-    final series = Series.fromXtream(seriesJson(castList: <Object?>[
-      <String, Object?>{'id': 17419, 'name': 'Bryan Cranston', 'character': 'Walter White'},
-      <String, Object?>{'id': 17420, 'name': 'Aaron Paul', 'character': 'Jesse Pinkman'},
-    ]));
+    final series = Series.fromXtream(
+      seriesJson(
+        castList: <Object?>[
+          <String, Object?>{
+            'id': 17419,
+            'name': 'Bryan Cranston',
+            'character': 'Walter White',
+          },
+          <String, Object?>{
+            'id': 17420,
+            'name': 'Aaron Paul',
+            'character': 'Jesse Pinkman',
+          },
+        ],
+      ),
+    );
 
     expect(series.richCast, isNotNull);
     expect(series.richCast!.length, 2);

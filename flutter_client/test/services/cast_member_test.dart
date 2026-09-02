@@ -18,7 +18,9 @@ void main() {
     });
 
     test('parses an entry with only a name (no id/character/photo)', () {
-      final result = CastMember.fromXtream(<String, Object?>{'name': 'Bryan Cranston'});
+      final result = CastMember.fromXtream(<String, Object?>{
+        'name': 'Bryan Cranston',
+      });
       expect(result, isNotNull);
       expect(result!.name, 'Bryan Cranston');
       expect(result.id, isNull);
@@ -27,7 +29,9 @@ void main() {
     });
 
     test('trims whitespace from the name', () {
-      final result = CastMember.fromXtream(<String, Object?>{'name': '  Anna Paquin  '});
+      final result = CastMember.fromXtream(<String, Object?>{
+        'name': '  Anna Paquin  ',
+      });
       expect(result!.name, 'Anna Paquin');
     });
 

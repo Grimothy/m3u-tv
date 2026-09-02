@@ -15,10 +15,20 @@ void main() {
   };
 
   test('VodInfo.richCast is parsed when cast_list is a list of maps', () {
-    final vod = VodInfo.fromXtream(vodPayload(<Object?>[
-      <String, Object?>{'id': 1, 'name': 'Leonardo DiCaprio', 'character': 'Cobb'},
-      <String, Object?>{'id': 2, 'name': 'Joseph Gordon-Levitt', 'character': 'Arthur'},
-    ]));
+    final vod = VodInfo.fromXtream(
+      vodPayload(<Object?>[
+        <String, Object?>{
+          'id': 1,
+          'name': 'Leonardo DiCaprio',
+          'character': 'Cobb',
+        },
+        <String, Object?>{
+          'id': 2,
+          'name': 'Joseph Gordon-Levitt',
+          'character': 'Arthur',
+        },
+      ]),
+    );
 
     expect(vod.richCast, isNotNull);
     expect(vod.richCast!.length, 2);
@@ -37,33 +47,46 @@ void main() {
     expect(vod.richCast, isNull);
   });
 
-  test('VodInfo.richCast is null when cast_list is the legacy comma-joined string', () {
-    final vod = VodInfo.fromXtream(vodPayload('Leonardo DiCaprio, Joseph Gordon-Levitt'));
-    expect(vod.richCast, isNull);
-  });
+  test(
+    'VodInfo.richCast is null when cast_list is the legacy comma-joined string',
+    () {
+      final vod = VodInfo.fromXtream(
+        vodPayload('Leonardo DiCaprio, Joseph Gordon-Levitt'),
+      );
+      expect(vod.richCast, isNull);
+    },
+  );
 
-  test('VodInfo.richCast preserves the legacy string `cast` field (no regression)', () {
-    final payload = <String, Object?>{
-      'info': <String, Object?>{'name': 'Inception'},
-      'movie_data': <String, Object?>{
-        'stream_id': 101,
-        'name': 'Inception',
-        'cast': 'Leonardo DiCaprio, Joseph Gordon-Levitt',
-      },
-    };
-    final vod = VodInfo.fromXtream(payload);
-    expect(vod.cast, 'Leonardo DiCaprio, Joseph Gordon-Levitt');
-    expect(vod.richCast, isNull);
-  });
+  test(
+    'VodInfo.richCast preserves the legacy string `cast` field (no regression)',
+    () {
+      final payload = <String, Object?>{
+        'info': <String, Object?>{'name': 'Inception'},
+        'movie_data': <String, Object?>{
+          'stream_id': 101,
+          'name': 'Inception',
+          'cast': 'Leonardo DiCaprio, Joseph Gordon-Levitt',
+        },
+      };
+      final vod = VodInfo.fromXtream(payload);
+      expect(vod.cast, 'Leonardo DiCaprio, Joseph Gordon-Levitt');
+      expect(vod.richCast, isNull);
+    },
+  );
 
-  test('VodInfo.richCast is null when cast_list contains only malformed entries', () {
-    final vod = VodInfo.fromXtream(vodPayload(<Object?>[
-      <String, Object?>{'name': ''},
-      <String, Object?>{'name': '   '},
-      <String, Object?>{},
-    ]));
-    expect(vod.richCast, isNull);
-  });
+  test(
+    'VodInfo.richCast is null when cast_list contains only malformed entries',
+    () {
+      final vod = VodInfo.fromXtream(
+        vodPayload(<Object?>[
+          <String, Object?>{'name': ''},
+          <String, Object?>{'name': '   '},
+          <String, Object?>{},
+        ]),
+      );
+      expect(vod.richCast, isNull);
+    },
+  );
 }
 
 class _Omitted {
