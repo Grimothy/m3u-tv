@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart'
+    show KeyDownEvent, KeyEvent, KeyRepeatEvent, LogicalKeyboardKey;
 import 'package:intl/intl.dart';
 import 'package:m3u_tv/features/series/episode_player_args.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
@@ -13,8 +14,11 @@ import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/backdrop_detail_hero.dart';
 import 'package:m3u_tv/shared/cached_backdrop_image.dart';
 import 'package:m3u_tv/shared/cast_member_row.dart';
+import 'package:m3u_tv/shared/cast_strip.dart';
 import 'package:m3u_tv/shared/dominant_backdrop_color.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
+import 'package:m3u_tv/shared/gradient_border_effect.dart';
+import 'package:m3u_tv/shared/hover_scroll_arrows.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
 import 'package:m3u_tv/shared/item_meta_info.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
@@ -706,26 +710,48 @@ class _SeriesDetailsBody extends StatelessWidget {
       return _buildCompact(context, bg, backdrop, content);
     }
 
-    // TV / desktop: only the header block (`upper`) lives in a vertical
-    // scrollable; the horizontal episode strip is pinned outside it so dpad's
-    // focus-follow `ensureVisible` - which walks every scrollable ancestor of
-    // the focused card - can't drag the page up and down on every left/right
-    // episode step. The rich cast rail is deliberately NOT added here: a third
-    // section breaks this height budget (squeezing `upper` until the Play
-    // button auto-focus scrolls the meta chips out of reach) and any wrapping
-    // vertical scroll reintroduces the episode-strip jank. Cast stays on the
-    // narrow layout (compact chip in the action row) and on VOD.
+    // TV / desktop: a fixed header (poster + meta + Play / season row) over a
+    // vertical scroll region that stacks the episode strip and, when the
+    // server resolved a cast, the cast row. Each row is a single dpad stop
+    // (see _EpisodeStrip / _CastStrip) - left/right stay inside the row,
+    // up/down hand focus to the neighbouring row and dpad's own padded
+    // auto-scroll reveals the newly focused row. There are no per-card focus
+    // nodes for dpad's ensure-visible to chase, so horizontal navigation
+    // never drags the page - the regression the old pinned-strip layout
+    // worked around. The compact cast chip stays on the narrow layout.
+    final richCast = info.series.richCast;
+    final l = AppLocalizations.of(context);
     final wideContent = Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: MediaBrowsingMetrics.pagePadding,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Flexible(child: SingleChildScrollView(child: upper)),
+          upper,
           const SizedBox(height: 12),
-          episodeSection,
+          Expanded(
+            child: _RowScrollRegion(
+              onExitTop: playFocusNode.requestFocus,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  episodeSection,
+                  if (richCast != null && richCast.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    Text(
+                      l.seriesCast,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _SeriesCastRow(members: richCast),
+                  ],
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1342,13 +1368,189 @@ class _EpisodeStrip extends StatefulWidget {
   State<_EpisodeStrip> createState() => _EpisodeStripState();
 }
 
-class _EpisodeStripState extends State<_EpisodeStrip> {
-  final ScrollController _controller = _FrameSafeScrollController();
+class _EpisodeStripState extends State<_EpisodeStrip> implements _LockedRow {
+  final ScrollController _controller = ScrollController();
+
+  // TV / desktop only: the whole strip is one focus stop. `_focusedIndex` is
+  // the highlighted card; `_hasFocus` mirrors the strip node so the cards
+  // only paint a border while the row actually holds focus.
+  final FocusNode _focusNode = FocusNode(debugLabel: 'episodeStrip');
+  final _SelectHold _selectHold = _SelectHold();
+  int _focusedIndex = 0;
+  bool _hasFocus = false;
+
+  /// Set on the wide layout: the enclosing scroll region this strip is a row
+  /// of. Drives both the into-view reveal and up/down row hops. Null on the
+  /// phone layout (plain page scroll, no region).
+  _RowScrollRegionState? _region;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_handleFocusChange);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!widget.horizontal) return;
+    final region = _RowScrollRegion.of(context);
+    if (region != _region) {
+      _region?.unregisterRow(this);
+      _region = region;
+      _region?.registerRow(this);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_EpisodeStrip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A season switch swaps the episode list under the row; keep the cursor
+    // in range so the next left/right starts from a real card.
+    if (_focusedIndex >= widget.episodes.length) {
+      _focusedIndex = widget.episodes.isEmpty ? 0 : widget.episodes.length - 1;
+    }
+  }
 
   @override
   void dispose() {
+    _region?.unregisterRow(this);
+    _selectHold.dispose();
+    _focusNode
+      ..removeListener(_handleFocusChange)
+      ..dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  void _handleFocusChange() {
+    if (!mounted) return;
+    setState(() => _hasFocus = _focusNode.hasFocus);
+    if (_focusNode.hasFocus) {
+      // Focus can also arrive from outside the region (autofocus on load, or
+      // down from the Play button via dpad traversal). Centre the cursor and
+      // reveal the strip either way; focusRow() does the same when the hop
+      // comes from a sibling row.
+      _centerFocused(animate: false);
+      _region?.reveal(context);
+    }
+  }
+
+  @override
+  void focusRow() {
+    _focusNode.requestFocus();
+    _centerFocused(animate: false);
+    _region?.reveal(context);
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    final key = event.logicalKey;
+    if (_SelectHold.isSelectKey(key)) {
+      return _selectHold.handle(
+        event,
+        isActive: () => mounted,
+        onTap: _selectFocused,
+        onLongPress: widget.canMarkWatched ? _longSelectFocused : null,
+      );
+    }
+    final isDown = event is KeyDownEvent || event is KeyRepeatEvent;
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      if (isDown) _moveFocus(-1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowRight) {
+      if (isDown) _moveFocus(1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowUp) {
+      final region = _region;
+      if (region == null) return KeyEventResult.ignored;
+      if (isDown) region.navigateVertical(this, up: true);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowDown) {
+      final region = _region;
+      if (region == null) return KeyEventResult.ignored;
+      if (isDown) region.navigateVertical(this, up: false);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  double get _itemExtent => widget.cardWidth + MediaBrowsingMetrics.itemGap;
+
+  /// Scroll the row's OWN controller so the focused card is centered. This is
+  /// the only place the strip scrolls horizontally and it never walks an
+  /// ancestor scrollable - the reason left/right navigation no longer drags
+  /// the page. (dpad's focus-follow reveal only ever pulled the page when
+  /// each card was its own focus node.)
+  ///
+  /// KNOWN ISSUE (not yet bullet-proof - needs more device testing): under
+  /// aggressive fast left/right key-repeat this `animateTo` can still land its
+  /// `DrivenScrollActivity` goBallistic -> goIdle transition inside the
+  /// semantics flush, tripping Flutter's
+  /// `!attached || !owner!._debugDoingSemantics` assertion storm
+  /// (`ScrollableState.setIgnorePointer` -> `RenderIgnorePointer.ignoring=` ->
+  /// `markNeedsSemanticsUpdate`). It is visually harmless (debug-only assert)
+  /// and self-recovers, but the real fix is still open. A
+  /// `FrameSafeScrollController` that deferred/collapsed these jumps out of the
+  /// frame pipeline killed the asserts but broke normal recenter (focus
+  /// advanced, scroll lagged a frame and sometimes never landed), so it was
+  /// reverted. Candidate directions to try next: gate the recenter to
+  /// KeyDown-only (skip KeyRepeat), debounce `_centerFocused`, or drop the
+  /// tween for an unconditional `jumpTo` on repeat.
+  void _centerFocused({bool animate = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients) return;
+      final position = _controller.position;
+      final target =
+          (_focusedIndex * _itemExtent +
+                  widget.cardWidth / 2 -
+                  position.viewportDimension / 2)
+              .clamp(0.0, position.maxScrollExtent);
+      if ((target - position.pixels).abs() < 1) return;
+      if (animate) {
+        unawaited(
+          position.animateTo(
+            target,
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOut,
+          ),
+        );
+      } else {
+        position.jumpTo(target);
+      }
+    });
+  }
+
+  void _moveFocus(int delta) {
+    if (widget.episodes.isEmpty) return;
+    final target = (_focusedIndex + delta).clamp(0, widget.episodes.length - 1);
+    if (target == _focusedIndex) return;
+    setState(() => _focusedIndex = target);
+    _centerFocused();
+  }
+
+  Episode? get _focusedEpisode =>
+      (_focusedIndex >= 0 && _focusedIndex < widget.episodes.length)
+      ? widget.episodes[_focusedIndex]
+      : null;
+
+  void _selectFocused() {
+    final episode = _focusedEpisode;
+    if (episode != null) widget.onEpisodeSelected(episode);
+  }
+
+  void _longSelectFocused() {
+    final episode = _focusedEpisode;
+    if (episode == null) return;
+    final streamId = int.tryParse(episode.id);
+    final progress = streamId == null
+        ? null
+        : widget.progressList.firstWhereOrNull((p) => p.streamId == streamId);
+    unawaited(
+      _confirmEpisode(episode, watched: !(progress?.completed ?? false)),
+    );
   }
 
   Future<void> _confirmEpisode(
@@ -1389,7 +1591,11 @@ class _EpisodeStripState extends State<_EpisodeStrip> {
         episode.releaseDate,
         Localizations.localeOf(context).toLanguageTag(),
       ),
-      autofocus: widget.autofocusFirst && index == 0,
+      // Horizontal (TV/desktop): the strip owns focus, the card only shows the
+      // border when it is the current index. Vertical (phone): each card owns
+      // its focus node, so the first one autofocuses.
+      focused: widget.horizontal && _hasFocus && index == _focusedIndex,
+      autofocus: !widget.horizontal && widget.autofocusFirst && index == 0,
       onTap: () => widget.onEpisodeSelected(episode),
       onLongTap: widget.canMarkWatched
           ? () => unawaited(_confirmEpisode(episode, watched: !completed))
@@ -1414,144 +1620,41 @@ class _EpisodeStripState extends State<_EpisodeStrip> {
         ),
       );
     }
-    // TV / desktop: a real horizontal Scrollable (so a mouse wheel / drag
-    // works), but driven through a [_FrameSafeScrollController] so dpad's
-    // ensure-visible and scroll-for-more can never mutate the scroll position
-    // during the frame's build/layout/semantics phase - the race that threw
-    // the '!attached || !owner!._debugDoingSemantics' assertion storm when a
-    // card was held down. See that class for the mechanism.
-    return DpadRegion(
-      horizontalEdge: DpadEdgeBehavior.stop,
-      child: Scrollbar(
+    // TV / desktop: a "locked focus" row, modelled on Plezy. The whole strip
+    // is ONE plain Focus stop whose onKeyEvent handles every arrow + select
+    // key itself and always consumes them - so nothing ever reaches dpad's
+    // directional traversal / "scroll for more" retry, which was leaving
+    // focus a row behind and the strip clipped on tvOS. left/right move an
+    // internal index and scroll this row's own controller; up/down go to the
+    // enclosing _RowScrollRegion.
+    // No Scrollbar wrapper: it reacts to every scroll-position change and,
+    // under fast key-repeat, its interplay with the ListView's own
+    // ignore-pointer toggling during scroll-activity transitions throws the
+    // `!_debugDoingSemantics` assertion storm. The cast row (identical minus
+    // the Scrollbar) never races - so the strip drops it too. Desktop still
+    // scrolls the ListView with the mouse wheel directly.
+    return Focus(
+      focusNode: _focusNode,
+      autofocus: widget.autofocusFirst,
+      descendantsAreFocusable: false,
+      onKeyEvent: _handleKeyEvent,
+      // Desktop mouse users get hover arrows (the scrollbar is hidden); TV /
+      // phone pass straight through and D-pad / touch drive the scroll.
+      child: HoverScrollArrows(
         controller: _controller,
-        thumbVisibility: true,
-        child: ListView.separated(
+        child: ListView.builder(
           controller: _controller,
           scrollDirection: Axis.horizontal,
+          itemExtent: _itemExtent,
           padding: const EdgeInsets.only(bottom: 12),
           itemCount: widget.episodes.length,
-          separatorBuilder: (_, _) =>
-              const SizedBox(width: MediaBrowsingMetrics.itemGap),
-          itemBuilder: _card,
+          itemBuilder: (context, index) => Padding(
+            padding: const EdgeInsets.only(right: MediaBrowsingMetrics.itemGap),
+            child: _card(context, index),
+          ),
         ),
       ),
     );
-  }
-}
-
-/// A [ScrollController] whose position defers any programmatic scroll that
-/// would otherwise land inside the frame pipeline.
-///
-/// dpad drives `DpadScroll.ensureVisible` (from a post-frame callback) and
-/// `_scrollForMore` (from a `Future.then` continuation, hard-coded to
-/// `animateTo`) on every focus move. Under a held D-pad key those fire fast
-/// enough that a `jumpTo`/`animateTo` lands while `ListView` is mid build /
-/// layout / semantics for the same frame. `ScrollPosition` mutation there
-/// synchronously toggles `RenderIgnorePointer.ignoring` / the semantic scroll
-/// actions -> `markNeedsSemanticsUpdate()` -> Flutter's
-/// `!attached || !owner!._debugDoingSemantics` assertion, which then repeats
-/// every frame because the driving animation ticker keeps running.
-///
-/// This mirrors the EPG grid's scroll-sync fix (`timeline_epg_view.dart`):
-/// coalesce a burst into one deferred jump that runs after the current
-/// frame has fully settled. `animateTo` is collapsed to the same deferred
-/// jump - fast repeat does not need the tween, and the tween's ticker is the
-/// part that races the pipeline. A normal user gesture (wheel, drag,
-/// ballistic fling) runs outside the persistent-callbacks phase and passes
-/// straight through untouched.
-class _FrameSafeScrollController extends ScrollController {
-  @override
-  ScrollPosition createScrollPosition(
-    ScrollPhysics physics,
-    ScrollContext context,
-    ScrollPosition? oldPosition,
-  ) {
-    return _FrameSafeScrollPosition(
-      physics: physics,
-      context: context,
-      initialPixels: initialScrollOffset,
-      keepScrollOffset: keepScrollOffset,
-      oldPosition: oldPosition,
-      debugLabel: debugLabel,
-    );
-  }
-}
-
-class _FrameSafeScrollPosition extends ScrollPositionWithSingleContext {
-  _FrameSafeScrollPosition({
-    required super.physics,
-    required super.context,
-    super.initialPixels,
-    super.keepScrollOffset,
-    super.oldPosition,
-    super.debugLabel,
-  });
-
-  bool _deferredScheduled = false;
-  bool _disposed = false;
-  double? _pendingTarget;
-  Completer<void>? _pendingCompleter;
-
-  @override
-  void dispose() {
-    _disposed = true;
-    _pendingCompleter?.complete();
-    _pendingCompleter = null;
-    super.dispose();
-  }
-
-  // Unsafe iff a frame's build/layout/paint/semantics is running right now:
-  // that whole pass executes in the persistent-callbacks phase, and it is the
-  // only window where a position mutation can re-enter the semantics compile.
-  bool get _safeNow =>
-      SchedulerBinding.instance.schedulerPhase !=
-      SchedulerPhase.persistentCallbacks;
-
-  @override
-  void jumpTo(double value) {
-    if (_safeNow && !_deferredScheduled) {
-      super.jumpTo(value);
-    } else {
-      unawaited(_deferJump(value));
-    }
-  }
-
-  @override
-  Future<void> animateTo(
-    double to, {
-    required Duration duration,
-    required Curve curve,
-  }) {
-    // Every programmatic animate here is a dpad focus-follow; on a D-pad UI an
-    // instant settle is fine, and the tween's ticker is exactly what races the
-    // pipeline under a held key. User gestures (wheel, drag, ballistic) never
-    // route through animateTo, so smooth manual scrolling is unaffected.
-    return _deferJump(to);
-  }
-
-  Future<void> _deferJump(double target) {
-    _pendingTarget = target;
-    final completer = _pendingCompleter ??= Completer<void>();
-    if (!_deferredScheduled) {
-      _deferredScheduled = true;
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        _deferredScheduled = false;
-        final value = _pendingTarget;
-        final pending = _pendingCompleter;
-        _pendingTarget = null;
-        _pendingCompleter = null;
-        if (!_disposed && value != null && hasPixels && hasContentDimensions) {
-          final clamped = value.clamp(minScrollExtent, maxScrollExtent);
-          if ((pixels - clamped).abs() > 0.5) super.jumpTo(clamped);
-        }
-        pending?.complete();
-      });
-      // addPostFrameCallback does not itself schedule a frame; when the app is
-      // otherwise idle (no pending animation/rebuild) the callback would never
-      // run without this.
-      SchedulerBinding.instance.ensureVisualUpdate();
-    }
-    return completer.future;
   }
 }
 
@@ -1570,6 +1673,7 @@ class _EpisodeCard extends StatelessWidget {
     required this.onTap,
     this.onLongTap,
     this.horizontal = true,
+    this.focused = false,
   });
 
   final Episode episode;
@@ -1577,7 +1681,14 @@ class _EpisodeCard extends StatelessWidget {
   final bool completed;
   final double? progressFraction;
   final String? dateLabel;
+
+  /// Vertical (phone) only: this card owns its focus node and grabs focus on
+  /// first build.
   final bool autofocus;
+
+  /// Horizontal (TV/desktop) only: the parent [_EpisodeStrip] owns focus and
+  /// tells this card when it is the highlighted one, so it paints its border.
+  final bool focused;
   final VoidCallback onTap;
   final VoidCallback? onLongTap;
   final bool horizontal;
@@ -1627,15 +1738,20 @@ class _EpisodeCard extends StatelessWidget {
       ],
     );
 
-    return SizedBox(
-      width: width,
-      child: DpadInkWell(
-        autofocus: autofocus,
+    final radius = BorderRadius.circular(MediaBrowsingMetrics.cardRadius);
+    // Not focusable on its own: the enclosing _EpisodeStrip is the single dpad
+    // stop and passes `focused` down. The Material + InkWell keep the pointer
+    // ripple; the border is painted by the same GradientBorderEffect a
+    // DpadInkWell would apply.
+    Widget body = Material(
+      color: colorScheme.surfaceContainerHigh,
+      borderRadius: radius,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
         onTap: onTap,
-        onLongTap: onLongTap,
-        color: colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(MediaBrowsingMetrics.cardRadius),
-        clipBehavior: Clip.antiAlias,
+        onLongPress: onLongTap,
+        borderRadius: radius,
+        canRequestFocus: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1766,6 +1882,12 @@ class _EpisodeCard extends StatelessWidget {
         ),
       ),
     );
+    body = GradientBorderEffect(borderRadius: radius).build(
+      context,
+      DpadFocusState(focused: focused, pressed: false),
+      body,
+    );
+    return SizedBox(width: width, child: body);
   }
 
   Widget _buildVertical(
@@ -1889,6 +2011,241 @@ class _EpisodeCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A locked-focus row that lives inside a [_RowScrollRegion]: the whole row is
+/// one focus stop, left/right move an internal index, and up/down are routed
+/// to the region (which focuses the adjacent row or hands off above).
+// ignore: one_member_abstracts
+abstract class _LockedRow {
+  /// Take focus, park the internal cursor, and scroll self into view.
+  void focusRow();
+}
+
+/// The wide series-detail vertical scroll region (episode strip + cast strip).
+///
+/// This is modelled on Plezy's TV detail: every row is a plain `Focus` widget
+/// whose `onKeyEvent` handles left/right/up/down/select itself and *always*
+/// consumes them, so no key ever reaches a traversal policy. dpad's directional
+/// traversal + "scroll for more" retry were what left focus stuck a row behind
+/// (needing 2-3 presses) and the strip clipped on tvOS.
+///
+///  * **Row hop** - a row's up/down calls `navigateVertical`, which focuses the
+///    adjacent registered row directly (or `onExitTop` at the top, wired to the
+///    Play button).
+///  * **Reveal** - `reveal` scrolls a row fully into view, computed against
+///    this region's own box + controller and run over two frames so a slower
+///    tvOS layout pass cannot strand it.
+class _RowScrollRegion extends StatefulWidget {
+  const _RowScrollRegion({required this.child, this.onExitTop});
+
+  final Widget child;
+
+  /// Called when up is pressed on the top row - focus the Play button.
+  final VoidCallback? onExitTop;
+
+  /// Never returns null spuriously the way an inherited-widget lookup can when
+  /// the scope is not wired yet (a tvOS-vs-desktop tree-timing difference that
+  /// left `focusRow` and `reveal` no-ops).
+  static _RowScrollRegionState? of(BuildContext context) =>
+      context.findAncestorStateOfType<_RowScrollRegionState>();
+
+  @override
+  State<_RowScrollRegion> createState() => _RowScrollRegionState();
+}
+
+class _RowScrollRegionState extends State<_RowScrollRegion> {
+  final ScrollController _controller = ScrollController();
+
+  /// Rows in registration order, which is mount order, which is top-to-bottom
+  /// (the episode strip builds before the cast strip).
+  final List<_LockedRow> _rows = [];
+
+  void registerRow(_LockedRow row) {
+    if (!_rows.contains(row)) _rows.add(row);
+  }
+
+  void unregisterRow(_LockedRow row) => _rows.remove(row);
+
+  /// Route an up/down press from [from]. Always "handled" from the caller's
+  /// point of view - focus either lands on the adjacent row, hands off above
+  /// the region, or (nothing below) stays put.
+  void navigateVertical(_LockedRow from, {required bool up}) {
+    final index = _rows.indexOf(from);
+    if (index < 0) return;
+    final targetIndex = index + (up ? -1 : 1);
+    if (targetIndex < 0) {
+      widget.onExitTop?.call();
+      return;
+    }
+    if (targetIndex >= _rows.length) return;
+    _rows[targetIndex].focusRow();
+  }
+
+  /// Scroll so [target]'s render box sits fully inside the viewport with [pad]
+  /// px clear of whichever edge clipped it. No-op when it already is.
+  ///
+  /// Runs the correction next frame and again the frame after, so a relayout
+  /// from the same focus change (or a slower tvOS pipeline) cannot strand the
+  /// first pass. Geometry comes from this region's own render box and
+  /// [_controller] - never an ambiguous ancestor-viewport lookup.
+  void reveal(BuildContext target, {double pad = 16}) {
+    void pass() {
+      if (!mounted || !_controller.hasClients) return;
+      final box = target.findRenderObject();
+      final regionBox = context.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) return;
+      if (regionBox is! RenderBox || !regionBox.hasSize) return;
+      final position = _controller.position;
+      final viewportHeight = position.viewportDimension;
+      final topInRegion = box
+          .localToGlobal(Offset.zero, ancestor: regionBox)
+          .dy;
+      final bottomInRegion = topInRegion + box.size.height;
+
+      double delta;
+      if (topInRegion < pad) {
+        delta = topInRegion - pad; // clipped at top -> scroll up
+      } else if (bottomInRegion > viewportHeight - pad) {
+        delta = bottomInRegion - (viewportHeight - pad); // clipped at bottom
+        final maxDelta = topInRegion - pad; // don't push our own top off
+        if (delta > maxDelta) delta = maxDelta;
+      } else {
+        return; // already fully visible
+      }
+      if (delta.abs() < 0.5) return;
+      final to = (position.pixels + delta).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      );
+      if ((to - position.pixels).abs() < 0.5) return;
+      unawaited(
+        position.animateTo(
+          to,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        ),
+      );
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      pass();
+      WidgetsBinding.instance.addPostFrameCallback((_) => pass());
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(controller: _controller, child: widget.child);
+  }
+}
+
+/// Tracks the D-pad SELECT key for a locked-focus row: a short press fires
+/// `onTap` on key up, a hold past `_holdDuration` fires `onLongPress`.
+/// Every select event is consumed so it never reaches a platform handler.
+class _SelectHold {
+  static const _holdDuration = Duration(milliseconds: 500);
+
+  Timer? _timer;
+  bool _down = false;
+  bool _longFired = false;
+
+  static final Set<LogicalKeyboardKey> _selectKeys = {
+    LogicalKeyboardKey.select,
+    LogicalKeyboardKey.enter,
+    LogicalKeyboardKey.space,
+    LogicalKeyboardKey.gameButtonA,
+  };
+
+  static bool isSelectKey(LogicalKeyboardKey key) => _selectKeys.contains(key);
+
+  KeyEventResult handle(
+    KeyEvent event, {
+    required bool Function() isActive,
+    required VoidCallback onTap,
+    VoidCallback? onLongPress,
+  }) {
+    if (onLongPress == null) {
+      if (event is KeyDownEvent) onTap();
+      return KeyEventResult.handled;
+    }
+    if (event is KeyDownEvent) {
+      if (!_down) {
+        _down = true;
+        _longFired = false;
+        _timer?.cancel();
+        _timer = Timer(_holdDuration, () {
+          if (!isActive() || !_down) return;
+          _longFired = true;
+          onLongPress();
+        });
+      }
+      return KeyEventResult.handled;
+    }
+    if (event is KeyRepeatEvent) return KeyEventResult.handled;
+    // KeyUpEvent: short press if the hold timer had not fired yet.
+    _timer?.cancel();
+    if (_down && !_longFired) onTap();
+    _down = false;
+    return KeyEventResult.handled;
+  }
+
+  void dispose() => _timer?.cancel();
+}
+
+/// Bridges the shared [CastStrip] to the series detail's [_RowScrollRegion]:
+/// registers as a [_LockedRow] so the episode strip can hop down into it (and
+/// it can hop back up), and routes the strip's reveal through the region.
+class _SeriesCastRow extends StatefulWidget {
+  const _SeriesCastRow({required this.members});
+
+  final List<CastMember> members;
+
+  @override
+  State<_SeriesCastRow> createState() => _SeriesCastRowState();
+}
+
+class _SeriesCastRowState extends State<_SeriesCastRow> implements _LockedRow {
+  final GlobalKey<CastStripState> _stripKey = GlobalKey<CastStripState>();
+  _RowScrollRegionState? _region;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final region = _RowScrollRegion.of(context);
+    if (region != _region) {
+      _region?.unregisterRow(this);
+      _region = region;
+      _region?.registerRow(this);
+    }
+  }
+
+  @override
+  void dispose() {
+    _region?.unregisterRow(this);
+    super.dispose();
+  }
+
+  @override
+  void focusRow() => _stripKey.currentState?.focusRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return CastStrip(
+      key: _stripKey,
+      members: widget.members,
+      onNavigateUp: () => _region?.navigateVertical(this, up: true),
+      // Consume down so focus never escapes below the cast row.
+      onNavigateDown: () => _region?.navigateVertical(this, up: false),
+      onReveal: (ctx) => _region?.reveal(ctx),
     );
   }
 }

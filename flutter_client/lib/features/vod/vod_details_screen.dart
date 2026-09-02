@@ -8,6 +8,7 @@ import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/backdrop_detail_hero.dart';
 import 'package:m3u_tv/shared/cast_member_row.dart';
+import 'package:m3u_tv/shared/cast_strip.dart';
 import 'package:m3u_tv/shared/dominant_backdrop_color.dart';
 import 'package:m3u_tv/shared/item_detail_scaffold.dart';
 import 'package:m3u_tv/shared/item_meta_info.dart';
@@ -49,6 +50,18 @@ class _VodDetailsScreenState extends State<VodDetailsScreen> {
 
   Color? _dominantColor;
 
+  /// Wired into the wide-layout cast row so pressing up off the cast cards
+  /// returns focus to the primary Play button (the raw-`Focus` [CastStrip]
+  /// consumes every arrow key, so it must hand vertical navigation back
+  /// explicitly).
+  final FocusNode _playFocusNode = FocusNode(debugLabel: 'vodPlayButton');
+
+  @override
+  void dispose() {
+    _playFocusNode.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -79,6 +92,7 @@ class _VodDetailsScreenState extends State<VodDetailsScreen> {
               progressList: widget.progressList,
               onPlay: widget.onPlay,
               dominantColor: _dominantColor,
+              playFocusNode: _playFocusNode,
             )
           : FutureBuilder<VodInfo?>(
               future: _future,
@@ -90,6 +104,7 @@ class _VodDetailsScreenState extends State<VodDetailsScreen> {
                   progressList: widget.progressList,
                   onPlay: widget.onPlay,
                   dominantColor: _dominantColor,
+                  playFocusNode: _playFocusNode,
                 );
               },
             ),
@@ -100,6 +115,7 @@ class _VodDetailsScreenState extends State<VodDetailsScreen> {
 class _VodDetailsBody extends StatelessWidget {
   const _VodDetailsBody({
     required this.item,
+    required this.playFocusNode,
     this.info,
     this.isLoading = false,
     this.progressList = const [],
@@ -112,6 +128,9 @@ class _VodDetailsBody extends StatelessWidget {
   final bool isLoading;
   final List<Progress> progressList;
   final void Function(PlayerArgs)? onPlay;
+
+  /// Focus target for the wide cast row's "up" hop - the primary Play button.
+  final FocusNode playFocusNode;
 
   /// Palette-extracted tone from the backdrop/poster; falls back to the
   /// theme surface. Matches the Series detail page's colour-match treatment.
@@ -200,11 +219,16 @@ class _VodDetailsBody extends StatelessWidget {
           ),
           if (richCast != null && richCast.isNotEmpty) ...[
             const SizedBox(height: MediaBrowsingMetrics.contentPadding),
-            CastMemberRow(
-              members: richCast,
-              semanticLabel: l.vodCast,
-              onShowAll: () => showAllCast(context, richCast, asDialog: true),
-              allCastSemanticLabel: l.castShowAll,
+            Semantics(
+              label: l.vodCast,
+              container: true,
+              // Same scrollable locked-focus row the Series detail uses. It is
+              // pinned here (always on-screen), so no reveal callback; up hops
+              // back to the Play button.
+              child: CastStrip(
+                members: richCast,
+                onNavigateUp: playFocusNode.requestFocus,
+              ),
             ),
           ],
         ],
@@ -303,6 +327,7 @@ class _VodDetailsBody extends StatelessWidget {
       children: [
         ItemMetaInfo(
           name: details.name,
+          primaryActionFocusNode: playFocusNode,
           chips: [
             if (details.year != null) details.year!,
             if (details.genre != null) details.genre!,

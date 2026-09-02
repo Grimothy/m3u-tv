@@ -1,5 +1,6 @@
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/features/series/series_details_screen.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
@@ -616,8 +617,8 @@ void main() {
 
   group('SeriesDetailsScreen - rich cast', () {
     testWidgets(
-      'wide layout: never renders the cast rail (would break the episode '
-      'strip / height budget - cast is narrow-layout + VOD only)',
+      'wide layout: renders the locked-focus cast strip below the episode '
+      'strip when the server resolved a rich cast',
       (tester) async {
         await tester.pumpWidget(
           _app(
@@ -632,6 +633,11 @@ void main() {
                     name: 'Bryan Cranston',
                     character: 'Walter White',
                   ),
+                  CastMember(
+                    id: 2,
+                    name: 'Aaron Paul',
+                    character: 'Jesse Pinkman',
+                  ),
                 ],
               ),
               seasons: const [Season(number: 1, name: 'Season 1')],
@@ -643,12 +649,32 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        // The wide layout uses its own _CastStrip (private), not the compact
+        // CastMemberRow chip.
         expect(find.byType(CastMemberRow), findsNothing);
+        expect(find.text('Cast'), findsOneWidget);
+        // Member names render inline; the resilient avatar also renders the
+        // name as a text placeholder when the image fails (no network in
+        // tests), so allow more than one.
+        expect(find.text('Bryan Cranston'), findsWidgets);
+        expect(find.text('Walter White'), findsOneWidget);
+        expect(find.text('Jesse Pinkman'), findsOneWidget);
         // The legacy string-cast line in the meta block is untouched.
         expect(
           find.text('A series with a populated rich cast.'),
           findsOneWidget,
         );
+      },
+    );
+
+    testWidgets(
+      'wide layout: no cast strip when the server sent no rich cast',
+      (tester) async {
+        await tester.pumpWidget(_app(_info()));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CastMemberRow), findsNothing);
+        expect(find.text('Cast'), findsNothing);
       },
     );
 
@@ -776,6 +802,125 @@ void main() {
         expect(find.text('Skyler White'), findsOneWidget);
         expect(find.text('Hank Schrader'), findsOneWidget);
         expect(find.text('Marie Schrader'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'wide layout: on a short viewport, moving focus cast -> episode strip '
+      'scrolls the episode strip back into view (no clip)',
+      (tester) async {
+        // Wide (>700) but deliberately short so the episode strip + cast row
+        // cannot both fit and the region has to scroll - the state that made
+        // the strip stay clipped on a TV.
+        tester.view.physicalSize = const Size(1000, 600);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _app(
+            SeriesInfo(
+              series: Series(
+                id: 7,
+                name: 'Rich Cast Show',
+                richCast: List.generate(
+                  12,
+                  (i) =>
+                      CastMember(name: 'Cast Member $i', character: 'Role $i'),
+                ),
+              ),
+              seasons: const [Season(number: 1, name: 'Season 1')],
+              episodesBySeason: {
+                1: [_ep(1, 1), _ep(1, 2), _ep(1, 3)],
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        FocusNode strip(String label) => tester
+            .widgetList<Focus>(find.byType(Focus))
+            .firstWhere((w) => w.focusNode?.debugLabel == label)
+            .focusNode!;
+
+        final scrollView = find.byType(SingleChildScrollView);
+        expect(scrollView, findsOneWidget);
+        final regionTop = tester.getRect(scrollView).top;
+        double episodeStripTop() {
+          final box =
+              strip('episodeStrip').context!.findRenderObject()! as RenderBox;
+          return box.localToGlobal(Offset.zero).dy;
+        }
+
+        // Focus the cast row: the region scrolls down and the episode strip
+        // is pushed off the top.
+        strip('castStrip').requestFocus();
+        await tester.pumpAndSettle();
+        expect(
+          episodeStripTop(),
+          lessThan(regionTop - 1),
+          reason: 'episode strip should be clipped above the viewport now',
+        );
+
+        // Focus back to the episode strip: it must come fully back into view.
+        strip('episodeStrip').requestFocus();
+        await tester.pumpAndSettle();
+        expect(
+          episodeStripTop(),
+          greaterThanOrEqualTo(regionTop - 1),
+          reason: 'episode strip should no longer be clipped at the top',
+        );
+      },
+    );
+
+    testWidgets(
+      'wide layout: DOWN/UP arrows move focus straight between the episode '
+      'strip and the cast strip on a short viewport',
+      (tester) async {
+        tester.view.physicalSize = const Size(1000, 600);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _app(
+            SeriesInfo(
+              series: Series(
+                id: 7,
+                name: 'Rich Cast Show',
+                richCast: List.generate(
+                  12,
+                  (i) =>
+                      CastMember(name: 'Cast Member $i', character: 'Role $i'),
+                ),
+              ),
+              seasons: const [Season(number: 1, name: 'Season 1')],
+              episodesBySeason: {
+                1: [_ep(1, 1), _ep(1, 2), _ep(1, 3)],
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        String? focusLabel() => FocusManager.instance.primaryFocus?.debugLabel;
+
+        // Play autofocuses; one DOWN reaches the episode strip.
+        expect(focusLabel(), 'seriesPlayButton');
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(focusLabel(), 'episodeStrip');
+
+        // One DOWN must land on the cast strip - not scroll the region and
+        // leave focus behind (the "press down twice" bug).
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(focusLabel(), 'castStrip');
+
+        // One UP must return to the episode strip.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(focusLabel(), 'episodeStrip');
       },
     );
   });

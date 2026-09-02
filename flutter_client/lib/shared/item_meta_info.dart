@@ -25,6 +25,7 @@ class ItemMetaInfo extends StatelessWidget {
     this.chips = const [],
     this.fullWidthButton = false,
     this.hidePrimaryAction = false,
+    this.primaryActionFocusNode,
     this.progressValue,
     this.onStartOver,
     this.isLoading = false,
@@ -48,6 +49,10 @@ class ItemMetaInfo extends StatelessWidget {
   /// renders those actions itself elsewhere (the series detail lays them on
   /// the same line as its season picker).
   final bool hidePrimaryAction;
+
+  /// Optional external focus node for the primary play/resume button, so a
+  /// sibling widget can return focus to it (the VOD wide cast row's "up").
+  final FocusNode? primaryActionFocusNode;
 
   /// Watched fraction (0-1). When set, renders inside the primary button as
   /// an inline progress track next to [buttonLabel] instead of a plain
@@ -77,6 +82,7 @@ class ItemMetaInfo extends StatelessWidget {
     final theme = Theme.of(context);
     final button = AppButton(
       autofocus: true,
+      focusNode: primaryActionFocusNode,
       variant: AppButtonVariant.primaryInverted,
       icon: Icons.play_arrow,
       label: buttonLabel,
