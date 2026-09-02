@@ -127,6 +127,9 @@ Object? _encodeCacheData(String key, Object? data) {
   if (data is List<Series>) {
     return data.map(_seriesToJson).toList(growable: false);
   }
+  if (data is List<EpgProgram>) {
+    return data.map(_epgProgramToJson).toList(growable: false);
+  }
   if (data is List<Viewer>) {
     return data.map((viewer) => viewer.toJson()).toList(growable: false);
   }
@@ -201,6 +204,11 @@ Object? _decodeCacheData(String key, Object? raw) {
           .toList(
             growable: false,
           ),
+    'epgGuide' =>
+      list
+          ?.map((item) => _epgProgramFromJson(_asMap(item)))
+          .whereType<EpgProgram>()
+          .toList(growable: false),
     _ => raw,
   };
 }
@@ -248,6 +256,29 @@ Map<String, Object?> _seriesToJson(Series series) => <String, Object?>{
   if (series.rating != null) 'rating': series.rating,
   if (series.tmdbId != null) 'tmdb_id': series.tmdbId,
 };
+
+Map<String, Object?> _epgProgramToJson(EpgProgram program) => <String, Object?>{
+  'channel_id': program.channelId,
+  'title': program.title,
+  'description': program.description,
+  'start': program.start.toIso8601String(),
+  'end': program.end.toIso8601String(),
+  if (program.subtitle != null) 'subtitle': program.subtitle,
+};
+
+EpgProgram? _epgProgramFromJson(Map<String, Object?> json) {
+  final start = DateTime.tryParse('${json['start']}');
+  final end = DateTime.tryParse('${json['end']}');
+  if (start == null || end == null) return null;
+  return EpgProgram(
+    channelId: '${json['channel_id'] ?? ''}',
+    title: '${json['title'] ?? ''}',
+    description: '${json['description'] ?? ''}',
+    start: start,
+    end: end,
+    subtitle: _nullableString(json['subtitle']),
+  );
+}
 
 Map<String, Object?> _asMap(Object? value) =>
     value is Map ? value.cast<String, Object?>() : const <String, Object?>{};

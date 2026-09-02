@@ -99,4 +99,45 @@ void main() {
     expect(series.backdropUrl, isNull);
     expect(series.tmdbId, isNull);
   });
+
+  test(
+    'epg guide programmes survive a persist + cold hydrate round trip',
+    () async {
+      final store = await newStore('m3u-tv-epg-guide-roundtrip-');
+      final source = CacheService(store: store);
+      final start = DateTime.utc(2026, 7, 30, 12);
+      final original = <EpgProgram>[
+        EpgProgram(
+          channelId: 'bbc.one',
+          title: 'News at Noon',
+          description: 'Bulletin',
+          start: start,
+          end: start.add(const Duration(minutes: 30)),
+          subtitle: 'Lunchtime edition',
+        ),
+        EpgProgram(
+          channelId: 'bbc.two',
+          title: 'Afternoon Film',
+          description: '',
+          start: start.add(const Duration(minutes: 30)),
+          end: start.add(const Duration(hours: 2)),
+        ),
+      ];
+      await source.set<List<EpgProgram>>('epgGuide', original);
+
+      final hydrated = CacheService(store: store);
+      final entry = await hydrated.get<List<EpgProgram>>('epgGuide');
+      final programs = entry!.data;
+
+      expect(programs, hasLength(2));
+      expect(programs[0].channelId, 'bbc.one');
+      expect(programs[0].title, 'News at Noon');
+      expect(programs[0].description, 'Bulletin');
+      expect(programs[0].start, start);
+      expect(programs[0].end, start.add(const Duration(minutes: 30)));
+      expect(programs[0].subtitle, 'Lunchtime edition');
+      expect(programs[1].channelId, 'bbc.two');
+      expect(programs[1].subtitle, isNull);
+    },
+  );
 }
