@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
@@ -208,11 +209,54 @@ class _SeriesDetailsScreenState extends State<SeriesDetailsScreen> {
   }
 
   Widget _buildLoading(BuildContext context) {
+    final surface = Theme.of(context).colorScheme.surface;
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (widget.coverUrl != null)
-          Opacity(opacity: 0.2, child: CachedBackdropImage(widget.coverUrl!)),
+        ColoredBox(color: surface),
+        if (widget.coverUrl != null) ...[
+          // The poster is low-res and gets stretched to fill the screen, so
+          // heavily blur it (its detail no longer matters) and let it read as
+          // an ambient wash rather than a picture. `decal` keeps the blur from
+          // smearing the edge pixels outward.
+          ImageFiltered(
+            imageFilter: ImageFilter.blur(
+              sigmaX: 32,
+              sigmaY: 32,
+              tileMode: TileMode.decal,
+            ),
+            child: CachedBackdropImage(widget.coverUrl!),
+          ),
+          // Vignette + top-down wash fading the blur into the page surface so
+          // only a soft tint frames the spinner.
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                radius: 1.1,
+                colors: [
+                  surface.withValues(alpha: 0.2),
+                  surface.withValues(alpha: 0.75),
+                  surface,
+                ],
+                stops: const [0.0, 0.6, 1.0],
+              ),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  surface.withValues(alpha: 0.1),
+                  surface.withValues(alpha: 0.5),
+                  surface,
+                ],
+                stops: const [0.0, 0.55, 1.0],
+              ),
+            ),
+          ),
+        ],
         const Center(child: CircularProgressIndicator()),
       ],
     );
