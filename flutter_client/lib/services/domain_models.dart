@@ -178,6 +178,7 @@ class VodInfo {
     this.rating,
     this.coverUrl,
     this.backdropUrl,
+    this.clearLogoUrl,
     this.containerExtension,
     this.tmdbId,
     this.edlUrl,
@@ -196,6 +197,10 @@ class VodInfo {
   final double? rating;
   final String? coverUrl;
   final String? backdropUrl;
+
+  /// Transparent title logo (clearlogo). m3u-editor emits this as a `clearlogo`
+  /// wire key in `get_vod_info`, distinct from the poster `cover_big`.
+  final String? clearLogoUrl;
   final String? containerExtension;
   final int? tmdbId;
   final String? edlUrl;
@@ -242,6 +247,7 @@ class VodInfo {
         pick(['cover_big', 'movie_image', 'stream_icon', 'cover']),
       ),
       backdropUrl: _asNullableString(_firstListItem(info['backdrop_path'])),
+      clearLogoUrl: _asNullableString(pick(['clearlogo'])),
       containerExtension: _asNullableString(
         pick(['container_extension', 'containerExtension']),
       ),
@@ -308,6 +314,7 @@ class Series {
     required this.name,
     this.coverUrl,
     this.backdropUrl,
+    this.clearLogoUrl,
     this.categoryId,
     this.categoryIds = const [],
     this.plot,
@@ -321,6 +328,11 @@ class Series {
   final String name;
   final String? coverUrl;
   final String? backdropUrl;
+
+  /// Transparent title logo (clearlogo). m3u-editor emits this as a `clearlogo`
+  /// wire key on `get_series` rows and in `get_series_info`, distinct from the
+  /// poster `cover`.
+  final String? clearLogoUrl;
   final String? categoryId;
 
   /// Extra category memberships from the Xtream `category_ids` array - see
@@ -341,6 +353,7 @@ class Series {
     name: '${json['name'] ?? ''}',
     coverUrl: _asNullableString(json['cover']),
     backdropUrl: _asNullableString(_firstListItem(json['backdrop_path'])),
+    clearLogoUrl: _asNullableString(json['clearlogo']),
     categoryId: _asNullableString(json['category_id']),
     categoryIds: _asStringList(json['category_ids']),
     plot: _asNullableString(json['plot']),

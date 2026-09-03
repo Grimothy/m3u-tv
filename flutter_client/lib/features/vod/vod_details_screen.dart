@@ -327,6 +327,7 @@ class _VodDetailsBody extends StatelessWidget {
       children: [
         ItemMetaInfo(
           name: details.name,
+          clearLogoUrl: details.clearLogoUrl,
           primaryActionFocusNode: playFocusNode,
           chips: [
             if (details.year != null) details.year!,
@@ -434,6 +435,7 @@ class _ResolvedVodDetails {
   double? get rating => info?.rating ?? item.rating;
   String? get coverUrl => _notEmpty(info?.coverUrl) ?? _notEmpty(item.logoUrl);
   String? get backdropUrl => _notEmpty(info?.backdropUrl);
+  String? get clearLogoUrl => _notEmpty(info?.clearLogoUrl);
   String? get containerExtension =>
       _notEmpty(info?.containerExtension) ?? item.containerExtension;
   int? get tmdbId => info?.tmdbId;

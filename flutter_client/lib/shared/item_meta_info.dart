@@ -1,8 +1,11 @@
+import 'package:cached_network_image/cached_network_image.dart'
+    show CachedNetworkImageProvider;
 import 'package:flutter/material.dart';
 
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
+import 'package:m3u_tv/shared/media_image_cache_manager.dart';
 
 /// A single "Label: value" credit row (e.g. Director, Cast).
 class MetaCreditLine {
@@ -20,6 +23,7 @@ class ItemMetaInfo extends StatelessWidget {
   const ItemMetaInfo({
     super.key,
     required this.name,
+    this.clearLogoUrl,
     required this.buttonLabel,
     required this.onPlay,
     this.chips = const [],
@@ -36,6 +40,11 @@ class ItemMetaInfo extends StatelessWidget {
   });
 
   final String name;
+
+  /// Transparent title logo (clearlogo). When set, it replaces the plain
+  /// [name] headline at the top of the column; a load failure falls back to
+  /// the text. Null keeps the text-only heading.
+  final String? clearLogoUrl;
   final List<String> chips;
 
   /// Primary button's label. When [progressValue] is set, this is the
@@ -117,7 +126,7 @@ class ItemMetaInfo extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(name, style: theme.textTheme.headlineMedium),
+        _TitleHeading(name: name, clearLogoUrl: clearLogoUrl),
         const SizedBox(height: MediaBrowsingMetrics.itemGap),
         if (chips.isNotEmpty)
           Wrap(
@@ -155,6 +164,56 @@ class ItemMetaInfo extends StatelessWidget {
             MetaCreditLineText(label: credit.label, value: credit.value),
         ],
       ],
+    );
+  }
+}
+
+/// The heading at the top of an [ItemMetaInfo] column: a transparent title
+/// logo when the server supplied one (`clearlogo`), otherwise the plain text
+/// name. A logo that fails to load falls back to the same text, so the title
+/// is never missing.
+class _TitleHeading extends StatelessWidget {
+  const _TitleHeading({required this.name, this.clearLogoUrl});
+
+  final String name;
+  final String? clearLogoUrl;
+
+  // Caps for the transparent logo. Provider logos have wildly inconsistent
+  // aspect ratios (long wordmarks vs. tall stacked marks), so both dimensions
+  // are bounded and the image is only ever scaled down to fit within them.
+  static const double _logoMaxHeight = 120;
+  static const double _logoMaxWidth = 350;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final text = Text(name, style: theme.textTheme.headlineMedium);
+    final logo = clearLogoUrl?.trim();
+    if (logo == null || logo.isEmpty) return text;
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxHeight: _logoMaxHeight,
+          maxWidth: _logoMaxWidth,
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Image(
+            image: CachedNetworkImageProvider(
+              logo,
+              cacheManager: MediaImageCacheManager(),
+            ),
+            semanticLabel: name,
+            gaplessPlayback: true,
+            loadingBuilder: (context, child, progress) =>
+                progress == null ? child : text,
+            errorBuilder: (_, _, _) => text,
+          ),
+        ),
+      ),
     );
   }
 }

@@ -891,6 +891,7 @@ class _SeriesDetailsBody extends StatelessWidget {
     // picker's line), so this only carries title + chips + synopsis.
     return ItemMetaInfo(
       name: info.series.name,
+      clearLogoUrl: info.series.clearLogoUrl,
       chips: chips,
       hidePrimaryAction: true,
       buttonLabel: '',
