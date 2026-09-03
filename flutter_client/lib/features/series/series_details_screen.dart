@@ -625,12 +625,30 @@ class _SeriesDetailsBody extends StatelessWidget {
       width: posterWidth,
       child: AspectRatio(
         aspectRatio: 0.68,
-        child: ResilientMediaImage(
-          imageUrl: posterChain.isEmpty ? null : posterChain.first,
-          fallbackImageUrls: posterChain.skip(1).toList(),
-          fallbackIcon: Icons.tv,
-          borderRadius: MediaBrowsingMetrics.cardRadius,
-          fallbackTitle: info.series.name,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 320),
+          transitionBuilder: _posterShuffleTransition,
+          // Keep the outgoing poster painted on top so it reads as the old
+          // card being dealt off the deck to reveal the new one sliding in
+          // underneath (the default stacks the incoming child on top).
+          layoutBuilder: (currentChild, previousChildren) => Stack(
+            alignment: Alignment.center,
+            children: <Widget>[
+              ?currentChild,
+              ...previousChildren,
+            ],
+          ),
+          child: ResilientMediaImage(
+            key: ValueKey<String>(
+              'season-$seasonNumber-'
+              '${posterChain.isEmpty ? '' : posterChain.first}',
+            ),
+            imageUrl: posterChain.isEmpty ? null : posterChain.first,
+            fallbackImageUrls: posterChain.skip(1).toList(),
+            fallbackIcon: Icons.tv,
+            borderRadius: MediaBrowsingMetrics.cardRadius,
+            fallbackTitle: info.series.name,
+          ),
         ),
       ),
     );
@@ -975,6 +993,35 @@ class _SeriesDetailsBody extends StatelessWidget {
 String? _trimmedOrNull(String? value) {
   final trimmed = value?.trim();
   return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+}
+
+/// Card-shuffle transition for the season poster. The incoming poster slides
+/// up into place from the top-right with a slight counter-rotation and scale
+/// settle; run in reverse (the outgoing poster) it deals the old card back
+/// off toward the same corner. Mirrors the fade + slide the episode strip
+/// plays on a season change so the two move together.
+Widget _posterShuffleTransition(Widget child, Animation<double> animation) {
+  final eased = CurvedAnimation(
+    parent: animation,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
+  return FadeTransition(
+    opacity: eased,
+    child: SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0.22, -0.16),
+        end: Offset.zero,
+      ).animate(eased),
+      child: RotationTransition(
+        turns: Tween<double>(begin: 0.025, end: 0).animate(eased),
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.94, end: 1).animate(eased),
+          child: child,
+        ),
+      ),
+    ),
+  );
 }
 
 /// Parses the loose runtime strings the editor emits ("45m", "1h 2m",
