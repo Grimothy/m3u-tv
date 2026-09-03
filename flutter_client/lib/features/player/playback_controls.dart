@@ -148,10 +148,34 @@ class PlaybackControls extends StatelessWidget {
               children: [
                 _buildHeader(colorScheme),
                 const Spacer(),
-                if (upNextPrompt != null) ...[
-                  Align(alignment: Alignment.centerRight, child: upNextPrompt),
-                  SizedBox(height: compact ? 8 : 14),
-                ],
+                // The "up next" card eases in from the right + fades rather
+                // than snapping into place, and slides back out the same way
+                // when it is dismissed or the episode ends.
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 320),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0.18, 0),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: child,
+                    ),
+                  ),
+                  child: upNextPrompt != null
+                      ? Padding(
+                          key: const ValueKey('up-next'),
+                          padding: EdgeInsets.only(bottom: compact ? 8 : 14),
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: upNextPrompt,
+                          ),
+                        )
+                      : const SizedBox.shrink(key: ValueKey('no-up-next')),
+                ),
                 if (skipPrompt != null) ...[
                   Align(alignment: Alignment.centerLeft, child: skipPrompt),
                   SizedBox(height: compact ? 8 : 14),

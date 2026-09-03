@@ -802,15 +802,30 @@ class _SeriesDetailsBody extends StatelessWidget {
 
     // Scrim over the backdrop. Kept heavy enough that a bright still
     // (near-white kitchen shots etc.) still leaves the body text legible,
-    // while the top stays translucent so the art reads through.
-    return BackdropDetailHero(
-      backdropUrl: backdrop,
-      alwaysShowScrim: true,
-      showBackgroundColorLayer: true,
-      backgroundColor: bg,
-      scrimColors: [bg.withValues(alpha: 0.35), bg.withValues(alpha: 0.92), bg],
-      contentPadding: const EdgeInsets.only(top: 24, bottom: 24),
-      content: wideContent,
+    // while the top stays translucent so the art reads through. The
+    // background tone cross-fades from the theme surface to the resolved
+    // dominant colour (and between seasons) so it does not snap in.
+    return TweenAnimationBuilder<Color?>(
+      tween: ColorTween(begin: theme.colorScheme.surface, end: bg),
+      duration: const Duration(milliseconds: 450),
+      curve: Curves.easeOut,
+      builder: (context, animatedBg, child) {
+        final tone = animatedBg ?? bg;
+        return BackdropDetailHero(
+          backdropUrl: backdrop,
+          alwaysShowScrim: true,
+          showBackgroundColorLayer: true,
+          backgroundColor: tone,
+          scrimColors: [
+            tone.withValues(alpha: 0.35),
+            tone.withValues(alpha: 0.92),
+            tone,
+          ],
+          contentPadding: const EdgeInsets.only(top: 24, bottom: 24),
+          content: child!,
+        );
+      },
+      child: wideContent,
     );
   }
 
@@ -825,19 +840,33 @@ class _SeriesDetailsBody extends StatelessWidget {
     // above it) while `content` scrolls over/past it - same mechanic as the
     // wide layout below, just top-aligned instead of bottom-pinned. Lighter
     // top/mid scrim than the wide layout so the real backdrop colour still
-    // reads in the band on a portrait screen.
-    return BackdropDetailHero(
-      backdropUrl: backdrop,
-      backdropHeight: bandHeight,
-      contentAlignment: Alignment.topLeft,
-      alwaysShowScrim: true,
-      showBackgroundColorLayer: true,
-      backgroundColor: bg,
-      scrimColors: [bg.withValues(alpha: 0.2), bg.withValues(alpha: 0.8), bg],
-      // Let the poster/title ride well up into the lower half of the
-      // backdrop (standard mobile hero look) rather than clearing it.
-      contentPadding: EdgeInsets.only(top: bandHeight * 0.44, bottom: 24),
-      content: content,
+    // reads in the band on a portrait screen. The tone cross-fades in (see
+    // the wide layout) rather than snapping.
+    return TweenAnimationBuilder<Color?>(
+      tween: ColorTween(begin: Theme.of(context).colorScheme.surface, end: bg),
+      duration: const Duration(milliseconds: 450),
+      curve: Curves.easeOut,
+      builder: (context, animatedBg, child) {
+        final tone = animatedBg ?? bg;
+        return BackdropDetailHero(
+          backdropUrl: backdrop,
+          backdropHeight: bandHeight,
+          contentAlignment: Alignment.topLeft,
+          alwaysShowScrim: true,
+          showBackgroundColorLayer: true,
+          backgroundColor: tone,
+          scrimColors: [
+            tone.withValues(alpha: 0.2),
+            tone.withValues(alpha: 0.8),
+            tone,
+          ],
+          // Let the poster/title ride well up into the lower half of the
+          // backdrop (standard mobile hero look) rather than clearing it.
+          contentPadding: EdgeInsets.only(top: bandHeight * 0.44, bottom: 24),
+          content: child!,
+        );
+      },
+      child: content,
     );
   }
 
@@ -1412,8 +1441,29 @@ class _EpisodeStrip extends StatefulWidget {
   State<_EpisodeStrip> createState() => _EpisodeStripState();
 }
 
-class _EpisodeStripState extends State<_EpisodeStrip> implements _LockedRow {
+class _EpisodeStripState extends State<_EpisodeStrip>
+    with SingleTickerProviderStateMixin
+    implements _LockedRow {
   final ScrollController _controller = ScrollController();
+
+  // Drives the fade + slight rightward slide the strip plays on first build
+  // and each time the season (and with it the whole episode list) changes,
+  // so the new episodes ease in rather than snapping over the old ones.
+  late final AnimationController _seasonAnim = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+  );
+  late final Animation<double> _seasonFade = CurvedAnimation(
+    parent: _seasonAnim,
+    curve: Curves.easeOut,
+  );
+  late final Animation<Offset> _seasonSlide =
+      Tween<Offset>(
+        begin: const Offset(0.05, 0),
+        end: Offset.zero,
+      ).animate(
+        CurvedAnimation(parent: _seasonAnim, curve: Curves.easeOutCubic),
+      );
 
   // TV / desktop only: the whole strip is one focus stop. `_focusedIndex` is
   // the highlighted card; `_hasFocus` mirrors the strip node so the cards
@@ -1432,6 +1482,7 @@ class _EpisodeStripState extends State<_EpisodeStrip> implements _LockedRow {
   void initState() {
     super.initState();
     _focusNode.addListener(_handleFocusChange);
+    unawaited(_seasonAnim.forward());
   }
 
   @override
@@ -1450,7 +1501,12 @@ class _EpisodeStripState extends State<_EpisodeStrip> implements _LockedRow {
   void didUpdateWidget(_EpisodeStrip oldWidget) {
     super.didUpdateWidget(oldWidget);
     // A season switch swaps the episode list under the row; keep the cursor
-    // in range so the next left/right starts from a real card.
+    // in range so the next left/right starts from a real card, and replay the
+    // ease-in so the new season's episodes animate over the old ones instead
+    // of snapping.
+    if (!identical(oldWidget.episodes, widget.episodes)) {
+      unawaited(_seasonAnim.forward(from: 0));
+    }
     if (_focusedIndex >= widget.episodes.length) {
       _focusedIndex = widget.episodes.isEmpty ? 0 : widget.episodes.length - 1;
     }
@@ -1460,6 +1516,7 @@ class _EpisodeStripState extends State<_EpisodeStrip> implements _LockedRow {
   void dispose() {
     _region?.unregisterRow(this);
     _selectHold.dispose();
+    _seasonAnim.dispose();
     _focusNode
       ..removeListener(_handleFocusChange)
       ..dispose();
@@ -1647,20 +1704,28 @@ class _EpisodeStripState extends State<_EpisodeStrip> implements _LockedRow {
     );
   }
 
+  /// Wraps the strip in the fade + slide the season transition plays.
+  Widget _withSeasonTransition(Widget child) => FadeTransition(
+    opacity: _seasonFade,
+    child: SlideTransition(position: _seasonSlide, child: child),
+  );
+
   @override
   Widget build(BuildContext context) {
     if (!widget.horizontal) {
       // Phone: a plain vertical column - the page's own scroll view drives it,
       // so no inner ListView / ScrollController.
-      return DpadRegion(
-        verticalEdge: DpadEdgeBehavior.stop,
-        child: Column(
-          children: [
-            for (var i = 0; i < widget.episodes.length; i++) ...[
-              if (i > 0) const SizedBox(height: MediaBrowsingMetrics.itemGap),
-              _card(context, i),
+      return _withSeasonTransition(
+        DpadRegion(
+          verticalEdge: DpadEdgeBehavior.stop,
+          child: Column(
+            children: [
+              for (var i = 0; i < widget.episodes.length; i++) ...[
+                if (i > 0) const SizedBox(height: MediaBrowsingMetrics.itemGap),
+                _card(context, i),
+              ],
             ],
-          ],
+          ),
         ),
       );
     }
@@ -1677,24 +1742,28 @@ class _EpisodeStripState extends State<_EpisodeStrip> implements _LockedRow {
     // `!_debugDoingSemantics` assertion storm. The cast row (identical minus
     // the Scrollbar) never races - so the strip drops it too. Desktop still
     // scrolls the ListView with the mouse wheel directly.
-    return Focus(
-      focusNode: _focusNode,
-      autofocus: widget.autofocusFirst,
-      descendantsAreFocusable: false,
-      onKeyEvent: _handleKeyEvent,
-      // Desktop mouse users get hover arrows (the scrollbar is hidden); TV /
-      // phone pass straight through and D-pad / touch drive the scroll.
-      child: HoverScrollArrows(
-        controller: _controller,
-        child: ListView.builder(
+    return _withSeasonTransition(
+      Focus(
+        focusNode: _focusNode,
+        autofocus: widget.autofocusFirst,
+        descendantsAreFocusable: false,
+        onKeyEvent: _handleKeyEvent,
+        // Desktop mouse users get hover arrows (the scrollbar is hidden); TV /
+        // phone pass straight through and D-pad / touch drive the scroll.
+        child: HoverScrollArrows(
           controller: _controller,
-          scrollDirection: Axis.horizontal,
-          itemExtent: _itemExtent,
-          padding: const EdgeInsets.only(bottom: 12),
-          itemCount: widget.episodes.length,
-          itemBuilder: (context, index) => Padding(
-            padding: const EdgeInsets.only(right: MediaBrowsingMetrics.itemGap),
-            child: _card(context, index),
+          child: ListView.builder(
+            controller: _controller,
+            scrollDirection: Axis.horizontal,
+            itemExtent: _itemExtent,
+            padding: const EdgeInsets.only(bottom: 12),
+            itemCount: widget.episodes.length,
+            itemBuilder: (context, index) => Padding(
+              padding: const EdgeInsets.only(
+                right: MediaBrowsingMetrics.itemGap,
+              ),
+              child: _card(context, index),
+            ),
           ),
         ),
       ),
