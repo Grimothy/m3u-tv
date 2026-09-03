@@ -2922,6 +2922,11 @@ class AppStateController extends ChangeNotifier {
     final result = <Progress>[
       for (final r in remote)
         () {
+          // Synthetic "up next" rows carry no progress of their own. A stale
+          // local resume entry for the same episode must never shadow them,
+          // so pass them straight through unmerged (and see the persist loop
+          // below - they are never written to the resume store).
+          if (r.upNext) return r;
           final l = r.contentType == ContentType.aiostreams
               ? localAioMap[r.aioItemId]
               : localMap[(r.contentType, r.streamId)];
@@ -2955,6 +2960,10 @@ class AppStateController extends ChangeNotifier {
               year: r.year ?? l.year,
               aioItemId: l.aioItemId ?? r.aioItemId,
               aioIntegrationId: l.aioIntegrationId ?? r.aioIntegrationId,
+              // Defensive: r.upNext is already false here (handled above), but
+              // keep the flag flowing so a future refactor can't silently drop
+              // it in the merge.
+              upNext: r.upNext,
             );
           }
           return r;
@@ -2967,6 +2976,10 @@ class AppStateController extends ChangeNotifier {
     if (persist) {
       for (final p in result) {
         if (!ownsWork()) return const <Progress>[];
+        // Never cache synthetic "up next" rows - a later load would read the
+        // cached copy back as a plain 0-position episode and drop the flag,
+        // so the suggestion silently vanishes after the first refresh.
+        if (p.upNext) continue;
         if (!await resumeService.save(p, shouldCommit: ownsWork)) {
           return const <Progress>[];
         }

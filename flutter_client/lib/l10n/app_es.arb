@@ -132,6 +132,8 @@
   },
   "playerStartFromBeginning": "Empezar desde el principio",
   "playerResume": "Reanudar",
+  "playerClearProgress": "Borrar progreso",
+  "playerProgressCleared": "Progreso borrado",
   "playerSkipPreviousTooltip": "Canal anterior",
   "playerSkipNextTooltip": "Canal siguiente",
   "playerNowPlayingMovie": "Película",

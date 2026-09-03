@@ -253,6 +253,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get playerResume => '恢复播放';
 
   @override
+  String get playerClearProgress => '清除进度';
+
+  @override
+  String get playerProgressCleared => '进度已清除';
+
+  @override
   String get playerSkipPreviousTooltip => '上一个频道';
 
   @override

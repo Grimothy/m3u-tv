@@ -262,6 +262,12 @@ class AppLocalizationsEs extends AppLocalizations {
   String get playerResume => 'Reanudar';
 
   @override
+  String get playerClearProgress => 'Borrar progreso';
+
+  @override
+  String get playerProgressCleared => 'Progreso borrado';
+
+  @override
   String get playerSkipPreviousTooltip => 'Canal anterior';
 
   @override

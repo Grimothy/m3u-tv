@@ -132,6 +132,8 @@
   },
   "playerStartFromBeginning": "从头开始",
   "playerResume": "恢复播放",
+  "playerClearProgress": "清除进度",
+  "playerProgressCleared": "进度已清除",
   "playerSkipPreviousTooltip": "上一个频道",
   "playerSkipNextTooltip": "下一个频道",
   "playerNowPlayingMovie": "电影",

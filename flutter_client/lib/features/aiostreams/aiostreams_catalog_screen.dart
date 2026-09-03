@@ -407,7 +407,9 @@ class _AIOStreamsHomeScreenState extends State<AIOStreamsHomeScreen> {
         positionSeconds: progress.positionSeconds,
       );
       if (chosen == null) return; // dismissed
-      startPosition = chosen;
+      startPosition = chosen.action == ResumeAction.resume
+          ? chosen.startPositionSeconds
+          : 0;
     }
 
     if (!context.mounted) return;

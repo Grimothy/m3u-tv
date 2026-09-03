@@ -132,6 +132,8 @@
   },
   "playerStartFromBeginning": "Von vorne abspielen",
   "playerResume": "Fortsetzen",
+  "playerClearProgress": "Fortschritt löschen",
+  "playerProgressCleared": "Fortschritt gelöscht",
   "playerSkipPreviousTooltip": "Vorheriger Sender",
   "playerSkipNextTooltip": "Nächster Sender",
   "playerNowPlayingMovie": "Film",

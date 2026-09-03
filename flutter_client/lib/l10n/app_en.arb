@@ -133,6 +133,8 @@
   },
   "playerStartFromBeginning": "Start from Beginning",
   "playerResume": "Resume",
+  "playerClearProgress": "Clear progress",
+  "playerProgressCleared": "Progress cleared",
   "playerSkipPreviousTooltip": "Previous channel",
   "playerSkipNextTooltip": "Next channel",
   "playerNowPlayingMovie": "Movie",

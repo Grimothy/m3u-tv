@@ -262,6 +262,12 @@ class AppLocalizationsDe extends AppLocalizations {
   String get playerResume => 'Fortsetzen';
 
   @override
+  String get playerClearProgress => 'Fortschritt löschen';
+
+  @override
+  String get playerProgressCleared => 'Fortschritt gelöscht';
+
+  @override
   String get playerSkipPreviousTooltip => 'Vorheriger Sender';
 
   @override

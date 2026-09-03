@@ -6,32 +6,69 @@ import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 
+/// What the viewer chose in the resume dialog.
+enum ResumeAction {
+  /// Resume from the saved position.
+  resume,
+
+  /// Play from the start, keeping the existing progress row.
+  startOver,
+
+  /// Zero the progress row (drops the title out of Continue Watching) and
+  /// do not play.
+  clearProgress,
+
+  /// Mark the title finished and do not play.
+  markWatched,
+}
+
+/// Result of [showResumeModal]. [startPositionSeconds] is only meaningful for
+/// [ResumeAction.resume]; it is 0 for every other action.
+class ResumeModalResult {
+  const ResumeModalResult(this.action, {this.startPositionSeconds = 0});
+
+  final ResumeAction action;
+  final double startPositionSeconds;
+}
+
 /// Shows a resume/start-over dialog before opening a VOD or Series episode.
 ///
-/// Returns the start position in seconds: the saved position to resume from,
-/// 0.0 to start from the beginning, or null if the user dismissed the dialog.
-Future<double?> showResumeModal(
+/// Returns the viewer's choice, or null if they dismissed the dialog. When
+/// [showManageActions] is true the dialog also offers "Clear progress" and
+/// "Mark watched" - callers that pass it must handle
+/// [ResumeAction.clearProgress] / [ResumeAction.markWatched] in the result.
+Future<ResumeModalResult?> showResumeModal(
   BuildContext context, {
   required String title,
   required int positionSeconds,
+  bool showManageActions = false,
 }) {
-  return showDialog<double>(
+  return showDialog<ResumeModalResult>(
     context: context,
-    builder: (_) =>
-        _ResumeModal(title: title, positionSeconds: positionSeconds),
+    builder: (_) => _ResumeModal(
+      title: title,
+      positionSeconds: positionSeconds,
+      showManageActions: showManageActions,
+    ),
   );
 }
 
 class _ResumeModal extends StatelessWidget {
-  const _ResumeModal({required this.title, required this.positionSeconds});
+  const _ResumeModal({
+    required this.title,
+    required this.positionSeconds,
+    required this.showManageActions,
+  });
 
   final String title;
   final int positionSeconds;
+  final bool showManageActions;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final l = AppLocalizations.of(context);
 
     return Dialog(
       child: ConstrainedBox(
@@ -46,7 +83,7 @@ class _ResumeModal extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  AppLocalizations.of(context).playerResumeWatching,
+                  l.playerResumeWatching,
                   style: theme.textTheme.titleLarge,
                 ),
                 const SizedBox(height: 4),
@@ -60,9 +97,12 @@ class _ResumeModal extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 DpadInkWell(
-                  onTap: () => Navigator.of(
-                    context,
-                  ).pop(positionSeconds.toDouble()),
+                  onTap: () => Navigator.of(context).pop(
+                    ResumeModalResult(
+                      ResumeAction.resume,
+                      startPositionSeconds: positionSeconds.toDouble(),
+                    ),
+                  ),
                   borderRadius: const BorderRadius.all(Radius.circular(12)),
                   child: Card(
                     margin: EdgeInsets.zero,
@@ -82,11 +122,11 @@ class _ResumeModal extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                AppLocalizations.of(context).playerContinue,
+                                l.playerContinue,
                                 style: theme.textTheme.titleMedium,
                               ),
                               Text(
-                                AppLocalizations.of(context).playerFromTime(
+                                l.playerFromTime(
                                   formatTime(
                                     Duration(seconds: positionSeconds),
                                   ),
@@ -103,44 +143,50 @@ class _ResumeModal extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                DpadFocusable(
-                  // ignore: prefer_int_literals
-                  onSelect: () => Navigator.of(context).pop(0.0),
-                  effects: const [
-                    GradientBorderEffect(
-                      borderRadius: BorderRadius.all(Radius.circular(8)),
-                    ),
-                  ],
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: colorScheme.surfaceContainerHighest,
-                      child: Icon(Icons.replay, color: colorScheme.onSurface),
-                    ),
-                    title: Text(
-                      AppLocalizations.of(context).playerStartFromBeginning,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    // ignore: prefer_int_literals
-                    onTap: () => Navigator.of(context).pop(0.0),
-                  ),
+                _ActionTile(
+                  icon: Icons.replay,
+                  label: l.playerStartFromBeginning,
+                  onTap: () => Navigator.of(
+                    context,
+                  ).pop(const ResumeModalResult(ResumeAction.startOver)),
                 ),
+                if (showManageActions) ...[
+                  const SizedBox(height: 8),
+                  _ActionTile(
+                    icon: Icons.remove_done,
+                    label: l.playerClearProgress,
+                    onTap: () => Navigator.of(context).pop(
+                      const ResumeModalResult(ResumeAction.clearProgress),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _ActionTile(
+                    icon: Icons.done_all,
+                    label: l.seriesMarkWatched,
+                    onTap: () => Navigator.of(context).pop(
+                      const ResumeModalResult(ResumeAction.markWatched),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     AppButton(
-                      label: AppLocalizations.of(context).cancel,
+                      label: l.cancel,
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                     const SizedBox(width: 8),
                     AppButton(
                       autofocus: true,
                       variant: AppButtonVariant.primary,
-                      label: AppLocalizations.of(context).playerResume,
-                      onPressed: () =>
-                          Navigator.of(context).pop(positionSeconds.toDouble()),
+                      label: l.playerResume,
+                      onPressed: () => Navigator.of(context).pop(
+                        ResumeModalResult(
+                          ResumeAction.resume,
+                          startPositionSeconds: positionSeconds.toDouble(),
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -148,6 +194,42 @@ class _ResumeModal extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ActionTile extends StatelessWidget {
+  const _ActionTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return DpadFocusable(
+      onSelect: onTap,
+      effects: const [
+        GradientBorderEffect(
+          borderRadius: BorderRadius.all(Radius.circular(8)),
+        ),
+      ],
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: colorScheme.surfaceContainerHighest,
+          child: Icon(icon, color: colorScheme.onSurface),
+        ),
+        title: Text(label),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        onTap: onTap,
       ),
     );
   }

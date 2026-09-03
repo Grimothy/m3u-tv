@@ -513,6 +513,7 @@ class AppShellState extends ConsumerState<AppShell>
 
   Future<void> _openPlayer(BuildContext context, PlayerArgs args) async {
     var resolvedArgs = args;
+    final l = AppLocalizations.of(context);
     if ((resolvedArgs.type == 'vod' || resolvedArgs.type == 'series') &&
         resolvedArgs.startPosition == null &&
         resolvedArgs.streamId != null) {
@@ -527,14 +528,34 @@ class AppShellState extends ConsumerState<AppShell>
             !p.completed,
       );
       if (progress != null && context.mounted) {
-        final startPos = await showResumeModal(
+        final result = await showResumeModal(
           context,
           title: resolvedArgs.title,
           positionSeconds: progress.positionSeconds,
+          showManageActions: true,
         );
-        if (startPos == null) return;
-        if (startPos > 0) {
-          resolvedArgs = resolvedArgs.copyWith(startPosition: startPos);
+        if (result == null) return;
+        switch (result.action) {
+          case ResumeAction.resume:
+            resolvedArgs = resolvedArgs.copyWith(
+              startPosition: result.startPositionSeconds,
+            );
+          case ResumeAction.startOver:
+            break;
+          case ResumeAction.clearProgress:
+            await _setWatchState(
+              progress,
+              watched: false,
+              message: l.playerProgressCleared,
+            );
+            return;
+          case ResumeAction.markWatched:
+            await _setWatchState(
+              progress,
+              watched: true,
+              message: l.seriesMarkedWatched,
+            );
+            return;
         }
       }
     }
@@ -1088,6 +1109,62 @@ class AppShellState extends ConsumerState<AppShell>
     await _appState.resumeService.save(progress);
     if (mounted) _appState.updateProgressEntry(progress);
     return serverOk;
+  }
+
+  /// Flips an existing Continue Watching entry (VOD or series episode) to
+  /// watched or unwatched from the resume dialog. "Unwatched" zeroes the row
+  /// (position 0, not completed); "watched" completes it at its full runtime.
+  /// Either way the title drops out of Continue Watching, and for a series the
+  /// next episode surfaces as "up next" on the following refresh. Server write
+  /// is best-effort - the local resume store and in-memory list always update,
+  /// and a missed server write self-heals on the next successful sync.
+  Future<void> _setWatchState(
+    Progress progress, {
+    required bool watched,
+    required String message,
+  }) async {
+    final updated = Progress(
+      viewerId: progress.viewerId,
+      contentType: progress.contentType,
+      streamId: progress.streamId,
+      positionSeconds: watched
+          ? (progress.durationSeconds ?? progress.positionSeconds)
+          : 0,
+      durationSeconds: progress.durationSeconds,
+      completed: watched,
+      seriesId: progress.seriesId,
+      seasonNumber: progress.seasonNumber,
+      episodeNumber: progress.episodeNumber,
+      title: progress.title,
+      episodeTitle: progress.episodeTitle,
+      seriesName: progress.seriesName,
+      thumbnailUrl: progress.thumbnailUrl,
+      backdropUrl: progress.backdropUrl,
+      rating: progress.rating,
+      runtime: progress.runtime,
+      tmdbId: progress.tmdbId,
+      plot: progress.plot,
+      genre: progress.genre,
+      year: progress.year,
+      aioItemId: progress.aioItemId,
+      aioIntegrationId: progress.aioIntegrationId,
+    );
+    if (_appState.sourceType == AppSourceType.xtream) {
+      try {
+        await _appState.xtreamService.updateProgress(updated);
+      } on Object {
+        // Ignored - local state below still updates.
+      }
+    }
+    await _appState.resumeService.save(updated);
+    if (!mounted) return;
+    _appState.updateProgressEntry(updated);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   void _openAioSearch() {

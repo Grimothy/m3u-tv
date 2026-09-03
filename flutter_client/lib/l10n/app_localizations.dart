@@ -560,6 +560,18 @@ abstract class AppLocalizations {
   /// **'Resume'**
   String get playerResume;
 
+  /// No description provided for @playerClearProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear progress'**
+  String get playerClearProgress;
+
+  /// No description provided for @playerProgressCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'Progress cleared'**
+  String get playerProgressCleared;
+
   /// No description provided for @playerSkipPreviousTooltip.
   ///
   /// In en, this message translates to:

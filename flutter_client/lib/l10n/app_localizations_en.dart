@@ -260,6 +260,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get playerResume => 'Resume';
 
   @override
+  String get playerClearProgress => 'Clear progress';
+
+  @override
+  String get playerProgressCleared => 'Progress cleared';
+
+  @override
   String get playerSkipPreviousTooltip => 'Previous channel';
 
   @override
