@@ -238,7 +238,6 @@ class _CastStripCard extends StatelessWidget {
                 fallbackIcon: Icons.person,
                 width: _kAvatarSize,
                 height: _kAvatarSize,
-                fallbackTitle: member.name,
                 borderRadius: 0,
               ),
             ),
