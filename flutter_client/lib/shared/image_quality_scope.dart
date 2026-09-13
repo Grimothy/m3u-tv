@@ -88,3 +88,32 @@ class FontSizeScope extends InheritedWidget {
   bool updateShouldNotify(FontSizeScope oldWidget) =>
       fontSize != oldWidget.fontSize;
 }
+
+/// Tells descendant image widgets (`ResilientMediaImage`) to skip resolving
+/// and decoding new images while true - set by `ScrollbarGridView` while
+/// `ScrollPosition.recommendDeferredLoading` says the enclosing scroll view
+/// is moving fast enough that decode work should wait.
+///
+/// A fast fling over a poster grid can otherwise queue dozens of
+/// near-simultaneous native bitmap decodes; on a low-RAM Android TV box that
+/// burst can outrun the image-cache ceiling and the polling `MemoryWatchdog`
+/// backstop, causing a native OOM before either ever reacts. Deferring
+/// during the fling and letting cells resolve normally once it settles
+/// avoids the burst instead of trying to survive it.
+class DeferImageLoadingScope extends InheritedWidget {
+  const DeferImageLoadingScope({
+    required this.defer,
+    required super.child,
+    super.key,
+  });
+
+  final bool defer;
+
+  static bool of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<DeferImageLoadingScope>()?.defer ??
+      false;
+
+  @override
+  bool updateShouldNotify(DeferImageLoadingScope oldWidget) =>
+      defer != oldWidget.defer;
+}

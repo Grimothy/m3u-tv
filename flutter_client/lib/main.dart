@@ -99,9 +99,14 @@ void _configureImageCache() {
     maximumSizeBytes = 256 * 1024 * 1024;
     maximumSize = 1200;
   } else {
-    // Android TV - tightest RAM budget
-    maximumSizeBytes = 160 * 1024 * 1024;
-    maximumSize = 900;
+    // Android TV - tightest RAM budget. Raised from 160MB/900 alongside the
+    // fling-aware decode throttle in ScrollbarGridView (which caps how many
+    // decodes a single fast scroll can queue at once) - the ceiling alone
+    // never fixed decode-burst OOMs, it only delayed them, so this is
+    // deliberately a moderate bump (not all the way to desktop's 384MB) with
+    // the throttle doing the actual burst control.
+    maximumSizeBytes = 224 * 1024 * 1024;
+    maximumSize = 1100;
   }
   // Low-end Android hardware (32-bit, low-RAM flag, <= ~2.2 GiB): halve the
   // ceiling so a poster-grid decode burst can't push RSS into LMK range

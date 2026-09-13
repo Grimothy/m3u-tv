@@ -1681,3 +1681,16 @@ String? _yearString(Object? value) {
 /// `''` placeholder.
 String? nullIfBlank(String? value) =>
     (value == null || value.trim().isEmpty) ? null : value;
+
+/// A tick of `AppStateController`'s background EPG sweep
+/// (`epgSweepProgress`), for driving an in-app "loading guide" indicator.
+/// Carries only numbers, not display text, so the UI layer (which has a
+/// `BuildContext` for localization) owns the copy.
+class EpgSweepProgress {
+  const EpgSweepProgress({required this.loaded, required this.total});
+
+  final int loaded;
+  final int total;
+
+  double get fraction => total <= 0 ? 1.0 : (loaded / total).clamp(0.0, 1.0);
+}

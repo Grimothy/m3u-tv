@@ -530,6 +530,18 @@ abstract class AppLocalizations {
   /// **'Currently recording'**
   String get epgProgramCurrentlyRecording;
 
+  /// No description provided for @epgSweepLoadingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading program guide'**
+  String get epgSweepLoadingTitle;
+
+  /// Body text on the in-app toast shown while the EPG background sweep fetches program guide data for the remaining channels after app start, so the user understands the app is not frozen. Non-blocking - dismisses automatically when the sweep finishes.
+  ///
+  /// In en, this message translates to:
+  /// **'{loaded} of {total} channels'**
+  String epgSweepLoadingBody(int loaded, int total);
+
   /// No description provided for @playerGoBack.
   ///
   /// In en, this message translates to:

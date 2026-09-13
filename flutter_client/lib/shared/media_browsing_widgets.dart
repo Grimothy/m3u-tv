@@ -452,6 +452,12 @@ class _ResilientMediaImageState extends State<ResilientMediaImage> {
   /// Index into [_urlChain] currently being displayed.
   int _urlIndex = 0;
 
+  /// Once this cell has resolved an image for the current URL, a fling
+  /// starting afterward must not blank it back out to the fallback -
+  /// [DeferImageLoadingScope] only withholds *new* decodes, never already
+  /// -resolved ones.
+  bool _hasResolvedOnce = false;
+
   List<String> get _urlChain => [
     ?_nonEmpty(widget.imageUrl),
     ...widget.fallbackImageUrls.map(_nonEmpty).whereType<String>(),
@@ -473,6 +479,7 @@ class _ResilientMediaImageState extends State<ResilientMediaImage> {
       _attempt = 0;
       _urlIndex = 0;
       _retryScheduled = false;
+      _hasResolvedOnce = false;
     }
   }
 
@@ -535,12 +542,14 @@ class _ResilientMediaImageState extends State<ResilientMediaImage> {
     final cacheHeight = widget.height == null
         ? null
         : (widget.height! * devicePixelRatio).round();
-    final provider = url == null || url.isEmpty
+    final shouldDefer = !_hasResolvedOnce && DeferImageLoadingScope.of(context);
+    final provider = url == null || url.isEmpty || shouldDefer
         ? null
         : CachedNetworkImageProvider(
             url,
             cacheManager: MediaImageCacheManager(),
           );
+    if (provider != null) _hasResolvedOnce = true;
 
     final image = ClipRRect(
       borderRadius: BorderRadius.circular(widget.borderRadius),
@@ -810,11 +819,23 @@ class ScrollbarGridView extends StatefulWidget {
 
 class _ScrollbarGridViewState extends State<ScrollbarGridView> {
   final ScrollController _controller = ScrollController();
+  bool _deferImageLoading = false;
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    final defer =
+        notification is! ScrollEndNotification &&
+        _controller.hasClients &&
+        _controller.position.recommendDeferredLoading(context);
+    if (defer != _deferImageLoading) {
+      setState(() => _deferImageLoading = defer);
+    }
+    return false;
   }
 
   @override
@@ -824,12 +845,18 @@ class _ScrollbarGridViewState extends State<ScrollbarGridView> {
         controller: _controller,
         thumbVisibility: true,
         trackVisibility: true,
-        child: GridView.builder(
-          controller: _controller,
-          padding: widget.padding,
-          gridDelegate: widget.gridDelegate,
-          itemCount: widget.itemCount,
-          itemBuilder: widget.itemBuilder,
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _handleScrollNotification,
+          child: DeferImageLoadingScope(
+            defer: _deferImageLoading,
+            child: GridView.builder(
+              controller: _controller,
+              padding: widget.padding,
+              gridDelegate: widget.gridDelegate,
+              itemCount: widget.itemCount,
+              itemBuilder: widget.itemBuilder,
+            ),
+          ),
         ),
       ),
     );

@@ -39,6 +39,29 @@ class NotificationToastOverlayState extends State<NotificationToastOverlay> {
     });
   }
 
+  /// Upserts a toast by [TvNotificationItem.id]: updates it in place (without
+  /// resetting its entrance animation or focus) if already showing, otherwise
+  /// enqueues it. For a [TvNotificationItem.sticky] item, repeated calls with
+  /// the same id are how a caller drives a live-updating toast (e.g. sweep
+  /// progress) without it re-animating in on every tick.
+  void updateItem(TvNotificationItem item) {
+    setState(() {
+      final index = _queue.indexWhere((entry) => entry.item.id == item.id);
+      if (index == -1) {
+        _queue.add(_ToastEntry(item: item, key: UniqueKey()));
+      } else {
+        _queue[index] = _queue[index].copyWith(item: item);
+      }
+    });
+  }
+
+  /// Removes a toast by id immediately, if one with that id is showing. For a
+  /// sticky progress toast, this is the caller's signal that the underlying
+  /// work finished.
+  void dismissById(String id) {
+    setState(() => _queue.removeWhere((entry) => entry.item.id == id));
+  }
+
   void _dismiss(_ToastEntry entry) {
     setState(() => _queue.remove(entry));
   }
@@ -86,6 +109,9 @@ class _ToastEntry {
 
   final TvNotificationItem item;
   final Key key;
+
+  _ToastEntry copyWith({required TvNotificationItem item}) =>
+      _ToastEntry(item: item, key: key);
 }
 
 class _NotificationToast extends StatefulWidget {
@@ -136,8 +162,10 @@ class _NotificationToastState extends State<_NotificationToast>
 
     unawaited(_enterController.forward());
 
-    _progressController.addStatusListener(_onProgressStatus);
-    unawaited(_progressController.forward());
+    if (!widget.item.sticky) {
+      _progressController.addStatusListener(_onProgressStatus);
+      unawaited(_progressController.forward());
+    }
 
     _focusNode.addListener(_onFocusChange);
   }
@@ -169,14 +197,39 @@ class _NotificationToastState extends State<_NotificationToast>
     }
   }
 
+  Widget _buildProgressBar(Color accentColor) {
+    final valueColor = AlwaysStoppedAnimation<Color>(
+      accentColor.withValues(alpha: 0.75),
+    );
+    if (widget.item.sticky) {
+      return LinearProgressIndicator(
+        value: widget.item.progressValue,
+        minHeight: 3,
+        borderRadius: BorderRadius.circular(2),
+        backgroundColor: Colors.white.withValues(alpha: 0.1),
+        valueColor: valueColor,
+      );
+    }
+    return AnimatedBuilder(
+      animation: _progressController,
+      builder: (_, _) => LinearProgressIndicator(
+        value: 1.0 - _progressController.value,
+        minHeight: 3,
+        borderRadius: BorderRadius.circular(2),
+        backgroundColor: Colors.white.withValues(alpha: 0.1),
+        valueColor: valueColor,
+      ),
+    );
+  }
+
   void _pause() {
-    if (_paused) return;
+    if (_paused || widget.item.sticky) return;
     _paused = true;
     _progressController.stop();
   }
 
   void _resume() {
-    if (!_paused) return;
+    if (!_paused || widget.item.sticky) return;
     _paused = false;
     unawaited(_progressController.forward());
   }
@@ -305,26 +358,7 @@ class _NotificationToastState extends State<_NotificationToast>
                                       ],
                                     ),
                                     const SizedBox(height: 12),
-                                    AnimatedBuilder(
-                                      animation: _progressController,
-                                      builder: (_, _) =>
-                                          LinearProgressIndicator(
-                                            value:
-                                                1.0 - _progressController.value,
-                                            minHeight: 3,
-                                            borderRadius: BorderRadius.circular(
-                                              2,
-                                            ),
-                                            backgroundColor: Colors.white
-                                                .withValues(alpha: 0.1),
-                                            valueColor:
-                                                AlwaysStoppedAnimation<Color>(
-                                                  accentColor.withValues(
-                                                    alpha: 0.75,
-                                                  ),
-                                                ),
-                                          ),
-                                    ),
+                                    _buildProgressBar(accentColor),
                                     const SizedBox(height: 10),
                                   ],
                                 ),

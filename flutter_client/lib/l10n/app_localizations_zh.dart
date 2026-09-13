@@ -236,6 +236,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get epgProgramCurrentlyRecording => '正在录制';
 
   @override
+  String get epgSweepLoadingTitle => '正在加载节目指南';
+
+  @override
+  String epgSweepLoadingBody(int loaded, int total) {
+    return '$total 个频道中已加载 $loaded 个';
+  }
+
+  @override
   String get playerGoBack => '返回';
 
   @override

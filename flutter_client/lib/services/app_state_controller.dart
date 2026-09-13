@@ -261,6 +261,8 @@ class AppStateController extends ChangeNotifier {
   final Set<String> _pendingNotificationActivations = <String>{};
   final StreamController<TvNotificationItem> _tvNotificationController =
       StreamController<TvNotificationItem>.broadcast();
+  final StreamController<EpgSweepProgress?> _epgSweepProgressController =
+      StreamController<EpgSweepProgress?>.broadcast();
   final StreamController<TvNotificationDestination>
   _notificationActivationController =
       StreamController<TvNotificationDestination>.broadcast();
@@ -280,6 +282,16 @@ class AppStateController extends ChangeNotifier {
   /// show snackbars or banners.
   Stream<TvNotificationItem> get tvNotifications =>
       _tvNotificationController.stream;
+
+  /// Progress ticks for the background EPG sweep (`_sweepXtreamEpgInBackground`)
+  /// - a `null` event means the sweep finished (or was superseded/disposed)
+  /// and any progress UI should dismiss. This is separate from
+  /// [tvNotifications] because sweep ticks are frequent, purely informational,
+  /// and must never reach the desktop-notification dispatcher (which would
+  /// spam OS notifications); the UI should only ever show them as an in-app
+  /// toast.
+  Stream<EpgSweepProgress?> get epgSweepProgress =>
+      _epgSweepProgressController.stream;
 
   Stream<TvNotificationDestination> get notificationActivations =>
       _notificationActivationController.stream;
@@ -3382,7 +3394,18 @@ class AppStateController extends ChangeNotifier {
   Future<void> _sweepXtreamEpgInBackground(List<Channel> channels) async {
     final sweepGeneration = ++_epgSweepGeneration;
     final requestGeneration = _epgRequestGeneration;
+    if (channels.isNotEmpty) {
+      _epgSweepProgressController.add(
+        EpgSweepProgress(loaded: 0, total: channels.length),
+      );
+    }
     await Future<void>.delayed(_epgSweepStartDelay);
+
+    void bail() {
+      if (sweepGeneration == _epgSweepGeneration) {
+        _epgSweepProgressController.add(null);
+      }
+    }
 
     var start = 0;
     while (start < channels.length) {
@@ -3390,6 +3413,7 @@ class AppStateController extends ChangeNotifier {
           sweepGeneration != _epgSweepGeneration ||
           requestGeneration != _epgRequestGeneration ||
           _sourceType != AppSourceType.xtream) {
+        bail();
         return;
       }
       // A foreground lazy fetch is queued or running - let it go first and
@@ -3405,12 +3429,23 @@ class AppStateController extends ChangeNotifier {
           .toList(growable: false);
       await _loadXtreamEpg(chunk);
       start += _epgSweepChunkSize;
+      if (!_disposed && sweepGeneration == _epgSweepGeneration) {
+        _epgSweepProgressController.add(
+          EpgSweepProgress(
+            loaded: start.clamp(0, channels.length),
+            total: channels.length,
+          ),
+        );
+      }
       await Future<void>.delayed(_epgSweepChunkDelay);
     }
     if (kDebugMode) {
       debugPrint(
         '[EPG] background sweep complete (${channels.length} channels)',
       );
+    }
+    if (!_disposed && sweepGeneration == _epgSweepGeneration) {
+      _epgSweepProgressController.add(null);
     }
   }
 
@@ -3615,6 +3650,7 @@ class AppStateController extends ChangeNotifier {
     _dvrContentRefreshDebounce?.cancel();
     _pushTokenSubscription?.cancel().ignore();
     unawaited(_tvNotificationController.close());
+    unawaited(_epgSweepProgressController.close());
     unawaited(_notificationActivationController.close());
     unawaited(_pushNotificationService.dispose());
     unawaited(_catalogRepository.close());

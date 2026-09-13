@@ -57,10 +57,19 @@ class MemoryWatchdog {
     _timer = null;
   }
 
-  /// Platform memory-pressure hook. Unconditional evict - the OS only raises
-  /// this when it is already reclaiming.
+  /// Platform memory-pressure hook. Shares the RSS-poll path's cooldown and
+  /// cache-floor guard: the OS can (and on some Android TV boxes under
+  /// sustained pressure, does) deliver this signal repeatedly within a few
+  /// seconds, and clearing an already-small cache - or re-clearing right
+  /// after the last clear, before anything has been re-decoded into it - buys
+  /// nothing and just forces avoidable re-decode churn on top of the memory
+  /// pressure that triggered this in the first place.
   void notifyMemoryPressure() {
     if (kDebugMode) debugPrint('[MemoryWatchdog] system memory pressure');
+    if (_imageCache.currentSizeBytes < _cacheFloorBytes) return;
+    final now = _clock();
+    if (now.difference(_lastEviction) < _cooldown) return;
+    _lastEviction = now;
     _evict();
   }
 

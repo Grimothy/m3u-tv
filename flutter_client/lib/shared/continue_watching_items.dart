@@ -44,6 +44,8 @@ MediaPreviewItem? _resumePreviewItem(
   List<Series> seriesList,
   void Function(Progress) onProgressSelect,
 ) {
+  final vodById = _catalogLookup.vodById(vodItems);
+  final seriesById = _catalogLookup.seriesById(seriesList);
   if (progress.contentType == ContentType.vod) {
     if (progress.title != null) {
       final hasBackdrop = progress.backdropUrl != null;
@@ -59,7 +61,7 @@ MediaPreviewItem? _resumePreviewItem(
           ? (plot.length > 120 ? '${plot.substring(0, 117)}…' : plot)
           : null;
       final vodFallbackLogo = (!hasBackdrop && progress.thumbnailUrl == null)
-          ? vodItems.firstWhereOrNull((v) => v.id == progress.streamId)?.logoUrl
+          ? vodById[progress.streamId]?.logoUrl
           : null;
       return MediaPreviewItem(
         title: progress.title!,
@@ -79,9 +81,7 @@ MediaPreviewItem? _resumePreviewItem(
         onTap: () => onProgressSelect(progress),
       );
     }
-    final item = vodItems.firstWhereOrNull(
-      (item) => item.id == progress.streamId,
-    );
+    final item = vodById[progress.streamId];
     if (item == null) return null;
     final fraction =
         (progress.durationSeconds != null && progress.durationSeconds! > 0)
@@ -121,9 +121,7 @@ MediaPreviewItem? _resumePreviewItem(
           (progress.seasonNumber != null
               ? 'Season ${progress.seasonNumber}'
               : null);
-      final seriesFallback = seriesList.firstWhereOrNull(
-        (s) => s.id == progress.seriesId,
-      );
+      final seriesFallback = seriesById[progress.seriesId];
       return MediaPreviewItem(
         title: displayTitle,
         subtitle: episodeSubtitle,
@@ -149,9 +147,7 @@ MediaPreviewItem? _resumePreviewItem(
       );
     }
     if (progress.seriesId != null) {
-      final series = seriesList.firstWhereOrNull(
-        (series) => series.id == progress.seriesId,
-      );
+      final series = seriesById[progress.seriesId];
       if (series == null) return null;
       return MediaPreviewItem(
         title: series.name,
@@ -169,11 +165,40 @@ MediaPreviewItem? _resumePreviewItem(
   return null;
 }
 
-extension _FirstWhereOrNull<T> on Iterable<T> {
-  T? firstWhereOrNull(bool Function(T item) test) {
-    for (final item in this) {
-      if (test(item)) return item;
+/// Memoized id->item indexes for the VOD/series catalog lists, rebuilt only
+/// when the list instance changes (a fresh catalog load), so resolving each
+/// progress entry's VOD/series fallback is an O(1) lookup instead of an
+/// O(catalog) linear scan repeated per entry - O(progress x catalog) overall
+/// on every call otherwise.
+class _CatalogLookup {
+  List<VodItem>? _vodList;
+  Map<int, VodItem> _vodById = const {};
+  List<Series>? _seriesList;
+  Map<int, Series> _seriesById = const {};
+
+  Map<int, VodItem> vodById(List<VodItem> list) {
+    if (!identical(list, _vodList)) {
+      final byId = <int, VodItem>{};
+      for (final item in list) {
+        byId.putIfAbsent(item.id, () => item);
+      }
+      _vodList = list;
+      _vodById = byId;
     }
-    return null;
+    return _vodById;
+  }
+
+  Map<int, Series> seriesById(List<Series> list) {
+    if (!identical(list, _seriesList)) {
+      final byId = <int, Series>{};
+      for (final series in list) {
+        byId.putIfAbsent(series.id, () => series);
+      }
+      _seriesList = list;
+      _seriesById = byId;
+    }
+    return _seriesById;
   }
 }
+
+final _catalogLookup = _CatalogLookup();

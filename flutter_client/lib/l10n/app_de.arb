@@ -120,6 +120,19 @@
   "epgNoData": "Keine EPG-Daten",
   "epgProgramScheduledToRecord": "Aufnahme geplant",
   "epgProgramCurrentlyRecording": "Wird aufgenommen",
+  "epgSweepLoadingTitle": "Programmführer wird geladen",
+  "epgSweepLoadingBody": "{loaded} von {total} Sendern",
+  "@epgSweepLoadingBody": {
+    "description": "Body text on the in-app toast shown while the EPG background sweep fetches program guide data for the remaining channels after app start, so the user understands the app is not frozen. Non-blocking - dismisses automatically when the sweep finishes.",
+    "placeholders": {
+      "loaded": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "playerGoBack": "Zurück",
   "playerResumeWatching": "Weiterschauen",
   "playerContinue": "Fortsetzen",

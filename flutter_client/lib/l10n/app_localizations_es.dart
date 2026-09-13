@@ -245,6 +245,14 @@ class AppLocalizationsEs extends AppLocalizations {
   String get epgProgramCurrentlyRecording => 'Grabando ahora';
 
   @override
+  String get epgSweepLoadingTitle => 'Cargando guía de programación';
+
+  @override
+  String epgSweepLoadingBody(int loaded, int total) {
+    return '$loaded de $total canales';
+  }
+
+  @override
   String get playerGoBack => 'Volver';
 
   @override
