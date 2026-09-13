@@ -86,11 +86,16 @@ enum OptimizeFor {
   );
 }
 
+/// Baseline multiplier applied under all three named sizes below, so one
+/// tweak here nudges Normal/Large/Very Large up or down together while
+/// keeping their relative ratios (1x/1.2x/1.5x) intact.
+const double _fontSizeBase = 1.15;
+
 /// Base font size multiplier for the UI.
 enum AppFontSize {
-  normal('normal', 1),
-  large('large', 1.2),
-  veryLarge('veryLarge', 1.5);
+  normal('normal', 1 * _fontSizeBase),
+  large('large', 1.2 * _fontSizeBase),
+  veryLarge('veryLarge', 1.5 * _fontSizeBase);
 
   const AppFontSize(this.value, this.scale);
   final String value;
