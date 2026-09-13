@@ -564,8 +564,7 @@ GoRouter createGoRouter({
                     xtreamService: actions.xtreamService,
                     onPlay: _playOnTopLevelRoute(context, actions),
                     progressList: actions.progressList,
-                    onOpenRelated: (related) =>
-                        _openRelated(actions, related),
+                    onOpenRelated: (related) => _openRelated(actions, related),
                   ),
                 ),
               ),
@@ -656,8 +655,7 @@ GoRouter createGoRouter({
                     onPlay: _playOnTopLevelRoute(context, actions),
                     progressList: actions.progressList,
                     onMarkEpisodeWatched: actions.onMarkEpisodeWatched,
-                    onOpenRelated: (related) =>
-                        _openRelated(actions, related),
+                    onOpenRelated: (related) => _openRelated(actions, related),
                   ),
                 ),
               ),
