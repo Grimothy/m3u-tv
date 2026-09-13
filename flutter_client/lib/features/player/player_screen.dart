@@ -1689,7 +1689,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 ],
                                 child: FilledButton.icon(
                                   onPressed: _goBack,
-                                  icon: const Icon(Icons.arrow_back),
+                                  icon: Icon(
+                                    Icons.arrow_back,
+                                    size: 24 * FontSizeScope.scaleOf(context),
+                                  ),
                                   label: Text(
                                     AppLocalizations.of(context).playerGoBack,
                                   ),

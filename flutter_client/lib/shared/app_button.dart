@@ -327,13 +327,13 @@ class AppButton extends StatelessWidget {
           ? ElevatedButton.icon(
               style: style,
               onPressed: effectiveOnPressed,
-              icon: Icon(icon),
+              icon: Icon(icon, size: 18 * scale),
               label: Text(label),
             )
           : FilledButton.tonalIcon(
               style: style,
               onPressed: effectiveOnPressed,
-              icon: Icon(icon),
+              icon: Icon(icon, size: 18 * scale),
               label: Text(label),
             );
     } else if (inlineProgressValue != null) {
