@@ -6,6 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/auth_notifier.dart';
 import 'package:m3u_tv/services/cache_service.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/persistent_store.dart';
 import 'package:m3u_tv/services/push_notification_service.dart';
@@ -717,8 +720,8 @@ void main() {
         'Server B Series',
       );
       expect(fixture.controller.channels.single.name, 'Server B Channel');
-      expect(fixture.controller.vodItems.single.name, 'Server B Movie');
-      expect(fixture.controller.seriesList.single.name, 'Server B Show');
+      expect((await fixture.vodItems).single.name, 'Server B Movie');
+      expect((await fixture.seriesList).single.name, 'Server B Show');
       expect(
         fixture.controller.epgService.lookup('server-b')?.current.title,
         'Server B guide',
@@ -851,8 +854,8 @@ void main() {
         'Server A Series',
       );
       expect(fixture.controller.channels.single.name, 'Server A Channel');
-      expect(fixture.controller.vodItems.single.name, 'Server A Movie');
-      expect(fixture.controller.seriesList.single.name, 'Server A Show');
+      expect((await fixture.vodItems).single.name, 'Server A Movie');
+      expect((await fixture.seriesList).single.name, 'Server A Show');
       expect(
         fixture.controller.epgService.lookup('server-a')?.current.title,
         'Server A guide',
@@ -951,8 +954,8 @@ void main() {
           'Server A Series',
         );
         expect(fixture.controller.channels.single.name, 'Server A Channel');
-        expect(fixture.controller.vodItems.single.name, 'Server A Movie');
-        expect(fixture.controller.seriesList.single.name, 'Server A Show');
+        expect((await fixture.vodItems).single.name, 'Server A Movie');
+        expect((await fixture.seriesList).single.name, 'Server A Show');
         expect(fixture.controller.viewers.single.name, 'Server A Viewer');
         expect(fixture.controller.activeViewer?.name, 'Server A Viewer');
         expect(
@@ -2077,7 +2080,18 @@ class _Fixture {
             '${Directory.systemTemp.path}/m3u-tv-push-${identityHashCode(this)}.json',
           ),
         );
-    cache = CacheService(memory: <String, Object?>{}, store: store);
+    // CacheService and AppStateController must share one CatalogRepository -
+    // each self-defaults its own private in-memory one otherwise, so a
+    // connectXtream() commit would land in a database this fixture's own
+    // `.vodItems`/`.seriesList` accessors below never read from. Production
+    // wires this the same way in main._buildAppState.
+    catalogDb = CatalogDatabase.memory();
+    catalogRepository = CatalogRepository(catalogDb);
+    cache = CacheService(
+      memory: <String, Object?>{},
+      store: store,
+      catalogRepository: catalogRepository,
+    );
     storage = secureStorage ?? InMemorySecureStorage();
     xtream = XtreamService(
       transport: transport ?? _FakeXtreamTransport().call,
@@ -2096,6 +2110,7 @@ class _Fixture {
       xtreamService: xtream,
       secureStorage: storage,
       cacheService: cache,
+      catalogRepository: catalogRepository,
       persistentStore: store,
       pushNotificationService: push,
       tvNotificationService: notificationApi ?? _EmptyTvNotificationService(),
@@ -2105,12 +2120,26 @@ class _Fixture {
   }
 
   late final PersistentJsonStore store;
+  late final CatalogDatabase catalogDb;
+  late final CatalogRepository catalogRepository;
   late final CacheService cache;
   late final SecureStorage storage;
   late final XtreamService xtream;
   late final AuthNotifier auth;
   late final _FakePushNotificationService push;
   late final AppStateController controller;
+
+  /// VOD/series content lives in the shared catalog repository now, not on
+  /// the controller.
+  Future<List<VodItem>> get vodItems => catalogRepository.allItems<VodItem>(
+    CatalogRepository.activeSource,
+    kCatalogKindVod,
+  );
+
+  Future<List<Series>> get seriesList => catalogRepository.allItems<Series>(
+    CatalogRepository.activeSource,
+    kCatalogKindSeries,
+  );
 }
 
 class _FakePushNotificationService extends PushNotificationService {

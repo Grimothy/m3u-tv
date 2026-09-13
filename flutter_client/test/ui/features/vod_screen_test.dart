@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/features/vod/vod_screen.dart';
@@ -10,7 +13,47 @@ import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 
+/// Builds a fresh in-memory catalog repository populated with [vodItems].
+/// Drift's real I/O does not resolve under flutter_test's default fakeAsync
+/// zone, so this - and every subsequent pump that touches the repository -
+/// runs via `tester.runAsync`.
+Future<CatalogRepository> _buildRepo(
+  WidgetTester tester,
+  List<VodItem> vodItems,
+) async {
+  final repo = await tester.runAsync(() async {
+    final db = CatalogDatabase.memory();
+    addTearDown(db.close);
+    final repo = CatalogRepository(db);
+    await repo.replaceItems(
+      sourceKey: CatalogRepository.activeSource,
+      kind: kCatalogKindVod,
+      items: vodItems,
+    );
+    return repo;
+  });
+  return repo!;
+}
+
+Future<void> _settle(WidgetTester tester) => tester.pumpAndSettle();
+
 void main() {
+  // Rendering a real poster URL kicks off flutter_cache_manager's disk-cache
+  // lookup via path_provider. That's inert under plain fakeAsync (nothing
+  // ever runs it for real), but tester.runAsync (needed above for drift)
+  // runs in a real zone, so the plugin channel call actually fires and
+  // throws MissingPluginException - sometimes attributed to a *later* test
+  // since the leaked async chain outlives the test that started it. Give it
+  // a real, writable answer instead of leaving the channel unmocked.
+  setUpAll(() {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (call) async => Directory.systemTemp.path,
+        );
+  });
+
   group('VodScreen', () {
     late List<VodItem> testVodItems;
     late List<Category> testCategories;
@@ -50,10 +93,11 @@ void main() {
     });
 
     testWidgets('renders movie grid with names', (tester) async {
+      final repo = await _buildRepo(tester, testVodItems);
       await tester.pumpWidget(
-        _TestApp(vodItems: testVodItems, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       expect(find.text('Big Buck Bunny'), findsOneWidget);
       expect(find.text('Sintel'), findsOneWidget);
@@ -68,10 +112,11 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
+      final repo = await _buildRepo(tester, testVodItems);
       await tester.pumpWidget(
-        _TestApp(vodItems: testVodItems, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       expect(tester.takeException(), isNull);
       expect(find.text('Big Buck Bunny'), findsOneWidget);
@@ -94,6 +139,7 @@ void main() {
           categoryId: '20',
         ),
       );
+      final repo = await _buildRepo(tester, manyMovies);
 
       for (final viewport in [
         const Size(1440, 900),
@@ -102,9 +148,9 @@ void main() {
       ]) {
         tester.view.physicalSize = viewport;
         await tester.pumpWidget(
-          _TestApp(vodItems: manyMovies, categories: testCategories),
+          _TestApp(catalogRepository: repo, categories: testCategories),
         );
-        await tester.pumpAndSettle();
+        await _settle(tester);
 
         expect(tester.takeException(), isNull);
         final firstMovieCard = find.ancestor(
@@ -117,10 +163,11 @@ void main() {
     });
 
     testWidgets('renders All Movies and category tabs', (tester) async {
+      final repo = await _buildRepo(tester, testVodItems);
       await tester.pumpWidget(
-        _TestApp(vodItems: testVodItems, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       expect(find.text('All Movies'), findsOneWidget);
       expect(find.text('Action'), findsOneWidget);
@@ -128,17 +175,19 @@ void main() {
     });
 
     testWidgets('tapping category tab filters movies', (tester) async {
+      final repo = await _buildRepo(tester, testVodItems);
       await tester.pumpWidget(
-        _TestApp(vodItems: testVodItems, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       await tester.tap(find.text('Action'));
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       // Only Action movies should be visible
       expect(find.text('Big Buck Bunny'), findsOneWidget);
       expect(find.text('Tears of Steel'), findsOneWidget);
+      expect(find.text('Sintel'), findsNothing);
     });
 
     testWidgets(
@@ -168,65 +217,33 @@ void main() {
           const Category(id: '900000001', name: 'Trending Now'),
           const Category(id: '20', name: 'Action'),
         ];
+        final repo = await _buildRepo(tester, items);
 
         await tester.pumpWidget(
-          _TestApp(vodItems: items, categories: categories),
+          _TestApp(catalogRepository: repo, categories: categories),
         );
-        await tester.pumpAndSettle();
+        await _settle(tester);
 
         await tester.tap(find.text('Trending Now'));
-        await tester.pumpAndSettle();
+        await _settle(tester);
 
         expect(find.text('Big Buck Bunny'), findsOneWidget);
         expect(find.text('Sintel'), findsNothing);
       },
     );
 
-    testWidgets('shows loading indicator only when there is nothing to show', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _TestApp(
-          vodItems: const [],
-          categories: testCategories,
-          isLoading: true,
-        ),
-      );
-      await tester.pump();
-
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    });
-
-    testWidgets(
-      'keeps the populated grid visible during a background refresh',
-      (
-        tester,
-      ) async {
-        await tester.pumpWidget(
-          _TestApp(
-            vodItems: testVodItems,
-            categories: testCategories,
-            isLoading: true,
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        expect(find.byType(CircularProgressIndicator), findsNothing);
-        expect(find.text('Big Buck Bunny'), findsOneWidget);
-      },
-    );
-
     testWidgets('shows not configured message when not connected', (
       tester,
     ) async {
+      final repo = await _buildRepo(tester, testVodItems);
       await tester.pumpWidget(
         _TestApp(
-          vodItems: testVodItems,
+          catalogRepository: repo,
           categories: testCategories,
           isConfigured: false,
         ),
       );
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       expect(
         find.text('Please connect to your service in Settings'),
@@ -241,11 +258,12 @@ void main() {
         16,
         (index) => Category(id: '$index', name: 'Category $index'),
       );
+      final repo = await _buildRepo(tester, testVodItems);
 
       await tester.pumpWidget(
-        _TestApp(vodItems: testVodItems, categories: manyCategories),
+        _TestApp(catalogRepository: repo, categories: manyCategories),
       );
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       expect(find.byType(Scrollbar), findsWidgets);
     });
@@ -253,15 +271,16 @@ void main() {
     testWidgets('inline search filters movies case-insensitively', (
       tester,
     ) async {
+      final repo = await _buildRepo(tester, testVodItems);
       await tester.pumpWidget(
-        _TestApp(vodItems: testVodItems, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       await tester.tap(find.byIcon(Icons.search));
-      await tester.pumpAndSettle();
+      await _settle(tester);
       await tester.enterText(find.byType(TextField), 'sintel');
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       expect(find.text('Sintel'), findsOneWidget);
       expect(find.text('Big Buck Bunny'), findsNothing);
@@ -270,17 +289,18 @@ void main() {
 
     testWidgets('replacing a query is debounced; old results stay until the '
         'pause', (tester) async {
+      final repo = await _buildRepo(tester, testVodItems);
       await tester.pumpWidget(
-        _TestApp(vodItems: testVodItems, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       await tester.tap(find.byIcon(Icons.search));
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       // First query applies immediately (no debounce-length empty flash).
       await tester.enterText(find.byType(TextField), 'sintel');
-      await tester.pumpAndSettle();
+      await _settle(tester);
       expect(find.text('Sintel'), findsOneWidget);
 
       // Replacing it: the grid keeps showing the previous match for the
@@ -291,22 +311,24 @@ void main() {
       expect(find.text('Tears of Steel'), findsNothing);
 
       await tester.pump(const Duration(milliseconds: 200));
+      await _settle(tester);
       expect(find.text('Sintel'), findsNothing);
       expect(find.text('Tears of Steel'), findsOneWidget);
     });
 
     testWidgets('inline search composes with category filter', (tester) async {
+      final repo = await _buildRepo(tester, testVodItems);
       await tester.pumpWidget(
-        _TestApp(vodItems: testVodItems, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       await tester.tap(find.text('Action'));
-      await tester.pumpAndSettle();
+      await _settle(tester);
       await tester.tap(find.byIcon(Icons.search));
-      await tester.pumpAndSettle();
+      await _settle(tester);
       await tester.enterText(find.byType(TextField), 'steel');
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       expect(find.text('Tears of Steel'), findsOneWidget);
       expect(find.text('Big Buck Bunny'), findsNothing);
@@ -315,27 +337,29 @@ void main() {
 
     testWidgets('tapping movie triggers onVodSelect callback', (tester) async {
       VodItem? selectedItem;
+      final repo = await _buildRepo(tester, testVodItems);
       await tester.pumpWidget(
         _TestApp(
-          vodItems: testVodItems,
+          catalogRepository: repo,
           categories: testCategories,
           onVodSelect: (item) => selectedItem = item,
         ),
       );
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       await tester.tap(find.text('Big Buck Bunny'));
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       expect(selectedItem, isNotNull);
       expect(selectedItem!.id, 1);
     });
 
     testWidgets('shows rating when available', (tester) async {
+      final repo = await _buildRepo(tester, testVodItems);
       await tester.pumpWidget(
-        _TestApp(vodItems: testVodItems, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
       expect(find.text('★ 4.5'), findsOneWidget);
     });
@@ -344,130 +368,56 @@ void main() {
       'mobile layout shows a Filter button instead of category chips, '
       'and selecting a category filters the grid',
       (tester) async {
+        final repo = await _buildRepo(tester, testVodItems);
         await tester.pumpWidget(
           _TestApp(
-            vodItems: testVodItems,
+            catalogRepository: repo,
             categories: testCategories,
             useSidebarLayout: false,
           ),
         );
-        await tester.pumpAndSettle();
+        await _settle(tester);
 
         expect(find.text('Filter'), findsOneWidget);
         expect(find.text('Action'), findsNothing);
 
         await tester.tap(find.text('Filter'));
-        await tester.pumpAndSettle();
+        await _settle(tester);
 
         expect(find.text('Action'), findsOneWidget);
         await tester.tap(find.text('Action'));
-        await tester.pumpAndSettle();
+        await _settle(tester);
 
         expect(find.text('Big Buck Bunny'), findsOneWidget);
         expect(find.text('Sintel'), findsNothing);
       },
     );
-
-    group('windowed grid (catalogRepositoryProvider overridden)', () {
-      // Drift's async timers do not advance under flutter_test's default
-      // fakeAsync zone (see project notes on the shelved windowing effort),
-      // so every pump touching the repository-backed window runs inside
-      // tester.runAsync to escape it.
-      testWidgets('renders movies paged from the repository', (tester) async {
-        final db = CatalogDatabase.memory();
-        final repo = CatalogRepository(db);
-        addTearDown(db.close);
-        await tester.runAsync(() async {
-          await repo.replaceItems(
-            sourceKey: CatalogRepository.activeSource,
-            kind: kCatalogKindVod,
-            items: testVodItems,
-          );
-        });
-
-        await tester.pumpWidget(
-          _TestApp(
-            vodItems: testVodItems,
-            categories: testCategories,
-            catalogRepository: repo,
-          ),
-        );
-        await tester.runAsync(() => tester.pumpAndSettle());
-
-        expect(find.text('Big Buck Bunny'), findsOneWidget);
-        expect(find.text('Sintel'), findsOneWidget);
-        expect(find.text('Tears of Steel'), findsOneWidget);
-      });
-
-      testWidgets('tapping a category tab filters through the repository', (
-        tester,
-      ) async {
-        final db = CatalogDatabase.memory();
-        final repo = CatalogRepository(db);
-        addTearDown(db.close);
-        await tester.runAsync(() async {
-          await repo.replaceItems(
-            sourceKey: CatalogRepository.activeSource,
-            kind: kCatalogKindVod,
-            items: testVodItems,
-          );
-        });
-
-        await tester.pumpWidget(
-          _TestApp(
-            vodItems: testVodItems,
-            categories: testCategories,
-            catalogRepository: repo,
-          ),
-        );
-        await tester.runAsync(() => tester.pumpAndSettle());
-
-        await tester.tap(find.text('Action'));
-        await tester.runAsync(() => tester.pumpAndSettle());
-
-        expect(find.text('Big Buck Bunny'), findsOneWidget);
-        expect(find.text('Tears of Steel'), findsOneWidget);
-        expect(find.text('Sintel'), findsNothing);
-      });
-    });
   });
 }
 
 class _TestApp extends StatelessWidget {
   const _TestApp({
-    required this.vodItems,
+    required this.catalogRepository,
     required this.categories,
-    this.isLoading = false,
     this.isConfigured = true,
     this.useSidebarLayout = true,
     this.onVodSelect,
-    this.catalogRepository,
   });
 
-  final List<VodItem> vodItems;
+  final CatalogRepository catalogRepository;
   final List<Category> categories;
-  final bool isLoading;
   final bool isConfigured;
   final bool useSidebarLayout;
   final void Function(VodItem)? onVodSelect;
 
-  /// When set, `VodScreen` takes the windowed grid path (reading pages from
-  /// this repository) instead of the legacy in-memory grid - mirrors
-  /// production, where `catalogRepositoryProvider` is always overridden via
-  /// `overrideAppState`.
-  final CatalogRepository? catalogRepository;
-
   @override
   Widget build(BuildContext context) {
-    final repo = catalogRepository;
     return ProviderScope(
       overrides: [
         isBootstrappingProvider.overrideWith((_) => false),
         isConfiguredProvider.overrideWith((_) => isConfigured),
-        isLoadingContentProvider.overrideWith((_) => isLoading),
-        vodItemsProvider.overrideWith((_) => vodItems),
         vodCategoriesProvider.overrideWith((_) => categories),
-        if (repo != null) catalogRepositoryProvider.overrideWith((_) => repo),
+        catalogRepositoryProvider.overrideWith((_) => catalogRepository),
       ],
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,

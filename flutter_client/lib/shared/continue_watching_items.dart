@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'package:m3u_tv/l10n/app_localizations.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart'
+    show kCatalogKindSeries, kCatalogKindVod;
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
@@ -36,6 +39,49 @@ List<MediaPreviewItem> continueWatchingPreviewItems(
     )
     .whereType<MediaPreviewItem>()
     .toList(growable: false);
+
+/// Same result as [continueWatchingPreviewItems], but resolves only the
+/// VOD/series objects [progressList] actually references from the SQLite
+/// catalog instead of requiring the caller to hold the full catalog in
+/// memory. Progress lists are small (a few dozen entries at most), so this is
+/// two bounded id-list queries, not a catalog scan.
+Future<List<MediaPreviewItem>> continueWatchingPreviewItemsFromRepo(
+  BuildContext context, {
+  required List<Progress> progressList,
+  required CatalogRepository repo,
+  required void Function(Progress) onProgressSelect,
+}) async {
+  final eligible = progressList.where(isContinueWatchingEligible).toList();
+  final vodIds = <int>{
+    for (final p in eligible)
+      if (p.contentType == ContentType.vod) p.streamId,
+  };
+  final seriesIds = <int>{
+    for (final p in eligible)
+      if (p.contentType == ContentType.episode && p.seriesId != null)
+        p.seriesId!,
+  };
+  final vodItems = vodIds.isEmpty
+      ? const <VodItem>[]
+      : await repo.activeItemsByIds<VodItem>(
+          kind: kCatalogKindVod,
+          ids: vodIds,
+        );
+  final seriesList = seriesIds.isEmpty
+      ? const <Series>[]
+      : await repo.activeItemsByIds<Series>(
+          kind: kCatalogKindSeries,
+          ids: seriesIds,
+        );
+  if (!context.mounted) return const <MediaPreviewItem>[];
+  return continueWatchingPreviewItems(
+    context,
+    progressList: progressList,
+    vodItems: vodItems,
+    seriesList: seriesList,
+    onProgressSelect: onProgressSelect,
+  );
+}
 
 MediaPreviewItem? _resumePreviewItem(
   BuildContext context,

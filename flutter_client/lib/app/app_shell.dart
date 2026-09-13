@@ -30,6 +30,9 @@ import 'package:m3u_tv/playback/playback_orchestrator.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/aiostreams_api_service.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart'
+    show kCatalogKindSeries, kCatalogKindVod;
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/desktop_notification_presenter.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
@@ -1366,12 +1369,13 @@ class AppShellState extends ConsumerState<AppShell>
     if (mounted) setState(() => _fullScreenDetailDepth--);
   }
 
-  void _openProgress(Progress progress) {
+  Future<void> _openProgress(Progress progress) async {
     if (progress.contentType == ContentType.vod) {
-      final item = _appState.vodItems.firstWhereOrNull(
-        (item) => item.id == progress.streamId,
+      final item = await _appState.catalogRepository.activeItemById<VodItem>(
+        kind: kCatalogKindVod,
+        id: progress.streamId,
       );
-      if (item != null) {
+      if (item != null && mounted) {
         unawaited(
           _openPlayer(
             context,
@@ -1398,10 +1402,11 @@ class AppShellState extends ConsumerState<AppShell>
 
     if (progress.contentType == ContentType.episode &&
         progress.seriesId != null) {
-      final series = _appState.seriesList.firstWhereOrNull(
-        (s) => s.id == progress.seriesId,
+      final series = await _appState.catalogRepository.activeItemById<Series>(
+        kind: kCatalogKindSeries,
+        id: progress.seriesId!,
       );
-      if (series != null) {
+      if (series != null && mounted) {
         final streamUrl = _appState.xtreamService.getSeriesStreamUrl(
           progress.streamId.toString(),
         );
@@ -2625,7 +2630,7 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
 // provider tick only rebuilds the row(s) that actually watch it - e.g. an
 // EPG update no longer touches the Movies/Series rows.
 
-class _ContinueWatchingRow extends ConsumerWidget {
+class _ContinueWatchingRow extends ConsumerStatefulWidget {
   const _ContinueWatchingRow({
     required this.onProgressSelect,
     required this.onContinueWatchingMore,
@@ -2639,30 +2644,47 @@ class _ContinueWatchingRow extends ConsumerWidget {
   final VoidCallback? onSidebarActivate;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final progressList = ref.watch(progressListProvider);
-    final vodItems = ref.watch(vodItemsProvider);
-    final seriesList = ref.watch(seriesListProvider);
-    final l = AppLocalizations.of(context);
-    final continueWatchingItems = continueWatchingPreviewItems(
-      context,
-      progressList: progressList,
-      vodItems: vodItems,
-      seriesList: seriesList,
-      onProgressSelect: onProgressSelect,
+  ConsumerState<_ContinueWatchingRow> createState() =>
+      _ContinueWatchingRowState();
+}
+
+class _ContinueWatchingRowState extends ConsumerState<_ContinueWatchingRow> {
+  List<Progress>? _resolvedFor;
+  List<MediaPreviewItem> _items = const [];
+
+  void _resolve(List<Progress> progressList) {
+    _resolvedFor = progressList;
+    unawaited(
+      continueWatchingPreviewItemsFromRepo(
+        context,
+        progressList: progressList,
+        repo: ref.read(catalogRepositoryProvider),
+        onProgressSelect: widget.onProgressSelect,
+      ).then((items) {
+        if (mounted && identical(_resolvedFor, progressList)) {
+          setState(() => _items = items);
+        }
+      }),
     );
-    if (continueWatchingItems.isEmpty) return const SizedBox.shrink();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progressList = ref.watch(progressListProvider);
+    if (!identical(progressList, _resolvedFor)) _resolve(progressList);
+
+    if (_items.isEmpty) return const SizedBox.shrink();
+    final l = AppLocalizations.of(context);
     const continueWatchingRowLimit = 4;
-    final continueWatchingOverflow =
-        continueWatchingItems.length - continueWatchingRowLimit;
+    final continueWatchingOverflow = _items.length - continueWatchingRowLimit;
     final continueWatchingRowItems = [
-      ...continueWatchingItems.take(continueWatchingRowLimit),
+      ..._items.take(continueWatchingRowLimit),
       if (continueWatchingOverflow > 0)
         MediaPreviewItem(
           title: l.homeContinueWatchingSeeAll,
           subtitle: l.homeContinueWatchingMoreCount(continueWatchingOverflow),
           fallbackIcon: Icons.history,
-          onTap: onContinueWatchingMore,
+          onTap: widget.onContinueWatchingMore,
         ),
     ];
     return MediaPreviewSection(
@@ -2671,8 +2693,8 @@ class _ContinueWatchingRow extends ConsumerWidget {
       emptyLabel: l.homeNoContinueWatching,
       items: continueWatchingRowItems,
       landscapeStyle: true,
-      useSidebarLayout: useSidebarLayout,
-      onSidebarActivate: onSidebarActivate,
+      useSidebarLayout: widget.useSidebarLayout,
+      onSidebarActivate: widget.onSidebarActivate,
     );
   }
 }
@@ -2740,7 +2762,7 @@ class _LiveRow extends ConsumerWidget {
   }
 }
 
-class _MoviesRow extends ConsumerWidget {
+class _MoviesRow extends ConsumerStatefulWidget {
   const _MoviesRow({
     required this.favoriteVodIds,
     required this.onVodSelect,
@@ -2758,16 +2780,43 @@ class _MoviesRow extends ConsumerWidget {
   final VoidCallback? onSidebarActivate;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final vodItems = ref.watch(vodItemsProvider);
+  ConsumerState<_MoviesRow> createState() => _MoviesRowState();
+}
+
+class _MoviesRowState extends ConsumerState<_MoviesRow> {
+  List<Category>? _fetchedFor;
+  List<VodItem> _items = const [];
+
+  void _fetch(List<Category> categories, CatalogRepository repo) {
+    _fetchedFor = categories;
+    unawaited(
+      repo
+          .pageActiveItems<VodItem>(
+            kind: kCatalogKindVod,
+            offset: 0,
+            limit: widget.rowItemLimit,
+          )
+          .then((items) {
+            if (mounted && identical(_fetchedFor, categories)) {
+              setState(() => _items = items);
+            }
+          }),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = ref.watch(vodCategoriesProvider);
+    if (!identical(categories, _fetchedFor)) {
+      _fetch(categories, ref.read(catalogRepositoryProvider));
+    }
     final l = AppLocalizations.of(context);
     return MediaPreviewSection(
       title: l.navVod,
       titleIcon: Icons.movie,
       emptyLabel: l.homeNoMovies,
       posterStyle: true,
-      items: vodItems
-          .take(rowItemLimit)
+      items: _items
           .map(
             (item) => MediaPreviewItem(
               title: item.name,
@@ -2776,19 +2825,19 @@ class _MoviesRow extends ConsumerWidget {
               ratingLabel: item.rating == null ? null : '★ ${item.rating}',
               fallbackIcon: Icons.movie,
               fallbackTitle: item.name,
-              isFavorite: favoriteVodIds.contains(item.id),
-              onTap: () => onVodSelect(item),
-              onLongTap: () => onToggleFavorite(item),
+              isFavorite: widget.favoriteVodIds.contains(item.id),
+              onTap: () => widget.onVodSelect(item),
+              onLongTap: () => widget.onToggleFavorite(item),
             ),
           )
           .toList(growable: false),
-      useSidebarLayout: useSidebarLayout,
-      onSidebarActivate: onSidebarActivate,
+      useSidebarLayout: widget.useSidebarLayout,
+      onSidebarActivate: widget.onSidebarActivate,
     );
   }
 }
 
-class _SeriesRow extends ConsumerWidget {
+class _SeriesRow extends ConsumerStatefulWidget {
   const _SeriesRow({
     required this.favoriteSeriesIds,
     required this.onSeriesSelect,
@@ -2806,16 +2855,43 @@ class _SeriesRow extends ConsumerWidget {
   final VoidCallback? onSidebarActivate;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final seriesList = ref.watch(seriesListProvider);
+  ConsumerState<_SeriesRow> createState() => _SeriesRowState();
+}
+
+class _SeriesRowState extends ConsumerState<_SeriesRow> {
+  List<Category>? _fetchedFor;
+  List<Series> _items = const [];
+
+  void _fetch(List<Category> categories, CatalogRepository repo) {
+    _fetchedFor = categories;
+    unawaited(
+      repo
+          .pageActiveItems<Series>(
+            kind: kCatalogKindSeries,
+            offset: 0,
+            limit: widget.rowItemLimit,
+          )
+          .then((items) {
+            if (mounted && identical(_fetchedFor, categories)) {
+              setState(() => _items = items);
+            }
+          }),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = ref.watch(seriesCategoriesProvider);
+    if (!identical(categories, _fetchedFor)) {
+      _fetch(categories, ref.read(catalogRepositoryProvider));
+    }
     final l = AppLocalizations.of(context);
     return MediaPreviewSection(
       title: l.navSeries,
       titleIcon: Icons.tv,
       emptyLabel: l.homeNoSeries,
       posterStyle: true,
-      items: seriesList
-          .take(rowItemLimit)
+      items: _items
           .map(
             (series) => MediaPreviewItem(
               title: series.name,
@@ -2824,14 +2900,14 @@ class _SeriesRow extends ConsumerWidget {
               ratingLabel: series.rating == null ? null : '★ ${series.rating}',
               fallbackIcon: Icons.tv,
               fallbackTitle: series.name,
-              isFavorite: favoriteSeriesIds.contains(series.id),
-              onTap: () => onSeriesSelect(series),
-              onLongTap: () => onToggleFavorite(series),
+              isFavorite: widget.favoriteSeriesIds.contains(series.id),
+              onTap: () => widget.onSeriesSelect(series),
+              onLongTap: () => widget.onToggleFavorite(series),
             ),
           )
           .toList(growable: false),
-      useSidebarLayout: useSidebarLayout,
-      onSidebarActivate: onSidebarActivate,
+      useSidebarLayout: widget.useSidebarLayout,
+      onSidebarActivate: widget.onSidebarActivate,
     );
   }
 }

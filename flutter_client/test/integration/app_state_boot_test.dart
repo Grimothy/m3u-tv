@@ -12,6 +12,7 @@ import 'package:m3u_tv/navigation/go_router_config.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/cache_service.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart';
 import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
 import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
@@ -739,8 +740,8 @@ void main() {
         expect(controller.isBootstrapping, isFalse);
         expect(controller.liveCategories.single.name, 'Cached Live');
         expect(controller.channels.single.name, 'Cached BBC');
-        expect(controller.vodItems.single.name, 'Cached Movie');
-        expect(controller.seriesList.single.name, 'Cached Show');
+        expect((await _vodItems(controller)).single.name, 'Cached Movie');
+        expect((await _seriesList(controller)).single.name, 'Cached Show');
         expect(controller.activeViewer?.ulid, 'viewer-admin');
         expect(controller.progressList.single.streamId, 902);
         expect(controller.progressList.single.title, 'Cached Movie');
@@ -871,7 +872,7 @@ void main() {
         await Future<void>.delayed(Duration.zero);
       }
 
-      expect(controller.vodItems.single.name, 'Big Buck Bunny');
+      expect((await _vodItems(controller)).single.name, 'Big Buck Bunny');
       expect(controller.activeViewer?.ulid, 'viewer-admin');
       expect(controller.progressList.single.positionSeconds, 91);
 
@@ -978,8 +979,8 @@ void main() {
         expect(controller.isBootstrapping, isFalse);
         expect(controller.liveCategories.single.name, 'News');
         expect(controller.channels.single.name, 'BBC One');
-        expect(controller.vodItems.single.name, 'Big Buck Bunny');
-        expect(controller.seriesList.single.name, 'Fixture Show');
+        expect((await _vodItems(controller)).single.name, 'Big Buck Bunny');
+        expect((await _seriesList(controller)).single.name, 'Fixture Show');
         expect(await controller.favoritesService.isFavorite(101), isTrue);
 
         await _tapSidebarDestination(tester, 'Live TV');
@@ -2238,6 +2239,20 @@ Map<String, Object?> _epgResponse(String title, DateTime start) => {
     },
   ],
 };
+
+/// VOD/series content lives in the catalog repository now, not on the
+/// controller.
+Future<List<VodItem>> _vodItems(AppStateController controller) =>
+    controller.catalogRepository.allItems<VodItem>(
+      CatalogRepository.activeSource,
+      kCatalogKindVod,
+    );
+
+Future<List<Series>> _seriesList(AppStateController controller) =>
+    controller.catalogRepository.allItems<Series>(
+      CatalogRepository.activeSource,
+      kCatalogKindSeries,
+    );
 
 AppStateController _controller({
   required InMemorySecureStorage storage,

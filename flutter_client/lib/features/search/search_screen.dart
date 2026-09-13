@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart'
+    show kCatalogKindSeries, kCatalogKindVod;
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/shared/catalog_text_filter.dart';
 import 'package:m3u_tv/shared/dpad_tab_bar.dart';
@@ -12,6 +15,13 @@ import 'package:m3u_tv/shared/epg_show_results.dart';
 import 'package:m3u_tv/shared/epg_show_search_controller.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/show_search_results_view.dart';
+
+/// Hard cap on VOD/series search matches fetched from the catalog. A real
+/// query already narrows results at the SQL layer (unlike the old in-memory
+/// scan, which held the whole catalog just to filter it down) - this is a
+/// safety net against a single broad character matching a huge fraction of
+/// a 100k-item library, not the expected case.
+const _searchResultLimit = 500;
 
 /// Search screen with client-side filtering across Live TV, Movies, and Series.
 ///
@@ -75,12 +85,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   final CatalogTextFilter<Channel> _channelFilter = CatalogTextFilter(
     (c) => c.name,
   );
-  final CatalogTextFilter<VodItem> _vodFilter = CatalogTextFilter(
-    (v) => v.name,
-  );
-  final CatalogTextFilter<Series> _seriesFilter = CatalogTextFilter(
-    (s) => s.name,
-  );
+
+  /// The query these results were fetched for - re-fetch only when
+  /// [_appliedQuery] moves past this, not on every unrelated rebuild.
+  String? _catalogResultsFor;
+  List<VodItem> _vodResults = const [];
+  List<Series> _seriesResults = const [];
 
   @override
   void initState() {
@@ -105,19 +115,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 
   void _onQueryChanged(String value) {
     // The EPG show search runs its own 350ms debounce, so feed it every
-    // keystroke; only the synchronous catalog filter is debounced here.
+    // keystroke; only the catalog query is debounced here.
     _showSearchController.onQueryChanged(value, widget.onSearchShows);
     _debounce?.cancel();
     setState(() => _query = value);
     if (value.trim().isEmpty) {
-      _appliedQuery = '';
+      setState(() => _appliedQuery = '');
       return;
     }
     // Apply the first character of a fresh query immediately so results show
     // without a debounce-length flash of the empty state; only throttle
     // subsequent keystrokes while results are already on screen.
     if (_appliedQuery.isEmpty) {
-      _appliedQuery = value;
+      setState(() => _appliedQuery = value);
       return;
     }
     _debounce = Timer(_searchDebounce, () {
@@ -133,11 +143,43 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   List<Channel> _filterChannels(List<Channel> channels) =>
       _channelFilter.filterWhole(channels, _appliedQuery);
 
-  List<VodItem> _filterVodItems(List<VodItem> vodItems) =>
-      _vodFilter.filterWhole(vodItems, _appliedQuery);
-
-  List<Series> _filterSeriesList(List<Series> seriesList) =>
-      _seriesFilter.filterWhole(seriesList, _appliedQuery);
+  /// Kicks off (or skips, if already resolved for [_appliedQuery]) the VOD/
+  /// series catalog search. Called from [build] - `setState` inside is safe
+  /// because it only fires from the async completion callback, never
+  /// synchronously during the build that triggered it.
+  void _ensureCatalogResults(CatalogRepository repo) {
+    if (_catalogResultsFor == _appliedQuery) return;
+    _catalogResultsFor = _appliedQuery;
+    final query = _appliedQuery;
+    if (query.trim().isEmpty) {
+      _vodResults = const [];
+      _seriesResults = const [];
+      return;
+    }
+    unawaited(
+      Future.wait([
+        repo.pageActiveItems<VodItem>(
+          kind: kCatalogKindVod,
+          search: query,
+          offset: 0,
+          limit: _searchResultLimit,
+        ),
+        repo.pageActiveItems<Series>(
+          kind: kCatalogKindSeries,
+          search: query,
+          offset: 0,
+          limit: _searchResultLimit,
+        ),
+      ]).then((results) {
+        if (mounted && _catalogResultsFor == query) {
+          setState(() {
+            _vodResults = results[0] as List<VodItem>;
+            _seriesResults = results[1] as List<Series>;
+          });
+        }
+      }),
+    );
+  }
 
   /// Active when the EPG show search should render in place of (Live TV
   /// tab) or alongside (All tab) the synchronous channel-name filter.
@@ -150,8 +192,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     final isBootstrapping = ref.watch(isBootstrappingProvider);
     final isConfigured = ref.watch(isConfiguredProvider);
     final channels = ref.watch(liveChannelsProvider);
-    final vodItems = ref.watch(vodItemsProvider);
-    final seriesList = ref.watch(seriesListProvider);
 
     if (isBootstrapping) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -168,9 +208,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       );
     }
 
+    _ensureCatalogResults(ref.watch(catalogRepositoryProvider));
     final filteredChannels = _filterChannels(channels);
-    final filteredVodItems = _filterVodItems(vodItems);
-    final filteredSeries = _filterSeriesList(seriesList);
+    final filteredVodItems = _vodResults;
+    final filteredSeries = _seriesResults;
     // Build from the FULL channel list (not the filtered one) - EPG
     // show-result channel lookups must work even when the show's
     // channel name doesn't match the current query.

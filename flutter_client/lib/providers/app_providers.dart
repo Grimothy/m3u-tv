@@ -86,10 +86,6 @@ final liveCategoriesProvider = Provider<List<Category>>((ref) {
   return ref.watch(appStateControllerProvider).appState.liveCategories;
 });
 
-final vodItemsProvider = Provider<List<VodItem>>((ref) {
-  return ref.watch(appStateControllerProvider).appState.vodItems;
-});
-
 final vodCategoriesProvider = Provider<List<Category>>((ref) {
   return ref.watch(appStateControllerProvider).appState.vodCategories;
 });
@@ -98,10 +94,6 @@ final vodCategoriesProvider = Provider<List<Category>>((ref) {
 /// loading read pages from here.
 final catalogRepositoryProvider = Provider<CatalogRepository>((ref) {
   return ref.watch(appStateControllerProvider).appState.catalogRepository;
-});
-
-final seriesListProvider = Provider<List<Series>>((ref) {
-  return ref.watch(appStateControllerProvider).appState.seriesList;
 });
 
 final seriesCategoriesProvider = Provider<List<Category>>((ref) {

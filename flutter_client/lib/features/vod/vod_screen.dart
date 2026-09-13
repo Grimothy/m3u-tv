@@ -12,7 +12,6 @@ import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/shared/catalog_window.dart';
 import 'package:m3u_tv/shared/catalog_window_grid.dart';
-import 'package:m3u_tv/shared/category_browse_filter.dart';
 import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/media_category_nav.dart';
@@ -23,6 +22,11 @@ import 'package:m3u_tv/shared/media_category_nav.dart';
 /// - All Movies + category tabs
 /// - Grid layout with poster thumbnails and ratings
 /// - Category filtering
+///
+/// Every tab except Favorites is a [CatalogWindowGrid] paged straight from
+/// the SQLite catalog (`CatalogRepository`) - the screen never holds the
+/// full VOD catalog in memory. Favorites is a bounded id-list lookup instead
+/// (typically a handful of items), not worth a windowed query.
 class VodScreen extends ConsumerStatefulWidget {
   const VodScreen({
     super.key,
@@ -63,82 +67,60 @@ class _VodScreenState extends ConsumerState<VodScreen> {
   // typing over a large catalog does not re-scan it on every keystroke.
   String _appliedQuery = '';
   Timer? _debounce;
+
   Set<int> _favoriteIds = {};
-  final CategoryBrowseFilter<VodItem> _filter = CategoryBrowseFilter<VodItem>(
-    primaryCategoryId: (item) => item.categoryId,
-    extraCategoryIds: (item) => item.categoryIds,
-    name: (item) => item.name,
-    id: (item) => item.id,
-  );
+  List<VodItem> _favoriteItems = const [];
+  bool _favoritesLoadedOnce = false;
+
+  Map<String, int> _categoryCounts = const {};
+  List<Category>? _countsFetchedForCategories;
+  int _countsFetchedForFavoritesCount = -1;
+
   final FocusScopeNode _gridFocusNode = FocusScopeNode();
   final GlobalKey<MediaCategoryNavState> _navKey =
       GlobalKey<MediaCategoryNavState>();
 
-  // Windowed grid backed by the SQLite catalog, used for every tab except
-  // favorites (favorites is a membership filter over locally-known ids, not
-  // something worth pushing into a repository query for what is normally a
-  // small set). `_repo` is null in widget tests that don't override
-  // `catalogRepositoryProvider` - those keep rendering the legacy in-memory
-  // grid below, unchanged.
-  CatalogRepository? _repo;
-  CatalogWindow<VodItem>? _window;
-  List<VodItem>? _observedVodItems;
+  late final CatalogRepository _repo = ref.read(catalogRepositoryProvider);
+  late final CatalogWindow<VodItem> _window = CatalogWindow<VodItem>(
+    fetchPage: (offset, limit) async => const <VodItem>[],
+    fetchCount: () async => 0,
+  );
 
   @override
   void initState() {
     super.initState();
     unawaited(_loadFavorites());
-    _repo = _readCatalogRepository();
-    final repo = _repo;
-    if (repo != null) {
-      _window = CatalogWindow<VodItem>(
-        fetchPage: (offset, limit) async => const <VodItem>[],
-        fetchCount: () async => 0,
-      );
-      _observedVodItems = ref.read(vodItemsProvider);
-      _reconfigureWindow();
-    }
-  }
-
-  CatalogRepository? _readCatalogRepository() {
-    try {
-      return ref.read(catalogRepositoryProvider);
-    } on Object {
-      return null;
-    }
-  }
-
-  void _reconfigureWindow() {
-    final repo = _repo;
-    final window = _window;
-    if (repo == null || window == null) return;
-    final category = _selectedCategory;
-    final categoryId = (category == null || category.isEmpty) ? null : category;
-    final search = _appliedQuery.trim().isEmpty ? null : _appliedQuery.trim();
-    unawaited(
-      window.configure(
-        fetchPage: (offset, limit) => repo.pageActiveItems<VodItem>(
-          kind: kCatalogKindVod,
-          categoryId: categoryId,
-          search: search,
-          offset: offset,
-          limit: limit,
-        ),
-        fetchCount: () => repo.countActiveItems(
-          kind: kCatalogKindVod,
-          categoryId: categoryId,
-          search: search,
-        ),
-      ),
-    );
+    _reconfigureWindow();
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
     _gridFocusNode.dispose();
-    _window?.dispose();
+    _window.dispose();
     super.dispose();
+  }
+
+  void _reconfigureWindow() {
+    final category = _selectedCategory;
+    final categoryId = (category == null || category.isEmpty) ? null : category;
+    final search = _appliedQuery.trim().isEmpty ? null : _appliedQuery.trim();
+    unawaited(
+      _window.configure(
+        fetchPage: (offset, limit) => _repo.pageActiveItems<VodItem>(
+          kind: kCatalogKindVod,
+          categoryId: categoryId,
+          search: search,
+          offset: offset,
+          limit: limit,
+        ),
+        fetchCount: () => _repo.countActiveItems(
+          kind: kCatalogKindVod,
+          categoryId: categoryId,
+          search: search,
+        ),
+      ),
+    );
   }
 
   void _onQueryChanged(String value) {
@@ -171,18 +153,59 @@ class _VodScreenState extends ConsumerState<VodScreen> {
 
   Future<void> _loadFavorites() async {
     final service = widget.favoritesService;
-    if (service == null) return;
+    if (service == null) {
+      if (mounted) setState(() => _favoritesLoadedOnce = true);
+      return;
+    }
     final ids = await service.all();
-    if (mounted) setState(() => _favoriteIds = ids);
+    final items = ids.isEmpty
+        ? const <VodItem>[]
+        : await _repo.activeItemsByIds<VodItem>(
+            kind: kCatalogKindVod,
+            ids: ids,
+          );
+    if (mounted) {
+      setState(() {
+        _favoriteIds = ids;
+        _favoriteItems = items;
+        _favoritesLoadedOnce = true;
+      });
+    }
   }
 
-  List<VodItem> _filteredItems(List<VodItem> vodItems) => _filter.members(
-    list: vodItems,
-    selectedCategory: _selectedCategory,
-    query: _appliedQuery,
-    favoriteIds: _favoriteIds,
-    favoritesCategoryId: _kFavoritesCategoryId,
-  );
+  /// Refreshes tab-count labels (total / favorites / per-category) when the
+  /// category list changes (a fresh catalog load) or the favorites count
+  /// changes. Cheap: one unfiltered count plus one query per category,
+  /// versus scanning the whole catalog in Dart.
+  void _ensureCounts(List<Category> categories) {
+    if (identical(categories, _countsFetchedForCategories) &&
+        _favoriteIds.length == _countsFetchedForFavoritesCount) {
+      return;
+    }
+    _countsFetchedForCategories = categories;
+    _countsFetchedForFavoritesCount = _favoriteIds.length;
+    final favoritesSnapshotCount = _favoriteIds.length;
+    unawaited(_computeCounts(categories, favoritesSnapshotCount));
+  }
+
+  Future<void> _computeCounts(
+    List<Category> categories,
+    int favoritesCount,
+  ) async {
+    final total = await _repo.countActiveItems(kind: kCatalogKindVod);
+    final perCategory = await _repo.activeCategoryCounts(
+      kind: kCatalogKindVod,
+      categoryIds: categories.map((c) => c.id).toList(growable: false),
+    );
+    if (!mounted) return;
+    setState(() {
+      _categoryCounts = {
+        '': total,
+        if (favoritesCount > 0) _kFavoritesCategoryId: favoritesCount,
+        ...perCategory,
+      };
+    });
+  }
 
   List<CategoryTabData> _tabs(List<Category> categories) {
     final l = AppLocalizations.of(context);
@@ -194,18 +217,10 @@ class _VodScreenState extends ConsumerState<VodScreen> {
     ];
   }
 
-  Map<String, int> _categoryCounts(List<VodItem> vodItems) => {
-    '': vodItems.length,
-    if (_favoriteIds.isNotEmpty) _kFavoritesCategoryId: _favoriteIds.length,
-    ..._filter.categoryCounts(vodItems),
-  };
-
   @override
   Widget build(BuildContext context) {
     final isBootstrapping = ref.watch(isBootstrappingProvider);
     final isConfigured = ref.watch(isConfiguredProvider);
-    final isLoading = ref.watch(isLoadingContentProvider);
-    final vodItems = ref.watch(vodItemsProvider);
     final categories = ref.watch(vodCategoriesProvider);
 
     if (isBootstrapping) {
@@ -223,21 +238,8 @@ class _VodScreenState extends ConsumerState<VodScreen> {
       );
     }
 
-    // The window's query only tracks category/search (set via
-    // _reconfigureWindow); a fresh catalog load/replace instead swaps the
-    // rows underneath the same repository instance, which the window can't
-    // see on its own. Re-run the current query when the provider hands back
-    // a new list instance (AppStateController always reassigns wholesale, so
-    // identity is a reliable "the catalog changed" signal - see
-    // CategoryBrowseFilter's `_ensureIndex` for the same pattern).
-    if (_window != null && !identical(vodItems, _observedVodItems)) {
-      _observedVodItems = vodItems;
-      unawaited(_window!.load());
-    }
-
-    final useWindow =
-        _repo != null && _selectedCategory != _kFavoritesCategoryId;
-    final filtered = useWindow ? const <VodItem>[] : _filteredItems(vodItems);
+    _ensureCounts(categories);
+    final isFavoritesTab = _selectedCategory == _kFavoritesCategoryId;
     final l = AppLocalizations.of(context);
     final nav = MediaCategoryNav(
       key: _navKey,
@@ -250,27 +252,16 @@ class _VodScreenState extends ConsumerState<VodScreen> {
       onSelected: _onCategorySelected,
       filterButtonLabel: l.mediaCategoryFilterButton,
       filterScreenTitle: l.mediaCategoryFilterScreenTitle,
-      categoryCounts: _categoryCounts(vodItems),
+      categoryCounts: _categoryCounts,
       onSidebarActivate: widget.onSidebarActivate,
       gridFocusScopeNode: _gridFocusNode,
       memoryKeyPrefix: 'vod',
       onEntryFocusScopeReady: widget.onEntryFocusScopeReady,
     );
     final content = Expanded(
-      // Only show the spinner when there is nothing to display yet. During a
-      // background refresh the already-populated grid stays visible.
-      child: isLoading && vodItems.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : useWindow
-          ? _buildWindowedContent(_window!)
-          : filtered.isEmpty
-          ? Center(
-              child: Text(
-                'No movies available',
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-            )
-          : _buildGrid(filtered),
+      child: isFavoritesTab
+          ? _buildFavoritesContent()
+          : _buildWindowedContent(_window),
     );
 
     return Scaffold(
@@ -278,6 +269,21 @@ class _VodScreenState extends ConsumerState<VodScreen> {
           ? Row(children: [nav, content])
           : Column(children: [nav, content]),
     );
+  }
+
+  Widget _buildFavoritesContent() {
+    if (!_favoritesLoadedOnce) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_favoriteItems.isEmpty) {
+      return Center(
+        child: Text(
+          'No movies available',
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+      );
+    }
+    return _buildGrid(_favoriteItems);
   }
 
   Widget _buildGrid(List<VodItem> items) {
@@ -341,10 +347,10 @@ class _VodScreenState extends ConsumerState<VodScreen> {
     ),
   );
 
-  /// Windowed counterpart to [_buildGrid]: same layout/focus wiring, but the
-  /// grid is driven by [window] (paged from SQLite) instead of an in-memory
-  /// list, and only [CatalogWindowGrid.lookAheadRows] worth of items are ever
-  /// materialized into [VodItem]s/widgets at once, regardless of catalog size.
+  /// Windowed grid: same layout/focus wiring as [_buildGrid], but driven by
+  /// [window] (paged from SQLite) instead of an in-memory list, and only
+  /// [CatalogWindowGrid.lookAheadRows] worth of items are ever materialized
+  /// into [VodItem]s/widgets at once, regardless of catalog size.
   Widget _buildWindowedContent(CatalogWindow<VodItem> window) {
     return AnimatedBuilder(
       animation: window,
@@ -353,10 +359,14 @@ class _VodScreenState extends ConsumerState<VodScreen> {
           return const Center(child: CircularProgressIndicator());
         }
         // A database that never opens must not strand the user on a spinner
-        // forever - fall back to the legacy in-memory grid, which still works
-        // off the provider's full list regardless of the repository's state.
+        // forever.
         if (window.error != null && !window.hasLoadedOnce) {
-          return _buildGrid(_filteredItems(ref.read(vodItemsProvider)));
+          return Center(
+            child: Text(
+              'Unable to load movies',
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+          );
         }
         if (window.totalCount == 0) {
           return Center(

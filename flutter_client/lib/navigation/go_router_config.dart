@@ -17,6 +17,8 @@ import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/playback/playback_orchestrator.dart';
 import 'package:m3u_tv/services/aiostreams_api_service.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart'
+    show kCatalogKindSeries, kCatalogKindVod;
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/shared/app_background.dart';
 
@@ -44,31 +46,129 @@ CustomTransitionPage<void> _slidePage(Widget screen) =>
 /// `onVodSelect`/`onSeriesSelect` callbacks every other VOD/series entry
 /// point (grids, Continue Watching) already navigates through - a related
 /// item is guaranteed to already exist in the user's library, so it only
-/// needs resolving to the matching [VodItem]/[Series] by id.
-void _openRelated(ContentActions actions, RelatedItem related) {
+/// needs resolving to the matching [VodItem]/[Series] by id. The lookup hits
+/// the SQLite catalog (fire-and-forget from the tap) rather than an
+/// in-memory list, so this is the one entry point in the app with a brief
+/// (sub-frame, same-process) gap between tap and navigation.
+Future<void> _openRelated(ContentActions actions, RelatedItem related) async {
   final targetId = int.tryParse(related.id);
   if (targetId == null) {
     debugPrint('_openRelated: unparseable id "${related.id}"');
     return;
   }
   if (related.isSeries) {
-    final series = actions.appState.seriesList.firstWhereOrNull(
-      (s) => s.id == targetId,
-    );
+    final series = await actions.appState.catalogRepository
+        .activeItemById<Series>(kind: kCatalogKindSeries, id: targetId);
     if (series != null) {
       actions.onSeriesSelect(series);
     } else {
       debugPrint('_openRelated: series #$targetId not found in library');
     }
   } else {
-    final vod = actions.appState.vodItems.firstWhereOrNull(
-      (v) => v.id == targetId,
-    );
+    final vod = await actions.appState.catalogRepository
+        .activeItemById<VodItem>(kind: kCatalogKindVod, id: targetId);
     if (vod != null) {
       actions.onVodSelect(vod);
     } else {
       debugPrint('_openRelated: VOD #$targetId not found in library');
     }
+  }
+}
+
+/// Resolves a VOD detail route's `:vodId` against the SQLite catalog when the
+/// caller didn't already have the [VodItem] in hand (`state.extra` null - a
+/// deep link, push notification, or restored route). Every in-app tap already
+/// carries the object via `extra` and never hits this path.
+class _AsyncVodDetails extends StatelessWidget {
+  const _AsyncVodDetails({required this.vodId, required this.actions});
+
+  final int vodId;
+  final ContentActions actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<VodItem?>(
+      future: actions.appState.catalogRepository.activeItemById<VodItem>(
+        kind: kCatalogKindVod,
+        id: vodId,
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final item = snapshot.data;
+        if (item == null) {
+          return Scaffold(
+            body: SafeArea(
+              bottom: false,
+              child: Center(child: Text('VOD #$vodId not found')),
+            ),
+          );
+        }
+        return ListenableBuilder(
+          listenable: actions.appState,
+          builder: (ctx, _) => VodDetailsScreen(
+            item: item,
+            xtreamService: actions.xtreamService,
+            onPlay: actions.onOpenPlayer,
+            progressList: actions.progressList,
+            onSidebarActivate: actions.onSidebarActivate,
+            onOpenRelated: (related) => _openRelated(actions, related),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Series counterpart to [_AsyncVodDetails].
+class _AsyncSeriesDetails extends StatelessWidget {
+  const _AsyncSeriesDetails({required this.seriesId, required this.actions});
+
+  final int seriesId;
+  final ContentActions actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Series?>(
+      future: actions.appState.catalogRepository.activeItemById<Series>(
+        kind: kCatalogKindSeries,
+        id: seriesId,
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final series = snapshot.data;
+        if (series == null) {
+          return Scaffold(
+            body: SafeArea(
+              bottom: false,
+              child: Center(child: Text('Series #$seriesId not found')),
+            ),
+          );
+        }
+        return ListenableBuilder(
+          listenable: actions.appState,
+          builder: (ctx, _) => SeriesDetailsScreen(
+            seriesId: series.id,
+            seriesName: series.name,
+            coverUrl: series.coverUrl,
+            xtreamService: actions.xtreamService,
+            viewerId: actions.appState.activeViewer?.ulid,
+            onPlay: actions.onOpenPlayer,
+            progressList: actions.progressList,
+            onMarkEpisodeWatched: actions.onMarkEpisodeWatched,
+            onSidebarActivate: actions.onSidebarActivate,
+            onOpenRelated: (related) => _openRelated(actions, related),
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -120,8 +220,8 @@ GoRouter createGoRouter({
                           listenable: actions.appState,
                           builder: (ctx, _) => ContinueWatchingScreen(
                             progressList: actions.appState.progressList,
-                            vodItems: actions.appState.vodItems,
-                            seriesList: actions.appState.seriesList,
+                            catalogRepository:
+                                actions.appState.catalogRepository,
                             onProgressSelect: actions.onProgressSelect,
                             onSidebarActivate: actions.onSidebarActivate,
                           ),
@@ -169,36 +269,27 @@ GoRouter createGoRouter({
                     pageBuilder: (context, state) {
                       final vodId = int.parse(state.pathParameters['vodId']!);
                       final actions = ContentActions.of(context);
-                      final item =
-                          state.extra as VodItem? ??
-                          actions.appState.vodItems.firstWhereOrNull(
-                            (v) => v.id == vodId,
-                          );
-                      if (item == null) {
-                        return NoTransitionPage(
-                          child: Scaffold(
-                            body: SafeArea(
-                              bottom: false,
-                              child: Center(
-                                child: Text('VOD #$vodId not found'),
-                              ),
+                      final item = state.extra as VodItem?;
+                      if (item != null) {
+                        return _slidePage(
+                          ListenableBuilder(
+                            listenable: actions.appState,
+                            builder: (ctx, _) => VodDetailsScreen(
+                              item: item,
+                              xtreamService: actions.xtreamService,
+                              onPlay: actions.onOpenPlayer,
+                              progressList: actions.progressList,
+                              onSidebarActivate: actions.onSidebarActivate,
+                              onOpenRelated: (related) =>
+                                  _openRelated(actions, related),
                             ),
                           ),
                         );
                       }
+                      // No object in hand (deep link / push notification /
+                      // restored route) - resolve it from the catalog.
                       return _slidePage(
-                        ListenableBuilder(
-                          listenable: actions.appState,
-                          builder: (ctx, _) => VodDetailsScreen(
-                            item: item,
-                            xtreamService: actions.xtreamService,
-                            onPlay: actions.onOpenPlayer,
-                            progressList: actions.progressList,
-                            onSidebarActivate: actions.onSidebarActivate,
-                            onOpenRelated: (related) =>
-                                _openRelated(actions, related),
-                          ),
-                        ),
+                        _AsyncVodDetails(vodId: vodId, actions: actions),
                       );
                     },
                   ),
@@ -222,39 +313,34 @@ GoRouter createGoRouter({
                         state.pathParameters['seriesId']!,
                       );
                       final actions = ContentActions.of(context);
-                      final series =
-                          state.extra as Series? ??
-                          actions.appState.seriesList.firstWhereOrNull(
-                            (s) => s.id == seriesId,
-                          );
-                      if (series == null) {
-                        return NoTransitionPage(
-                          child: Scaffold(
-                            body: SafeArea(
-                              bottom: false,
-                              child: Center(
-                                child: Text('Series #$seriesId not found'),
-                              ),
+                      final series = state.extra as Series?;
+                      if (series != null) {
+                        return _slidePage(
+                          ListenableBuilder(
+                            listenable: actions.appState,
+                            builder: (ctx, _) => SeriesDetailsScreen(
+                              seriesId: series.id,
+                              seriesName: series.name,
+                              coverUrl: series.coverUrl,
+                              xtreamService: actions.xtreamService,
+                              viewerId: actions.appState.activeViewer?.ulid,
+                              onPlay: actions.onOpenPlayer,
+                              progressList: actions.progressList,
+                              onMarkEpisodeWatched:
+                                  actions.onMarkEpisodeWatched,
+                              onSidebarActivate: actions.onSidebarActivate,
+                              onOpenRelated: (related) =>
+                                  _openRelated(actions, related),
                             ),
                           ),
                         );
                       }
+                      // No object in hand (deep link / push notification /
+                      // restored route) - resolve it from the catalog.
                       return _slidePage(
-                        ListenableBuilder(
-                          listenable: actions.appState,
-                          builder: (ctx, _) => SeriesDetailsScreen(
-                            seriesId: series.id,
-                            seriesName: series.name,
-                            coverUrl: series.coverUrl,
-                            xtreamService: actions.xtreamService,
-                            viewerId: actions.appState.activeViewer?.ulid,
-                            onPlay: actions.onOpenPlayer,
-                            progressList: actions.progressList,
-                            onMarkEpisodeWatched: actions.onMarkEpisodeWatched,
-                            onSidebarActivate: actions.onSidebarActivate,
-                            onOpenRelated: (related) =>
-                                _openRelated(actions, related),
-                          ),
+                        _AsyncSeriesDetails(
+                          seriesId: seriesId,
+                          actions: actions,
                         ),
                       );
                     },
@@ -481,12 +567,3 @@ GoRouter createGoRouter({
 
 Widget _tabScreen(BuildContext context, String routeName) =>
     ContentActions.of(context).buildTabScreen(routeName);
-
-extension _FirstWhereOrNull<T> on Iterable<T> {
-  T? firstWhereOrNull(bool Function(T item) test) {
-    for (final item in this) {
-      if (test(item)) return item;
-    }
-    return null;
-  }
-}

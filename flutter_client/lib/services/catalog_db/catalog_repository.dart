@@ -61,6 +61,64 @@ class CatalogRepository {
     search: search,
   );
 
+  /// A single active-source row by id, or null if it isn't in the current
+  /// catalog. For resolving a bare id (a deep link, a push notification, a
+  /// related-item tap) to the full domain object without holding the whole
+  /// catalog in memory to `firstWhere` against.
+  Future<T?> activeItemById<T>({required String kind, required int id}) async {
+    final row =
+        await (_db.select(_db.catalogItems)..where(
+              (t) =>
+                  t.sourceKey.equals(activeSource) &
+                  t.kind.equals(kind) &
+                  t.streamId.equals(id),
+            ))
+            .getSingleOrNull();
+    return row == null ? null : _decodeRow(kind, row.json) as T;
+  }
+
+  /// Active-source rows matching any id in [ids], in no particular order. For
+  /// resolving a bounded set of ids (favorites, Continue Watching entries) -
+  /// callers needing catalog order should re-sort by the input list.
+  Future<List<T>> activeItemsByIds<T>({
+    required String kind,
+    required Set<int> ids,
+  }) async {
+    if (ids.isEmpty) return const [];
+    final rows =
+        await (_db.select(_db.catalogItems)..where(
+              (t) =>
+                  t.sourceKey.equals(activeSource) &
+                  t.kind.equals(kind) &
+                  t.streamId.isIn(ids),
+            ))
+            .get();
+    return rows
+        .map((r) => _decodeRow(kind, r.json) as T)
+        .toList(
+          growable: false,
+        );
+  }
+
+  /// Per-category membership counts among the active-source rows of [kind],
+  /// matching [_categoryPredicate]'s primary-or-overlap semantics (so a
+  /// dynamic multi-category item counts toward every category it belongs to).
+  /// One query per category id - cheap for the tens of categories a real
+  /// catalog has, unlike scanning every row in Dart.
+  Future<Map<String, int>> activeCategoryCounts({
+    required String kind,
+    required List<String> categoryIds,
+  }) async {
+    final counts = await Future.wait(
+      categoryIds.map(
+        (id) => countActiveItems(kind: kind, categoryId: id),
+      ),
+    );
+    return {
+      for (var i = 0; i < categoryIds.length; i++) categoryIds[i]: counts[i],
+    };
+  }
+
   // -------------------------------------------------------------------------
   // Catalog items
   // -------------------------------------------------------------------------

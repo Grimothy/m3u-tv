@@ -286,4 +286,68 @@ void main() {
       expect(await repo.kvUpdatedAt('__ts_liveStreams'), isNull);
     },
   );
+
+  group('activeItemById / activeItemsByIds', () {
+    setUp(() async {
+      await repo.replaceItems(
+        sourceKey: CatalogRepository.activeSource,
+        kind: kCatalogKindVod,
+        items: [
+          _vod(1, 'One'),
+          _vod(2, 'Two'),
+          _vod(3, 'Three'),
+        ],
+      );
+    });
+
+    test('activeItemById resolves a row by id', () async {
+      final item = await repo.activeItemById<VodItem>(
+        kind: kCatalogKindVod,
+        id: 2,
+      );
+      expect(item?.name, 'Two');
+    });
+
+    test('activeItemById returns null for an unknown id', () async {
+      final item = await repo.activeItemById<VodItem>(
+        kind: kCatalogKindVod,
+        id: 999,
+      );
+      expect(item, isNull);
+    });
+
+    test('activeItemsByIds resolves only the requested ids', () async {
+      final items = await repo.activeItemsByIds<VodItem>(
+        kind: kCatalogKindVod,
+        ids: {1, 3, 999},
+      );
+      expect(items.map((v) => v.name).toSet(), {'One', 'Three'});
+    });
+
+    test('activeItemsByIds returns empty for an empty id set', () async {
+      final items = await repo.activeItemsByIds<VodItem>(
+        kind: kCatalogKindVod,
+        ids: {},
+      );
+      expect(items, isEmpty);
+    });
+  });
+
+  test('activeCategoryCounts matches per-category countActiveItems', () async {
+    await repo.replaceItems(
+      sourceKey: CatalogRepository.activeSource,
+      kind: kCatalogKindVod,
+      items: [
+        _vod(1, 'A', category: '10'),
+        _vod(2, 'B', category: '10'),
+        _vod(3, 'C', category: '20'),
+      ],
+    );
+
+    final counts = await repo.activeCategoryCounts(
+      kind: kCatalogKindVod,
+      categoryIds: ['10', '20', '30'],
+    );
+    expect(counts, {'10': 2, '20': 1, '30': 0});
+  });
 }

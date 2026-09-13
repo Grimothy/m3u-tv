@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/features/series/series_screen.dart';
@@ -10,7 +13,43 @@ import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 
+/// Builds a fresh in-memory catalog repository populated with [seriesList].
+/// Opening the database needs `tester.runAsync` (real drift I/O doesn't
+/// resolve under flutter_test's default fakeAsync zone); once it's open,
+/// query pumps back in the normal zone resolve fine via plain
+/// `pumpAndSettle`.
+Future<CatalogRepository> _buildRepo(
+  WidgetTester tester,
+  List<Series> seriesList,
+) async {
+  final repo = await tester.runAsync(() async {
+    final db = CatalogDatabase.memory();
+    addTearDown(db.close);
+    final repo = CatalogRepository(db);
+    await repo.replaceItems(
+      sourceKey: CatalogRepository.activeSource,
+      kind: kCatalogKindSeries,
+      items: seriesList,
+    );
+    return repo;
+  });
+  return repo!;
+}
+
 void main() {
+  // See vod_screen_test.dart: a real poster/cover URL can drive
+  // flutter_cache_manager into a real path_provider call once any
+  // tester.runAsync bridge has run in this test file, which otherwise throws
+  // MissingPluginException (sometimes attributed to a later test).
+  setUpAll(() {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (call) async => Directory.systemTemp.path,
+        );
+  });
+
   group('SeriesScreen', () {
     late List<Series> testSeriesList;
     late List<Category> testCategories;
@@ -39,8 +78,9 @@ void main() {
     });
 
     testWidgets('renders series grid with names', (tester) async {
+      final repo = await _buildRepo(tester, testSeriesList);
       await tester.pumpWidget(
-        _TestApp(seriesList: testSeriesList, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
       await tester.pumpAndSettle();
 
@@ -49,8 +89,9 @@ void main() {
     });
 
     testWidgets('renders All Series and category tabs', (tester) async {
+      final repo = await _buildRepo(tester, testSeriesList);
       await tester.pumpWidget(
-        _TestApp(seriesList: testSeriesList, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
       await tester.pumpAndSettle();
 
@@ -74,6 +115,7 @@ void main() {
           categoryId: '30',
         ),
       );
+      final repo = await _buildRepo(tester, manySeries);
 
       for (final viewport in [
         const Size(1440, 900),
@@ -82,7 +124,7 @@ void main() {
       ]) {
         tester.view.physicalSize = viewport;
         await tester.pumpWidget(
-          _TestApp(seriesList: manySeries, categories: testCategories),
+          _TestApp(catalogRepository: repo, categories: testCategories),
         );
         await tester.pumpAndSettle();
 
@@ -97,8 +139,9 @@ void main() {
     });
 
     testWidgets('tapping category tab filters series', (tester) async {
+      final repo = await _buildRepo(tester, testSeriesList);
       await tester.pumpWidget(
-        _TestApp(seriesList: testSeriesList, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
       await tester.pumpAndSettle();
 
@@ -106,6 +149,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Breaking Bad'), findsOneWidget);
+      expect(find.text('Stranger Things'), findsNothing);
     });
 
     testWidgets(
@@ -126,9 +170,10 @@ void main() {
           const Category(id: '900000002', name: 'Trending Shows'),
           const Category(id: '30', name: 'Thriller'),
         ];
+        final repo = await _buildRepo(tester, seriesList);
 
         await tester.pumpWidget(
-          _TestApp(seriesList: seriesList, categories: categories),
+          _TestApp(catalogRepository: repo, categories: categories),
         );
         await tester.pumpAndSettle();
 
@@ -140,46 +185,13 @@ void main() {
       },
     );
 
-    testWidgets('shows loading indicator only when there is nothing to show', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _TestApp(
-          seriesList: const [],
-          categories: testCategories,
-          isLoading: true,
-        ),
-      );
-      await tester.pump();
-
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    });
-
-    testWidgets(
-      'keeps the populated grid visible during a background refresh',
-      (
-        tester,
-      ) async {
-        await tester.pumpWidget(
-          _TestApp(
-            seriesList: testSeriesList,
-            categories: testCategories,
-            isLoading: true,
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        expect(find.byType(CircularProgressIndicator), findsNothing);
-        expect(find.text('Breaking Bad'), findsOneWidget);
-      },
-    );
-
     testWidgets('shows not configured message when not connected', (
       tester,
     ) async {
+      final repo = await _buildRepo(tester, testSeriesList);
       await tester.pumpWidget(
         _TestApp(
-          seriesList: testSeriesList,
+          catalogRepository: repo,
           categories: testCategories,
           isConfigured: false,
         ),
@@ -199,9 +211,10 @@ void main() {
         16,
         (index) => Category(id: '$index', name: 'Category $index'),
       );
+      final repo = await _buildRepo(tester, testSeriesList);
 
       await tester.pumpWidget(
-        _TestApp(seriesList: testSeriesList, categories: manyCategories),
+        _TestApp(catalogRepository: repo, categories: manyCategories),
       );
       await tester.pumpAndSettle();
 
@@ -211,8 +224,9 @@ void main() {
     testWidgets('inline search filters series case-insensitively', (
       tester,
     ) async {
+      final repo = await _buildRepo(tester, testSeriesList);
       await tester.pumpWidget(
-        _TestApp(seriesList: testSeriesList, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
       await tester.pumpAndSettle();
 
@@ -226,8 +240,9 @@ void main() {
     });
 
     testWidgets('inline search composes with category filter', (tester) async {
+      final repo = await _buildRepo(tester, testSeriesList);
       await tester.pumpWidget(
-        _TestApp(seriesList: testSeriesList, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
       await tester.pumpAndSettle();
 
@@ -246,9 +261,10 @@ void main() {
       tester,
     ) async {
       Series? selectedSeries;
+      final repo = await _buildRepo(tester, testSeriesList);
       await tester.pumpWidget(
         _TestApp(
-          seriesList: testSeriesList,
+          catalogRepository: repo,
           categories: testCategories,
           onSeriesSelect: (series) => selectedSeries = series,
         ),
@@ -263,8 +279,9 @@ void main() {
     });
 
     testWidgets('shows rating when available', (tester) async {
+      final repo = await _buildRepo(tester, testSeriesList);
       await tester.pumpWidget(
-        _TestApp(seriesList: testSeriesList, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
       await tester.pumpAndSettle();
 
@@ -275,9 +292,10 @@ void main() {
       'mobile layout shows a Filter button instead of category chips, '
       'and selecting a category filters the grid',
       (tester) async {
+        final repo = await _buildRepo(tester, testSeriesList);
         await tester.pumpWidget(
           _TestApp(
-            seriesList: testSeriesList,
+            catalogRepository: repo,
             categories: testCategories,
             useSidebarLayout: false,
           ),
@@ -296,105 +314,32 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
-
-    group('windowed grid (catalogRepositoryProvider overridden)', () {
-      // Drift's async timers do not advance under flutter_test's default
-      // fakeAsync zone (see project notes on the shelved windowing effort),
-      // so every pump touching the repository-backed window runs inside
-      // tester.runAsync to escape it.
-      testWidgets('renders series paged from the repository', (tester) async {
-        final db = CatalogDatabase.memory();
-        final repo = CatalogRepository(db);
-        addTearDown(db.close);
-        await tester.runAsync(() async {
-          await repo.replaceItems(
-            sourceKey: CatalogRepository.activeSource,
-            kind: kCatalogKindSeries,
-            items: testSeriesList,
-          );
-        });
-
-        await tester.pumpWidget(
-          _TestApp(
-            seriesList: testSeriesList,
-            categories: testCategories,
-            catalogRepository: repo,
-          ),
-        );
-        await tester.runAsync(() => tester.pumpAndSettle());
-
-        expect(find.text('Breaking Bad'), findsOneWidget);
-        expect(find.text('Stranger Things'), findsOneWidget);
-      });
-
-      testWidgets('tapping a category tab filters through the repository', (
-        tester,
-      ) async {
-        final db = CatalogDatabase.memory();
-        final repo = CatalogRepository(db);
-        addTearDown(db.close);
-        await tester.runAsync(() async {
-          await repo.replaceItems(
-            sourceKey: CatalogRepository.activeSource,
-            kind: kCatalogKindSeries,
-            items: testSeriesList,
-          );
-        });
-
-        await tester.pumpWidget(
-          _TestApp(
-            seriesList: testSeriesList,
-            categories: testCategories,
-            catalogRepository: repo,
-          ),
-        );
-        await tester.runAsync(() => tester.pumpAndSettle());
-
-        await tester.tap(find.text('Thriller'));
-        await tester.runAsync(() => tester.pumpAndSettle());
-
-        expect(find.text('Breaking Bad'), findsOneWidget);
-        expect(find.text('Stranger Things'), findsNothing);
-      });
-    });
   });
 }
 
 class _TestApp extends StatelessWidget {
   const _TestApp({
-    required this.seriesList,
+    required this.catalogRepository,
     required this.categories,
-    this.isLoading = false,
     this.isConfigured = true,
     this.useSidebarLayout = true,
     this.onSeriesSelect,
-    this.catalogRepository,
   });
 
-  final List<Series> seriesList;
+  final CatalogRepository catalogRepository;
   final List<Category> categories;
-  final bool isLoading;
   final bool isConfigured;
   final bool useSidebarLayout;
   final void Function(Series)? onSeriesSelect;
 
-  /// When set, `SeriesScreen` takes the windowed grid path (reading pages
-  /// from this repository) instead of the legacy in-memory grid - mirrors
-  /// production, where `catalogRepositoryProvider` is always overridden via
-  /// `overrideAppState`.
-  final CatalogRepository? catalogRepository;
-
   @override
   Widget build(BuildContext context) {
-    final repo = catalogRepository;
     return ProviderScope(
       overrides: [
         isBootstrappingProvider.overrideWith((_) => false),
         isConfiguredProvider.overrideWith((_) => isConfigured),
-        isLoadingContentProvider.overrideWith((_) => isLoading),
-        seriesListProvider.overrideWith((_) => seriesList),
         seriesCategoriesProvider.overrideWith((_) => categories),
-        if (repo != null) catalogRepositoryProvider.overrideWith((_) => repo),
+        catalogRepositoryProvider.overrideWith((_) => catalogRepository),
       ],
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,

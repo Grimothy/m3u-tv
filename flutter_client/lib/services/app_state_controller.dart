@@ -10,6 +10,8 @@ import 'package:m3u_tv/services/aiostreams_favorites_service.dart';
 import 'package:m3u_tv/services/async_lifecycle.dart';
 import 'package:m3u_tv/services/auth_notifier.dart';
 import 'package:m3u_tv/services/cache_service.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart'
+    show kCatalogKindSeries, kCatalogKindVod;
 import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
 import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/comskip_settings.dart';
@@ -406,8 +408,6 @@ class AppStateController extends ChangeNotifier {
   List<Category> _vodCategories = const <Category>[];
   List<Category> _seriesCategories = const <Category>[];
   List<Channel> _channels = const <Channel>[];
-  List<VodItem> _vodItems = const <VodItem>[];
-  List<Series> _seriesList = const <Series>[];
   List<DvrRecording> _dvrRecordings = const <DvrRecording>[];
   DvrStorageInfo? _dvrStorageInfo;
   Set<int> _recordingChannelIds = const <int>{};
@@ -490,13 +490,12 @@ class AppStateController extends ChangeNotifier {
   List<Category> get vodCategories => _vodCategories;
   List<Category> get seriesCategories => _seriesCategories;
   List<Channel> get channels => _channels;
-  List<VodItem> get vodItems => _vodItems;
 
-  /// SQLite catalog store (always present). Surfaces migrating to windowed
-  /// loading read pages from here instead of [vodItems] / [channels] /
-  /// [seriesList].
+  /// SQLite catalog store (always present). VOD/series content lives here
+  /// exclusively now - [channels] is the only full in-memory catalog list
+  /// left (EPG matching needs the whole set of `Channel` objects, and live
+  /// catalogs run far smaller than VOD/series ones).
   CatalogRepository get catalogRepository => _catalogRepository;
-  List<Series> get seriesList => _seriesList;
   List<DvrRecording> get dvrRecordings => _dvrRecordings;
   DvrStorageInfo? get dvrStorageInfo => _dvrStorageInfo;
   Set<int> get recordingChannelIds => _recordingChannelIds;
@@ -1462,16 +1461,16 @@ class AppStateController extends ChangeNotifier {
 
         final results = await Future.wait<bool>(<Future<bool>>[
           if (targets.contains(_DvrContentRefreshTarget.vod))
-            _refreshContentAfterDvr<List<VodItem>>(
+            _refreshContentAfterDvr<VodItem>(
               fetch: xtreamService.getVodStreams,
-              apply: (next) => _vodItems = next,
+              kind: kCatalogKindVod,
               ownsWork: ownsWork,
               label: 'VOD',
             ),
           if (targets.contains(_DvrContentRefreshTarget.series))
-            _refreshContentAfterDvr<List<Series>>(
+            _refreshContentAfterDvr<Series>(
               fetch: xtreamService.getSeries,
-              apply: (next) => _seriesList = next,
+              kind: kCatalogKindSeries,
               ownsWork: ownsWork,
               label: 'series',
             ),
@@ -1484,20 +1483,29 @@ class AppStateController extends ChangeNotifier {
     }
   }
 
-  Future<bool> _refreshContentAfterDvr<T>({
-    required Future<T> Function() fetch,
-    required void Function(T next) apply,
+  /// Writes straight to the SQLite catalog (unlike the whole-bundle guarded
+  /// replace in `_sourceReplacementQueue`, this is a single-kind partial
+  /// write) so a post-DVR content refresh actually reaches the windowed
+  /// grids. [ownsWork] is re-checked immediately before and after the write
+  /// to keep the stale-ownership window as narrow as possible, though unlike
+  /// the in-memory field this replaced, the write itself is not atomic with
+  /// that check - see the caller's history for why this was a deliberate
+  /// (accepted) trade rather than an oversight.
+  Future<bool> _refreshContentAfterDvr<T extends Object>({
+    required Future<List<T>> Function() fetch,
+    required String kind,
     required bool Function() ownsWork,
     required String label,
   }) async {
     try {
       final next = await fetch();
       if (!ownsWork() || _disposed) return false;
-      apply(next);
-      // No cache write here — dev commits `vodStreams`/`series` only as part
-      // of the whole-bundle guarded replace in `_sourceReplacementQueue`. A
-      // per-key partial write would risk persisting another account's
-      // library if the ownership predicate goes stale mid-fetch.
+      await _catalogRepository.replaceItems(
+        sourceKey: CatalogRepository.activeSource,
+        kind: kind,
+        items: next,
+      );
+      if (!ownsWork() || _disposed) return false;
       return true;
     } on Object catch (error) {
       debugPrint('DVR: refresh $label after post-processing failed: $error');
@@ -1901,8 +1909,6 @@ class AppStateController extends ChangeNotifier {
     _vodCategories = const <Category>[];
     _seriesCategories = const <Category>[];
     _channels = const <Channel>[];
-    _vodItems = const <VodItem>[];
-    _seriesList = const <Series>[];
     _dvrRecordings = const <DvrRecording>[];
     _dvrStorageInfo = null;
     _recordingChannelIds = const <int>{};
@@ -2749,8 +2755,6 @@ class AppStateController extends ChangeNotifier {
           _vodCategories = vodCategories;
           _seriesCategories = seriesCategories;
           _channels = channels;
-          _vodItems = vodItems;
-          _seriesList = seriesList;
           // DVR recordings/rules and media requests land via
           // [_applyDvrAndRequestExtras] after this commit. On a fresh
           // connection drop the previous account's values now; on a
@@ -2935,8 +2939,6 @@ class AppStateController extends ChangeNotifier {
     _vodCategories = vodCategories;
     _seriesCategories = seriesCategories;
     _channels = channels;
-    _vodItems = vodItems;
-    _seriesList = seriesList;
     _dvrRecordings = const <DvrRecording>[];
     _dvrStorageInfo = null;
     _recordingChannelIds = const <int>{};

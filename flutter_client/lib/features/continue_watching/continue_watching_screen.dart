@@ -2,6 +2,7 @@ import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 
 import 'package:m3u_tv/l10n/app_localizations.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/shared/continue_watching_items.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
@@ -14,40 +15,77 @@ import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 /// [MediaPreviewCard]s the row uses - same landscape size, same fallback
 /// art, same tap target - so the row-to-grid transition reads as one
 /// continuous surface rather than a different screen.
-class ContinueWatchingScreen extends StatelessWidget {
+class ContinueWatchingScreen extends StatefulWidget {
   const ContinueWatchingScreen({
     super.key,
     required this.progressList,
-    required this.vodItems,
-    required this.seriesList,
+    required this.catalogRepository,
     required this.onProgressSelect,
     this.onSidebarActivate,
   });
 
   final List<Progress> progressList;
-  final List<VodItem> vodItems;
-  final List<Series> seriesList;
+  final CatalogRepository catalogRepository;
   final void Function(Progress) onProgressSelect;
   final VoidCallback? onSidebarActivate;
+
+  @override
+  State<ContinueWatchingScreen> createState() => _ContinueWatchingScreenState();
+}
+
+class _ContinueWatchingScreenState extends State<ContinueWatchingScreen> {
+  late Future<List<MediaPreviewItem>> _items = _resolve();
+
+  Future<List<MediaPreviewItem>> _resolve() =>
+      continueWatchingPreviewItemsFromRepo(
+        context,
+        progressList: widget.progressList,
+        repo: widget.catalogRepository,
+        onProgressSelect: widget.onProgressSelect,
+      );
+
+  @override
+  void didUpdateWidget(covariant ContinueWatchingScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.progressList, widget.progressList)) {
+      setState(() => _items = _resolve());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final scale = FontSizeScope.scaleOf(context);
-    final items = continueWatchingPreviewItems(
-      context,
-      progressList: progressList,
-      vodItems: vodItems,
-      seriesList: seriesList,
-      onProgressSelect: onProgressSelect,
-    );
 
+    return FutureBuilder<List<MediaPreviewItem>>(
+      future: _items,
+      builder: (context, snapshot) {
+        return _buildScaffold(
+          context,
+          l,
+          theme,
+          scale,
+          items: snapshot.data ?? const <MediaPreviewItem>[],
+          isLoading: snapshot.connectionState != ConnectionState.done,
+        );
+      },
+    );
+  }
+
+  Widget _buildScaffold(
+    BuildContext context,
+    AppLocalizations l,
+    ThemeData theme,
+    double scale, {
+    required List<MediaPreviewItem> items,
+    required bool isLoading,
+  }) {
     return DpadRegion(
       horizontalEdge: DpadEdgeBehavior.stop,
       onEdge: (direction) {
         if (direction == TraversalDirection.left) {
-          onSidebarActivate?.call();
+          widget.onSidebarActivate?.call();
         }
       },
       child: Scaffold(
@@ -76,7 +114,9 @@ class ContinueWatchingScreen extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: items.isEmpty
+              child: isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : items.isEmpty
                   ? Center(
                       child: Text(
                         l.homeNoContinueWatching,
