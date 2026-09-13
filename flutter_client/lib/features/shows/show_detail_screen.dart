@@ -36,6 +36,7 @@ class ShowDetailScreen extends ConsumerStatefulWidget {
     this.onDeleteSeriesRule,
     this.onScheduleEpisode,
     this.onScheduleEpisodes,
+    this.onHandleTopLevelBack,
   });
 
   final EpgShow show;
@@ -78,6 +79,13 @@ class ShowDetailScreen extends ConsumerStatefulWidget {
     List<EpgShowEpisode>,
   )?
   onScheduleEpisodes;
+
+  /// Wired from AppShell (via `ContentActions.onHandleTopLevelBack`) so the
+  /// Record Series configure sheet's Escape/GoBack - pushed onto the root
+  /// Navigator by [openDvrSeriesRuleOptions] - routes through AppShell's
+  /// back-echo dedup instead of popping independently. See that field's doc
+  /// comment for why.
+  final bool Function()? onHandleTopLevelBack;
 
   @override
   ConsumerState<ShowDetailScreen> createState() => _ShowDetailScreenState();
@@ -301,7 +309,11 @@ class _ShowDetailScreenState extends ConsumerState<ShowDetailScreen> {
   }
 
   Future<void> _openOptionsScreen() async {
-    final options = await openDvrSeriesRuleOptions(context, show: widget.show);
+    final options = await openDvrSeriesRuleOptions(
+      context,
+      show: widget.show,
+      onBack: widget.onHandleTopLevelBack,
+    );
     if (options == null || !mounted) return;
     // channelId is null for "any channel" — pass through so the key is
     // omitted on the request (matches the sheet's "any channel" selection).

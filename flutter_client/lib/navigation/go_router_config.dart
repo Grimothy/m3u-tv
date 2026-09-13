@@ -1,6 +1,10 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:go_router/go_router.dart';
-import 'package:m3u_tv/app/app_shell.dart' show AppShell, DeviceType;
+import 'package:m3u_tv/app/app_shell.dart'
+    show AppShell, AppShellState, DeviceType;
 import 'package:m3u_tv/app/device_type_resolver.dart';
 import 'package:m3u_tv/app/system_ui_policy.dart';
 import 'package:m3u_tv/features/aiostreams/aiostreams_detail_screen.dart';
@@ -42,6 +46,73 @@ CustomTransitionPage<void> _slidePage(Widget screen) =>
       ),
     );
 
+/// Hardware Back/Escape for the top-level VOD/Series detail routes.
+///
+/// AppShell wires its own Escape/GoBack -> pop handling via `Shortcuts` +
+/// `Actions` around its own subtree (see `_BackIntent`/`_handleShortcutBack`
+/// in app_shell.dart) - Flutter resolves a `Shortcuts` key press against the
+/// *nearest* enclosing `Actions` for that intent, found by walking up from
+/// the focused widget. A top-level route (a sibling of AppShell in the root
+/// Navigator, not a descendant) is outside that ancestor chain entirely, so
+/// pressing Escape here would silently do nothing without this - a duplicate
+/// `Shortcuts`/`Actions` pair, scoped to just these routes.
+///
+/// This delegates to `AppShellState.handleBackFromTopLevelRoute` rather than
+/// popping directly: a single Android TV hardware Back is delivered on two
+/// paths (this key event, and a platform `popRoute` message AppShell's
+/// `WidgetsBindingObserver` always receives regardless of focus), and
+/// AppShell dedupes the pair by tracking which path handled the last one. An
+/// independent pop here would never update that shared state, so the
+/// platform message's echo goes undetected and falls through to activating
+/// the sidebar as a spurious second back press - exactly the bug this caused
+/// before routing through AppShell's own handler instead.
+class _TopLevelPopIntent extends Intent {
+  const _TopLevelPopIntent();
+}
+
+Widget _withTopLevelBackHandling(
+  GlobalKey<AppShellState> appShellKey,
+  Widget child,
+) {
+  return Shortcuts(
+    shortcuts: <LogicalKeySet, Intent>{
+      LogicalKeySet(LogicalKeyboardKey.escape): const _TopLevelPopIntent(),
+      LogicalKeySet(LogicalKeyboardKey.goBack): const _TopLevelPopIntent(),
+    },
+    child: Actions(
+      actions: <Type, Action<Intent>>{
+        _TopLevelPopIntent: CallbackAction<_TopLevelPopIntent>(
+          onInvoke: (_) {
+            appShellKey.currentState?.handleBackFromTopLevelRoute();
+            return null;
+          },
+        ),
+      },
+      child: child,
+    ),
+  );
+}
+
+/// Wraps `actions.onOpenPlayer` for the top-level VOD/Series detail routes:
+/// the player itself is not a route at all - it is state internal to
+/// AppShell (`_playerArgs`/`_playerOrchestrator`), rendered as a `Positioned
+/// .fill` inside AppShell's own build - so activating it while this detail
+/// route is still on top of the root Navigator would set the state correctly
+/// but render it *behind* this still-pushed page, invisible. Popping this
+/// route first (or, in practice, in the same frame - `onOpenPlayer` reaches
+/// its `setState` synchronously whenever there is no resume-progress dialog
+/// in the way) puts AppShell back on top so its player overlay is actually
+/// seen.
+void Function(PlayerArgs) _playOnTopLevelRoute(
+  BuildContext context,
+  AppShellActions actions,
+) {
+  return (args) {
+    actions.onOpenPlayer(args);
+    if (context.mounted && context.canPop()) context.pop();
+  };
+}
+
 /// Opens a Related-row tap's own detail screen, reusing the same
 /// `onVodSelect`/`onSeriesSelect` callbacks every other VOD/series entry
 /// point (grids, Continue Watching) already navigates through - a related
@@ -50,7 +121,7 @@ CustomTransitionPage<void> _slidePage(Widget screen) =>
 /// the SQLite catalog (fire-and-forget from the tap) rather than an
 /// in-memory list, so this is the one entry point in the app with a brief
 /// (sub-frame, same-process) gap between tap and navigation.
-Future<void> _openRelated(ContentActions actions, RelatedItem related) async {
+Future<void> _openRelated(AppShellActions actions, RelatedItem related) async {
   final targetId = int.tryParse(related.id);
   if (targetId == null) {
     debugPrint('_openRelated: unparseable id "${related.id}"');
@@ -80,94 +151,108 @@ Future<void> _openRelated(ContentActions actions, RelatedItem related) async {
 /// deep link, push notification, or restored route). Every in-app tap already
 /// carries the object via `extra` and never hits this path.
 class _AsyncVodDetails extends StatelessWidget {
-  const _AsyncVodDetails({required this.vodId, required this.actions});
+  const _AsyncVodDetails({
+    required this.vodId,
+    required this.actions,
+    required this.appShellKey,
+  });
 
   final int vodId;
-  final ContentActions actions;
+  final AppShellActions actions;
+  final GlobalKey<AppShellState> appShellKey;
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<VodItem?>(
-      future: actions.appState.catalogRepository.activeItemById<VodItem>(
-        kind: kCatalogKindVod,
-        id: vodId,
-      ),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-        final item = snapshot.data;
-        if (item == null) {
-          return Scaffold(
-            body: SafeArea(
-              bottom: false,
-              child: Center(child: Text('VOD #$vodId not found')),
+    return _withTopLevelBackHandling(
+      appShellKey,
+      FutureBuilder<VodItem?>(
+        future: actions.appState.catalogRepository.activeItemById<VodItem>(
+          kind: kCatalogKindVod,
+          id: vodId,
+        ),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          final item = snapshot.data;
+          if (item == null) {
+            return Scaffold(
+              body: SafeArea(
+                bottom: false,
+                child: Center(child: Text('VOD #$vodId not found')),
+              ),
+            );
+          }
+          return ListenableBuilder(
+            listenable: actions.appState,
+            builder: (ctx, _) => VodDetailsScreen(
+              item: item,
+              xtreamService: actions.xtreamService,
+              onPlay: _playOnTopLevelRoute(context, actions),
+              progressList: actions.progressList,
+              onOpenRelated: (related) => _openRelated(actions, related),
             ),
           );
-        }
-        return ListenableBuilder(
-          listenable: actions.appState,
-          builder: (ctx, _) => VodDetailsScreen(
-            item: item,
-            xtreamService: actions.xtreamService,
-            onPlay: actions.onOpenPlayer,
-            progressList: actions.progressList,
-            onSidebarActivate: actions.onSidebarActivate,
-            onOpenRelated: (related) => _openRelated(actions, related),
-          ),
-        );
-      },
+        },
+      ),
     );
   }
 }
 
 /// Series counterpart to [_AsyncVodDetails].
 class _AsyncSeriesDetails extends StatelessWidget {
-  const _AsyncSeriesDetails({required this.seriesId, required this.actions});
+  const _AsyncSeriesDetails({
+    required this.seriesId,
+    required this.actions,
+    required this.appShellKey,
+  });
 
   final int seriesId;
-  final ContentActions actions;
+  final AppShellActions actions;
+  final GlobalKey<AppShellState> appShellKey;
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Series?>(
-      future: actions.appState.catalogRepository.activeItemById<Series>(
-        kind: kCatalogKindSeries,
-        id: seriesId,
-      ),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-        final series = snapshot.data;
-        if (series == null) {
-          return Scaffold(
-            body: SafeArea(
-              bottom: false,
-              child: Center(child: Text('Series #$seriesId not found')),
+    return _withTopLevelBackHandling(
+      appShellKey,
+      FutureBuilder<Series?>(
+        future: actions.appState.catalogRepository.activeItemById<Series>(
+          kind: kCatalogKindSeries,
+          id: seriesId,
+        ),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          final series = snapshot.data;
+          if (series == null) {
+            return Scaffold(
+              body: SafeArea(
+                bottom: false,
+                child: Center(child: Text('Series #$seriesId not found')),
+              ),
+            );
+          }
+          return ListenableBuilder(
+            listenable: actions.appState,
+            builder: (ctx, _) => SeriesDetailsScreen(
+              seriesId: series.id,
+              seriesName: series.name,
+              coverUrl: series.coverUrl,
+              xtreamService: actions.xtreamService,
+              viewerId: actions.appState.activeViewer?.ulid,
+              onPlay: _playOnTopLevelRoute(context, actions),
+              progressList: actions.progressList,
+              onMarkEpisodeWatched: actions.onMarkEpisodeWatched,
+              onOpenRelated: (related) => _openRelated(actions, related),
             ),
           );
-        }
-        return ListenableBuilder(
-          listenable: actions.appState,
-          builder: (ctx, _) => SeriesDetailsScreen(
-            seriesId: series.id,
-            seriesName: series.name,
-            coverUrl: series.coverUrl,
-            xtreamService: actions.xtreamService,
-            viewerId: actions.appState.activeViewer?.ulid,
-            onPlay: actions.onOpenPlayer,
-            progressList: actions.progressList,
-            onMarkEpisodeWatched: actions.onMarkEpisodeWatched,
-            onSidebarActivate: actions.onSidebarActivate,
-            onOpenRelated: (related) => _openRelated(actions, related),
-          ),
-        );
-      },
+        },
+      ),
     );
   }
 }
@@ -181,6 +266,13 @@ GoRouter createGoRouter({
   DeviceType? deviceTypeOverride,
   String initialLocation = RouteNames.home,
 }) {
+  // Lets the top-level VOD/Series detail routes below reach AppShell's
+  // navigation callbacks (onOpenPlayer, onVodSelect, ...) without an
+  // InheritedWidget ancestor relationship - see AppShellActions' doc comment
+  // in content_actions.dart for why those routes are top-level (root
+  // Navigator) rather than nested under the shell in the first place.
+  final appShellKey = GlobalKey<AppShellState>();
+
   return GoRouter(
     initialLocation: initialLocation,
     routes: [
@@ -193,6 +285,7 @@ GoRouter createGoRouter({
                 nativeTelevisionHint: nativeTelevisionHint,
               );
           return AppShell(
+            key: appShellKey,
             navigationShell: navigationShell,
             deviceType: deviceType,
             appState: appState,
@@ -255,7 +348,7 @@ GoRouter createGoRouter({
               ),
             ],
           ),
-          // Branch 3: VOD with nested details
+          // Branch 3: VOD (details/:vodId is a top-level route - see below)
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -263,41 +356,10 @@ GoRouter createGoRouter({
                 pageBuilder: (context, state) => NoTransitionPage(
                   child: _withGradient(_tabScreen(context, RouteNames.vod)),
                 ),
-                routes: [
-                  GoRoute(
-                    path: 'details/:vodId',
-                    pageBuilder: (context, state) {
-                      final vodId = int.parse(state.pathParameters['vodId']!);
-                      final actions = ContentActions.of(context);
-                      final item = state.extra as VodItem?;
-                      if (item != null) {
-                        return _slidePage(
-                          ListenableBuilder(
-                            listenable: actions.appState,
-                            builder: (ctx, _) => VodDetailsScreen(
-                              item: item,
-                              xtreamService: actions.xtreamService,
-                              onPlay: actions.onOpenPlayer,
-                              progressList: actions.progressList,
-                              onSidebarActivate: actions.onSidebarActivate,
-                              onOpenRelated: (related) =>
-                                  _openRelated(actions, related),
-                            ),
-                          ),
-                        );
-                      }
-                      // No object in hand (deep link / push notification /
-                      // restored route) - resolve it from the catalog.
-                      return _slidePage(
-                        _AsyncVodDetails(vodId: vodId, actions: actions),
-                      );
-                    },
-                  ),
-                ],
               ),
             ],
           ),
-          // Branch 4: Series with nested details
+          // Branch 4: Series (details/:seriesId is a top-level route - see below)
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -305,47 +367,6 @@ GoRouter createGoRouter({
                 pageBuilder: (context, state) => NoTransitionPage(
                   child: _withGradient(_tabScreen(context, RouteNames.series)),
                 ),
-                routes: [
-                  GoRoute(
-                    path: 'details/:seriesId',
-                    pageBuilder: (context, state) {
-                      final seriesId = int.parse(
-                        state.pathParameters['seriesId']!,
-                      );
-                      final actions = ContentActions.of(context);
-                      final series = state.extra as Series?;
-                      if (series != null) {
-                        return _slidePage(
-                          ListenableBuilder(
-                            listenable: actions.appState,
-                            builder: (ctx, _) => SeriesDetailsScreen(
-                              seriesId: series.id,
-                              seriesName: series.name,
-                              coverUrl: series.coverUrl,
-                              xtreamService: actions.xtreamService,
-                              viewerId: actions.appState.activeViewer?.ulid,
-                              onPlay: actions.onOpenPlayer,
-                              progressList: actions.progressList,
-                              onMarkEpisodeWatched:
-                                  actions.onMarkEpisodeWatched,
-                              onSidebarActivate: actions.onSidebarActivate,
-                              onOpenRelated: (related) =>
-                                  _openRelated(actions, related),
-                            ),
-                          ),
-                        );
-                      }
-                      // No object in hand (deep link / push notification /
-                      // restored route) - resolve it from the catalog.
-                      return _slidePage(
-                        _AsyncSeriesDetails(
-                          seriesId: seriesId,
-                          actions: actions,
-                        ),
-                      );
-                    },
-                  ),
-                ],
               ),
             ],
           ),
@@ -371,63 +392,18 @@ GoRouter createGoRouter({
                           favoritesService:
                               actions.appState.aioFavoritesService,
                           onItemSelect: (item, integrationId) {
-                            context.go(
-                              RouteNames.aiostreamsDetailsFor(
-                                integrationId,
-                                item.type,
-                                item.id,
+                            unawaited(
+                              context.push(
+                                RouteNames.aiostreamsDetailsFor(
+                                  integrationId,
+                                  item.type,
+                                  item.id,
+                                ),
+                                extra: item,
                               ),
-                              extra: item,
                             );
                           },
                           onSidebarActivate: actions.onSidebarActivate,
-                        ),
-                      );
-                    },
-                  ),
-                  GoRoute(
-                    path: 'details/:integrationId/:type/:id',
-                    pageBuilder: (context, state) {
-                      final integrationId = int.parse(
-                        state.pathParameters['integrationId']!,
-                      );
-                      final type = state.pathParameters['type']!;
-                      final id = state.pathParameters['id']!;
-                      final actions = ContentActions.of(context);
-                      final item =
-                          state.extra as AIOStreamsItem? ??
-                          AIOStreamsItem(id: id, type: type, name: id);
-                      return _slidePage(
-                        AIOStreamsDetailScreen(
-                          item: item,
-                          integrationId: integrationId,
-                          apiService: actions.appState.aiostreamsApiService,
-                          appStateController: actions.appState,
-                          onPlay: actions.onOpenPlayer,
-                          onSidebarActivate: actions.onSidebarActivate,
-                          // push (not go) - a related item lands on the same
-                          // route pattern this screen is already on, and go()
-                          // to a same-pattern location updates this State in
-                          // place rather than creating a fresh one, so the
-                          // (late final) meta fetch never re-runs and the
-                          // pushed-detail sidebar-depth tracking every other
-                          // detail screen relies on never fires. push() gives
-                          // it a real, freshly-initialized instance and a
-                          // normal one-level pop on back, matching how
-                          // VOD/Series related items navigate.
-                          onOpenRelated: (related) => context.push(
-                            RouteNames.aiostreamsDetailsFor(
-                              integrationId,
-                              related.type,
-                              related.id,
-                            ),
-                            extra: AIOStreamsItem(
-                              id: related.id,
-                              type: related.type,
-                              name: related.title,
-                              poster: related.posterUrl,
-                            ),
-                          ),
                         ),
                       );
                     },
@@ -478,6 +454,7 @@ GoRouter createGoRouter({
                           onDeleteSeriesRule: actions.onDeleteSeriesRule,
                           onScheduleEpisode: actions.onScheduleEpisode,
                           onScheduleEpisodes: actions.onScheduleEpisodes,
+                          onHandleTopLevelBack: actions.onHandleTopLevelBack,
                         ),
                       );
                     },
@@ -561,7 +538,167 @@ GoRouter createGoRouter({
           ),
         ],
       ),
+      // Top-level (siblings of the shell, not nested under it) so pushing
+      // either one covers the entire screen - sidebar included - by
+      // painting into the root Navigator above AppShell itself, rather than
+      // the branch Navigator AppShell insets by the sidebar's width. AppShell
+      // never has to change its own layout for these two pushes/pops, which
+      // is what avoids relayouting (and visually re-rendering) the
+      // still-mounted screen underneath. `appShellKey` reaches AppShell's
+      // navigation callbacks in place of `ContentActions.of(context)`, which
+      // can only find an ancestor - AppShell is a sibling from here.
+      GoRoute(
+        path: RouteNames.vodDetailsPath,
+        pageBuilder: (context, state) {
+          final vodId = int.parse(state.pathParameters['vodId']!);
+          final actions = _topLevelActions(appShellKey, appState);
+          final item = state.extra as VodItem?;
+          if (item != null) {
+            return _slidePage(
+              _withTopLevelBackHandling(
+                appShellKey,
+                ListenableBuilder(
+                  listenable: actions.appState,
+                  builder: (ctx, _) => VodDetailsScreen(
+                    item: item,
+                    xtreamService: actions.xtreamService,
+                    onPlay: _playOnTopLevelRoute(context, actions),
+                    progressList: actions.progressList,
+                    onOpenRelated: (related) =>
+                        _openRelated(actions, related),
+                  ),
+                ),
+              ),
+            );
+          }
+          // No object in hand (deep link / push notification / restored
+          // route) - resolve it from the catalog.
+          return _slidePage(
+            _AsyncVodDetails(
+              vodId: vodId,
+              actions: actions,
+              appShellKey: appShellKey,
+            ),
+          );
+        },
+      ),
+      // Top-level for the same reason as VOD/Series above - covers the
+      // sidebar by painting into the root Navigator instead of resizing
+      // AppShell for it. AIOStreamsDetailScreen fetches its own metadata
+      // from `apiService` given integrationId/type/id, so (unlike VOD/Series)
+      // there's no async catalog lookup needed when `extra` is absent - the
+      // minimal fallback item built from path params is enough to kick off
+      // that fetch, matching what the old nested route already did.
+      GoRoute(
+        path: RouteNames.aiostreamsDetailsPath,
+        pageBuilder: (context, state) {
+          final integrationId = int.parse(
+            state.pathParameters['integrationId']!,
+          );
+          final type = state.pathParameters['type']!;
+          final id = state.pathParameters['id']!;
+          final actions = _topLevelActions(appShellKey, appState);
+          final item =
+              state.extra as AIOStreamsItem? ??
+              AIOStreamsItem(id: id, type: type, name: id);
+          return _slidePage(
+            _withTopLevelBackHandling(
+              appShellKey,
+              AIOStreamsDetailScreen(
+                item: item,
+                integrationId: integrationId,
+                apiService: actions.appState.aiostreamsApiService,
+                appStateController: actions.appState,
+                onPlay: _playOnTopLevelRoute(context, actions),
+                // push (not go) - a related item lands on the same route
+                // pattern this screen is already on, and go() to a
+                // same-pattern location updates this State in place rather
+                // than creating a fresh one, so the (late final) meta fetch
+                // never re-runs. push() gives it a real, freshly-initialized
+                // instance and a normal one-level pop on back, matching how
+                // VOD/Series related items navigate.
+                onOpenRelated: (related) => context.push(
+                  RouteNames.aiostreamsDetailsFor(
+                    integrationId,
+                    related.type,
+                    related.id,
+                  ),
+                  extra: AIOStreamsItem(
+                    id: related.id,
+                    type: related.type,
+                    name: related.title,
+                    poster: related.posterUrl,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+      GoRoute(
+        path: RouteNames.seriesDetailsPath,
+        pageBuilder: (context, state) {
+          final seriesId = int.parse(state.pathParameters['seriesId']!);
+          final actions = _topLevelActions(appShellKey, appState);
+          final series = state.extra as Series?;
+          if (series != null) {
+            return _slidePage(
+              _withTopLevelBackHandling(
+                appShellKey,
+                ListenableBuilder(
+                  listenable: actions.appState,
+                  builder: (ctx, _) => SeriesDetailsScreen(
+                    seriesId: series.id,
+                    seriesName: series.name,
+                    coverUrl: series.coverUrl,
+                    xtreamService: actions.xtreamService,
+                    viewerId: actions.appState.activeViewer?.ulid,
+                    onPlay: _playOnTopLevelRoute(context, actions),
+                    progressList: actions.progressList,
+                    onMarkEpisodeWatched: actions.onMarkEpisodeWatched,
+                    onOpenRelated: (related) =>
+                        _openRelated(actions, related),
+                  ),
+                ),
+              ),
+            );
+          }
+          // No object in hand (deep link / push notification / restored
+          // route) - resolve it from the catalog.
+          return _slidePage(
+            _AsyncSeriesDetails(
+              seriesId: seriesId,
+              actions: actions,
+              appShellKey: appShellKey,
+            ),
+          );
+        },
+      ),
     ],
+  );
+}
+
+/// [AppShellState.actionsForTopLevelRoutes], with a fallback for the
+/// vanishingly unlikely case a top-level detail route somehow builds before
+/// AppShell has ever mounted (AppShell is the app's permanent root UI once
+/// running, so in practice `key.currentState` is always set by the time a
+/// route push could reach here). The fallback drops player/select behavior
+/// rather than crashing - the screen still renders with real catalog data.
+AppShellActions _topLevelActions(
+  GlobalKey<AppShellState> key,
+  AppStateController appState,
+) {
+  final state = key.currentState;
+  if (state != null) return state.actionsForTopLevelRoutes;
+  debugPrint(
+    '_topLevelActions: AppShell not mounted yet - navigation actions '
+    'from this screen will be no-ops',
+  );
+  return AppShellActions(
+    appState: appState,
+    onOpenPlayer: (_) {},
+    onVodSelect: (_) {},
+    onSeriesSelect: (_) {},
   );
 }
 

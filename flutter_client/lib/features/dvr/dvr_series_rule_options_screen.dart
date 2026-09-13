@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 
 import 'package:dpad/dpad.dart';
@@ -29,14 +30,21 @@ const String _anyChannelTabId = '__any__';
 /// [DvrSeriesRuleOptions] on Save, or null if the user backs out without
 /// saving.
 ///
-/// Pushed on the *nearest* navigator — the current tab/detail branch's
-/// nested one, not the true app root — so the new page stays inside
-/// AppShell's `_buildTvLayout` Stack (the app background gradient, the
-/// macOS titlebar inset, and the tvOS overscan-padding removal are all
-/// applied once around that branch content, not per-screen). Using
-/// `rootNavigator: true` here previously escaped that Stack entirely,
-/// which is why the page had no background, sat under the macOS traffic
-/// lights, and had a stray top gap on tvOS.
+/// Pushed on the root navigator so the page covers the sidebar by painting
+/// above AppShell entirely, instead of AppShell resizing its own layout
+/// (hiding the sidebar, insetting the content pane) to make room for it —
+/// the same "top-level route" treatment applied to VOD/Series/AIOStreams
+/// detail (see go_router_config.dart's top-level routes and
+/// `project_vod_series_toplevel_routes` memory for why). `rootNavigator:
+/// true` was tried once before this existed and reverted — back then the
+/// page had no background (a raw `MaterialPageRoute`'s transparent Scaffold
+/// relies on AppShell's gradient showing through, which a root push
+/// escapes), sat under the macOS traffic lights, and had a stray top gap on
+/// tvOS. The opaque [ColoredBox] background below fixes the first ("no
+/// background") issue; the macOS-titlebar and tvOS-overscan gaps are left
+/// unaddressed here deliberately, matching the same call already made for
+/// the VOD/Series/AIOStreams top-level routes, none of which handle them
+/// either.
 ///
 /// The [show] parameter carries `channels`, `channelCount`, `nextAiringAt`,
 /// and `recentEpisodes` — used to populate the channel picker and compute
@@ -51,8 +59,9 @@ Future<DvrSeriesRuleOptions?> openDvrSeriesRuleOptions(
   BuildContext context, {
   required EpgShow show,
   DvrSeriesRule? initialRule,
+  bool Function()? onBack,
 }) {
-  return Navigator.of(context).push<DvrSeriesRuleOptions>(
+  return Navigator.of(context, rootNavigator: true).push<DvrSeriesRuleOptions>(
     PageRouteBuilder<DvrSeriesRuleOptions>(
       // Mirrors go_router_config.dart's `_slidePage`: an opaque backing
       // color (the shared TV-layout gradient's dominant end tone) plus a
@@ -65,7 +74,10 @@ Future<DvrSeriesRuleOptions?> openDvrSeriesRuleOptions(
         fit: StackFit.expand,
         children: [
           const ColoredBox(color: Color(0xFF09090b)),
-          DvrSeriesRuleOptionsScreen(show: show, initialRule: initialRule),
+          _withTopLevelBackHandling(
+            onBack,
+            DvrSeriesRuleOptionsScreen(show: show, initialRule: initialRule),
+          ),
         ],
       ),
       transitionsBuilder: (context, animation, _, child) => SlideTransition(
@@ -73,6 +85,52 @@ Future<DvrSeriesRuleOptions?> openDvrSeriesRuleOptions(
           begin: const Offset(1, 0),
           end: Offset.zero,
         ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+        child: child,
+      ),
+    ),
+  );
+}
+
+/// Escape/GoBack for this screen, pushed onto the root Navigator (see
+/// [openDvrSeriesRuleOptions]'s doc comment) and therefore outside
+/// AppShell's own `Shortcuts`/`Actions` back handling - the same gap the
+/// top-level VOD/Series/AIOStreams detail routes have (see
+/// `go_router_config.dart`'s `_withTopLevelBackHandling`, which this
+/// mirrors). Delegates to `onBack` (`AppShellState.handleBackFromTopLevelRoute`,
+/// threaded down via `ContentActions.onHandleTopLevelBack`) rather than
+/// popping independently: Android TV delivers one hardware Back as two
+/// separate events (a key event and a platform `popRoute` message), and
+/// AppShell dedupes the pair by tracking which path handled the last one -
+/// an independent pop here would never update that shared state, so the
+/// platform message's echo would go undetected and fall through to
+/// activating the sidebar as a spurious second back press. Falls back to a
+/// plain root pop when `onBack` is absent (previews/tests).
+class _RuleOptionsPopIntent extends Intent {
+  const _RuleOptionsPopIntent();
+}
+
+Widget _withTopLevelBackHandling(bool Function()? onBack, Widget child) {
+  return Shortcuts(
+    shortcuts: <LogicalKeySet, Intent>{
+      LogicalKeySet(LogicalKeyboardKey.escape): const _RuleOptionsPopIntent(),
+      LogicalKeySet(LogicalKeyboardKey.goBack): const _RuleOptionsPopIntent(),
+    },
+    child: Builder(
+      builder: (context) => Actions(
+        actions: <Type, Action<Intent>>{
+          _RuleOptionsPopIntent: CallbackAction<_RuleOptionsPopIntent>(
+            onInvoke: (_) {
+              if (onBack != null) {
+                onBack();
+              } else {
+                unawaited(
+                  Navigator.of(context, rootNavigator: true).maybePop(),
+                );
+              }
+              return null;
+            },
+          ),
+        },
         child: child,
       ),
     ),

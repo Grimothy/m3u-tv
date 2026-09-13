@@ -24,6 +24,7 @@ class ContentActions extends InheritedWidget {
     this.onScheduleEpisode,
     this.onScheduleEpisodes,
     this.onMarkEpisodeWatched,
+    required this.onHandleTopLevelBack,
     required this.buildTabScreen,
     required super.child,
   });
@@ -108,6 +109,20 @@ class ContentActions extends InheritedWidget {
   })?
   onMarkEpisodeWatched;
 
+  /// Delegates to `AppShellState.handleBackFromTopLevelRoute` (see that
+  /// method's doc comment for the Android-TV double-delivery/dedup
+  /// rationale). Passed through to any nested screen that itself pushes a
+  /// route onto the *root* Navigator - escaping AppShell's own
+  /// `Shortcuts`/`Actions` back handling the same way the top-level VOD/
+  /// Series/AIOStreams detail routes do (see `go_router_config.dart`'s
+  /// `_withTopLevelBackHandling`) - so Escape/GoBack on that pushed route
+  /// stays routed through AppShell's own back-echo dedup instead of popping
+  /// independently. Currently only the DVR series-rule Options sheet needs
+  /// this (`openDvrSeriesRuleOptions`, opened via a plain
+  /// `Navigator.of(context, rootNavigator: true).push`, not a go_router
+  /// route).
+  final bool Function() onHandleTopLevelBack;
+
   /// Builds the full tab screen for the given routeName.
   /// Provided by AppShell so go_router branch builders don't need to import
   /// every feature screen directly.
@@ -133,4 +148,47 @@ class ContentActions extends InheritedWidget {
       // false (equal), but if any were closures they'd always return true and
       // flood every feature screen with unnecessary rebuilds on each tab switch.
       appState != oldWidget.appState;
+}
+
+/// The subset of [ContentActions] needed by routes that live outside
+/// AppShell's own widget subtree - go_router_config.dart's top-level VOD/
+/// Series detail routes push into the root Navigator (so their fullscreen
+/// page can cover the sidebar without AppShell resizing its own layout for
+/// it), which puts them out of reach of [ContentActions.of]'s InheritedWidget
+/// lookup (that only finds ancestors, and AppShell is a sibling from there,
+/// not an ancestor). `AppShellState` exposes one of these via a `GlobalKey`
+/// instead (see `app_shell.dart`'s `actionsForTopLevelRoutes`), reaching the
+/// same underlying callbacks without needing an ancestor relationship.
+///
+/// Deliberately a plain data holder, not an [InheritedWidget] like
+/// [ContentActions] - there is no shared ancestor to hang one on here, so
+/// nothing about the wider tree needs to depend on it, and the caller (the
+/// GlobalKey holder) is exactly the place a fresh instance is available.
+class AppShellActions {
+  const AppShellActions({
+    required this.appState,
+    required this.onOpenPlayer,
+    required this.onVodSelect,
+    required this.onSeriesSelect,
+    this.onMarkEpisodeWatched,
+  });
+
+  final AppStateController appState;
+  final void Function(PlayerArgs) onOpenPlayer;
+  final void Function(VodItem) onVodSelect;
+  final void Function(Series) onSeriesSelect;
+  final Future<bool> Function({
+    required int streamId,
+    required int seriesId,
+    required int seasonNumber,
+    required int episodeNumber,
+    int? durationSeconds,
+    String? seriesName,
+    String? episodeTitle,
+    required bool watched,
+  })?
+  onMarkEpisodeWatched;
+
+  XtreamService get xtreamService => appState.xtreamService;
+  List<Progress> get progressList => appState.progressList;
 }

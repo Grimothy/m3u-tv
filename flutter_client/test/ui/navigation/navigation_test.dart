@@ -2131,6 +2131,12 @@ void main() {
         expect(find.text('Play movie'), findsOneWidget);
 
         await backgroundAndResume(tester, away: const Duration(seconds: 30));
+        // The reset now also pops a top-level detail route (VOD/Series are
+        // no longer nested under the shell - see go_router_config.dart), and
+        // that pop plays _slidePage's own exit transition; _pumpAppFrame's
+        // fixed 250ms budget was tuned for the old goBranch-only reset (an
+        // instant IndexedStack swap, no page transition involved).
+        await tester.pumpAndSettle();
 
         // Back on the Live TV start page; the Movies detail is no longer shown.
         expect(find.text('Play movie'), findsNothing);

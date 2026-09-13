@@ -540,14 +540,22 @@ class AppShellState extends ConsumerState<AppShell>
 
     if (_playerArgs != null) unawaited(_closePlayer());
 
-    // Defer the navigation out of the lifecycle callback: goBranch drives a
+    // Defer the navigation out of the lifecycle callback: this drives a
     // router rebuild, which is not safe to trigger synchronously from
-    // didChangeAppLifecycleState. initialLocation:true resets the target
-    // branch to its root screen, dropping any nested detail route the user
-    // had open on it.
+    // didChangeAppLifecycleState. go(startRoute) - rather than
+    // navigationShell.goBranch(initialLocation: true) - fully recomputes the
+    // match list from the target location, which is what actually clears a
+    // top-level detail route (VOD/Series - see go_router_config.dart): those
+    // are siblings of the shell in the root Navigator, not nested inside any
+    // branch, so goBranch alone never touches them and a movie/show left
+    // open would keep covering the reset underneath it.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      widget.navigationShell.goBranch(branchIndex, initialLocation: true);
+      final router = GoRouter.of(context);
+      while (router.canPop()) {
+        router.pop();
+      }
+      router.go(startRoute);
       if (_sidebarActive) setState(() => _sidebarActive = false);
       _contentFocusNode.requestFocus();
     });
@@ -1205,14 +1213,42 @@ class AppShellState extends ConsumerState<AppShell>
     }
   }
 
+  /// Exposed via a `GlobalKey<AppShellState>` (see go_router_config.dart) to
+  /// the top-level VOD/Series detail routes, which push into the root
+  /// Navigator rather than the branch Navigator `ContentActions` is scoped
+  /// to - the whole point of those routes being top-level is that they cover
+  /// the sidebar by painting above AppShell entirely, so AppShell is a
+  /// sibling from there, not an ancestor, and InheritedWidget lookup can't
+  /// reach it. A fresh instance each call, mirroring [ContentActions]'s own
+  /// `updateShouldNotify` contract even though nothing here rebuilds off it.
+  AppShellActions get actionsForTopLevelRoutes => AppShellActions(
+    appState: _appState,
+    onOpenPlayer: _openPlayerFromActions,
+    onVodSelect: _openVod,
+    onSeriesSelect: _openSeries,
+    onMarkEpisodeWatched: _markEpisodeWatched,
+  );
+
+  /// Same `GlobalKey` reach-through as [actionsForTopLevelRoutes], for
+  /// Escape/GoBack presses on a top-level route. A single Android TV hardware
+  /// Back is delivered on two separate paths - a key event, handled via
+  /// `Shortcuts`/`Actions` wherever focus is, and the platform `popRoute`
+  /// message, always delivered here via [WidgetsBindingObserver] regardless
+  /// of focus - and [_isBackEcho] dedupes the pair by tracking which path
+  /// handled the *last* one. A top-level route doing its own independent pop
+  /// on the key-event path (rather than calling through this) would never
+  /// update that shared state, so the platform message's echo goes
+  /// undetected and falls through to activating the sidebar as a second,
+  /// spurious back press.
+  bool handleBackFromTopLevelRoute() => _handleShortcutBack();
+
   void _openVod(VodItem item) {
-    unawaited(
-      _pushDetail(
-        RouteNames.vodDetailsFor(item.id),
-        extra: item,
-        fullScreen: true,
-      ),
-    );
+    // No `fullScreen: true` - the VOD details route is top-level (see
+    // go_router_config.dart), so it already covers the whole screen by
+    // painting above AppShell in the root Navigator. Flipping the
+    // sidebar-hide flag here would relayout AppShell for nothing visible,
+    // since this push already covers it entirely.
+    unawaited(_pushDetail(RouteNames.vodDetailsFor(item.id), extra: item));
   }
 
   void _openRequestResult(ContentRequestSearchResult result) {
@@ -1229,11 +1265,18 @@ class AppShellState extends ConsumerState<AppShell>
   }
 
   void _openSeries(Series series) {
+    // See _openVod - the series details route is top-level too.
+    unawaited(
+      _pushDetail(RouteNames.seriesDetailsFor(series.id), extra: series),
+    );
+  }
+
+  void _openAioStreamsItem(AIOStreamsItem item, int integrationId) {
+    // See _openVod - the AIOStreams details route is top-level too.
     unawaited(
       _pushDetail(
-        RouteNames.seriesDetailsFor(series.id),
-        extra: series,
-        fullScreen: true,
+        RouteNames.aiostreamsDetailsFor(integrationId, item.type, item.id),
+        extra: item,
       ),
     );
   }
@@ -1449,17 +1492,7 @@ class AppShellState extends ConsumerState<AppShell>
           _pushDetail(RouteNames.continueWatchingPath, fullScreen: true),
         ),
         onRecordingsSelect: () => _navigateToRoute(RouteNames.dvr),
-        onAioStreamsItemSelect: (item, integrationId) => unawaited(
-          _pushDetail(
-            RouteNames.aiostreamsDetailsFor(
-              integrationId,
-              item.type,
-              item.id,
-            ),
-            extra: item,
-            fullScreen: true,
-          ),
-        ),
+        onAioStreamsItemSelect: _openAioStreamsItem,
         useSidebarLayout: shouldUseSidebar(widget.deviceType),
         onSidebarActivate: _activateSidebar,
       ),
@@ -1520,17 +1553,7 @@ class AppShellState extends ConsumerState<AppShell>
         builder: (_, _) => AIOStreamsHomeScreen(
           integrations: _appState.aiostreamsIntegrations,
           apiService: _appState.aiostreamsApiService,
-          onItemSelect: (item, integrationId) => unawaited(
-            _pushDetail(
-              RouteNames.aiostreamsDetailsFor(
-                integrationId,
-                item.type,
-                item.id,
-              ),
-              extra: item,
-              fullScreen: true,
-            ),
-          ),
+          onItemSelect: _openAioStreamsItem,
           onPlay: _openPlayerFromActions,
           onSearchSelect: _openAioSearch,
           favoritesService: _appState.aioFavoritesService,
@@ -1569,8 +1592,7 @@ class AppShellState extends ConsumerState<AppShell>
             onUpdateSeriesRule: _updateDvrSeriesRule,
             onSearchShows: _searchEpgShows,
             onOpenShowDetail: _openShow,
-            onEnterFullScreenDetail: _enterFullScreenDetail,
-            onExitFullScreenDetail: _exitFullScreenDetail,
+            onHandleTopLevelBack: handleBackFromTopLevelRoute,
             onSidebarActivate: _activateSidebar,
           );
         },
@@ -1660,6 +1682,7 @@ class AppShellState extends ConsumerState<AppShell>
       onScheduleEpisode: _scheduleDvrAiring,
       onScheduleEpisodes: _scheduleDvrAirings,
       onMarkEpisodeWatched: _markEpisodeWatched,
+      onHandleTopLevelBack: handleBackFromTopLevelRoute,
       buildTabScreen: _buildTabScreen,
       child: FocusScope(
         node: _contentFocusNode,
