@@ -110,7 +110,9 @@ class DeferImageLoadingScope extends InheritedWidget {
   final bool defer;
 
   static bool of(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<DeferImageLoadingScope>()?.defer ??
+      context
+          .dependOnInheritedWidgetOfExactType<DeferImageLoadingScope>()
+          ?.defer ??
       false;
 
   @override

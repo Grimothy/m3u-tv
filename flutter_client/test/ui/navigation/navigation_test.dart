@@ -19,6 +19,8 @@ import 'package:m3u_tv/playback/player_adapter.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/cache_service.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/services/resume_service.dart';
@@ -2347,10 +2349,22 @@ class _TestAppState extends State<_TestApp> {
 
 AppStateController _testAppState({required XtreamService xtreamService}) {
   final memory = <String, Object?>{};
+  // CacheService and AppStateController must share one CatalogRepository -
+  // each self-defaults its own private in-memory one otherwise (see
+  // CacheService/AppStateController constructors), so connectXtream's
+  // replaceItems() writes would land in a database that
+  // catalogRepositoryProvider (and so VodScreen/SeriesScreen's windowed
+  // grid) never reads from. Production wires this the same way in
+  // main._buildAppState.
+  final catalogRepository = CatalogRepository(CatalogDatabase.memory());
   return AppStateController(
     xtreamService: xtreamService,
     secureStorage: InMemorySecureStorage(),
-    cacheService: CacheService(memory: <String, Object?>{}),
+    cacheService: CacheService(
+      memory: <String, Object?>{},
+      catalogRepository: catalogRepository,
+    ),
+    catalogRepository: catalogRepository,
     favoritesService: FavoritesService(memory: memory),
     resumeService: ResumeService(memory: memory),
     viewerService: ViewerService(memory: memory),

@@ -4,6 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/features/series/series_screen.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 
@@ -293,6 +296,67 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
+
+    group('windowed grid (catalogRepositoryProvider overridden)', () {
+      // Drift's async timers do not advance under flutter_test's default
+      // fakeAsync zone (see project notes on the shelved windowing effort),
+      // so every pump touching the repository-backed window runs inside
+      // tester.runAsync to escape it.
+      testWidgets('renders series paged from the repository', (tester) async {
+        final db = CatalogDatabase.memory();
+        final repo = CatalogRepository(db);
+        addTearDown(db.close);
+        await tester.runAsync(() async {
+          await repo.replaceItems(
+            sourceKey: CatalogRepository.activeSource,
+            kind: kCatalogKindSeries,
+            items: testSeriesList,
+          );
+        });
+
+        await tester.pumpWidget(
+          _TestApp(
+            seriesList: testSeriesList,
+            categories: testCategories,
+            catalogRepository: repo,
+          ),
+        );
+        await tester.runAsync(() => tester.pumpAndSettle());
+
+        expect(find.text('Breaking Bad'), findsOneWidget);
+        expect(find.text('Stranger Things'), findsOneWidget);
+      });
+
+      testWidgets('tapping a category tab filters through the repository', (
+        tester,
+      ) async {
+        final db = CatalogDatabase.memory();
+        final repo = CatalogRepository(db);
+        addTearDown(db.close);
+        await tester.runAsync(() async {
+          await repo.replaceItems(
+            sourceKey: CatalogRepository.activeSource,
+            kind: kCatalogKindSeries,
+            items: testSeriesList,
+          );
+        });
+
+        await tester.pumpWidget(
+          _TestApp(
+            seriesList: testSeriesList,
+            categories: testCategories,
+            catalogRepository: repo,
+          ),
+        );
+        await tester.runAsync(() => tester.pumpAndSettle());
+
+        await tester.tap(find.text('Thriller'));
+        await tester.runAsync(() => tester.pumpAndSettle());
+
+        expect(find.text('Breaking Bad'), findsOneWidget);
+        expect(find.text('Stranger Things'), findsNothing);
+      });
+    });
   });
 }
 
@@ -304,6 +368,7 @@ class _TestApp extends StatelessWidget {
     this.isConfigured = true,
     this.useSidebarLayout = true,
     this.onSeriesSelect,
+    this.catalogRepository,
   });
 
   final List<Series> seriesList;
@@ -313,8 +378,15 @@ class _TestApp extends StatelessWidget {
   final bool useSidebarLayout;
   final void Function(Series)? onSeriesSelect;
 
+  /// When set, `SeriesScreen` takes the windowed grid path (reading pages
+  /// from this repository) instead of the legacy in-memory grid - mirrors
+  /// production, where `catalogRepositoryProvider` is always overridden via
+  /// `overrideAppState`.
+  final CatalogRepository? catalogRepository;
+
   @override
   Widget build(BuildContext context) {
+    final repo = catalogRepository;
     return ProviderScope(
       overrides: [
         isBootstrappingProvider.overrideWith((_) => false),
@@ -322,6 +394,7 @@ class _TestApp extends StatelessWidget {
         isLoadingContentProvider.overrideWith((_) => isLoading),
         seriesListProvider.overrideWith((_) => seriesList),
         seriesCategoriesProvider.overrideWith((_) => categories),
+        if (repo != null) catalogRepositoryProvider.overrideWith((_) => repo),
       ],
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,

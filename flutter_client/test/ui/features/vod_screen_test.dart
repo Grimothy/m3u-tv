@@ -4,6 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/features/vod/vod_screen.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 
@@ -364,6 +367,69 @@ void main() {
         expect(find.text('Sintel'), findsNothing);
       },
     );
+
+    group('windowed grid (catalogRepositoryProvider overridden)', () {
+      // Drift's async timers do not advance under flutter_test's default
+      // fakeAsync zone (see project notes on the shelved windowing effort),
+      // so every pump touching the repository-backed window runs inside
+      // tester.runAsync to escape it.
+      testWidgets('renders movies paged from the repository', (tester) async {
+        final db = CatalogDatabase.memory();
+        final repo = CatalogRepository(db);
+        addTearDown(db.close);
+        await tester.runAsync(() async {
+          await repo.replaceItems(
+            sourceKey: CatalogRepository.activeSource,
+            kind: kCatalogKindVod,
+            items: testVodItems,
+          );
+        });
+
+        await tester.pumpWidget(
+          _TestApp(
+            vodItems: testVodItems,
+            categories: testCategories,
+            catalogRepository: repo,
+          ),
+        );
+        await tester.runAsync(() => tester.pumpAndSettle());
+
+        expect(find.text('Big Buck Bunny'), findsOneWidget);
+        expect(find.text('Sintel'), findsOneWidget);
+        expect(find.text('Tears of Steel'), findsOneWidget);
+      });
+
+      testWidgets('tapping a category tab filters through the repository', (
+        tester,
+      ) async {
+        final db = CatalogDatabase.memory();
+        final repo = CatalogRepository(db);
+        addTearDown(db.close);
+        await tester.runAsync(() async {
+          await repo.replaceItems(
+            sourceKey: CatalogRepository.activeSource,
+            kind: kCatalogKindVod,
+            items: testVodItems,
+          );
+        });
+
+        await tester.pumpWidget(
+          _TestApp(
+            vodItems: testVodItems,
+            categories: testCategories,
+            catalogRepository: repo,
+          ),
+        );
+        await tester.runAsync(() => tester.pumpAndSettle());
+
+        await tester.tap(find.text('Action'));
+        await tester.runAsync(() => tester.pumpAndSettle());
+
+        expect(find.text('Big Buck Bunny'), findsOneWidget);
+        expect(find.text('Tears of Steel'), findsOneWidget);
+        expect(find.text('Sintel'), findsNothing);
+      });
+    });
   });
 }
 
@@ -375,6 +441,7 @@ class _TestApp extends StatelessWidget {
     this.isConfigured = true,
     this.useSidebarLayout = true,
     this.onVodSelect,
+    this.catalogRepository,
   });
 
   final List<VodItem> vodItems;
@@ -384,8 +451,15 @@ class _TestApp extends StatelessWidget {
   final bool useSidebarLayout;
   final void Function(VodItem)? onVodSelect;
 
+  /// When set, `VodScreen` takes the windowed grid path (reading pages from
+  /// this repository) instead of the legacy in-memory grid - mirrors
+  /// production, where `catalogRepositoryProvider` is always overridden via
+  /// `overrideAppState`.
+  final CatalogRepository? catalogRepository;
+
   @override
   Widget build(BuildContext context) {
+    final repo = catalogRepository;
     return ProviderScope(
       overrides: [
         isBootstrappingProvider.overrideWith((_) => false),
@@ -393,6 +467,7 @@ class _TestApp extends StatelessWidget {
         isLoadingContentProvider.overrideWith((_) => isLoading),
         vodItemsProvider.overrideWith((_) => vodItems),
         vodCategoriesProvider.overrideWith((_) => categories),
+        if (repo != null) catalogRepositoryProvider.overrideWith((_) => repo),
       ],
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,

@@ -601,6 +601,24 @@ class _ResilientMediaImageState extends State<ResilientMediaImage> {
   }
 }
 
+/// A `CatalogWindowGrid.placeholderBuilder` for a not-yet-loaded poster
+/// slot: same rounded rect as a resolved [MediaPreviewCard]'s art, filled
+/// with the theme's card background, so a page landing a frame later does
+/// not shift focus or layout under the user.
+class CatalogGridPlaceholder extends StatelessWidget {
+  const CatalogGridPlaceholder({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(MediaBrowsingMetrics.posterRadius),
+      child: ColoredBox(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      ),
+    );
+  }
+}
+
 class _MediaImageFallback extends StatelessWidget {
   const _MediaImageFallback({required this.icon, this.title});
 
