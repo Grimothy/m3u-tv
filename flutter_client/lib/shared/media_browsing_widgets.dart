@@ -839,6 +839,19 @@ class _ScrollbarGridViewState extends State<ScrollbarGridView> {
   final ScrollController _controller = ScrollController();
   bool _deferImageLoading = false;
 
+  // `ScrollPosition.recommendDeferredLoading` only ever reports true for a
+  // physics-driven fling (BallisticScrollActivity). D-pad navigation moves
+  // the grid via `DpadScroll.ensureVisible`'s `position.animateTo` - a driven
+  // animation, not a fling - so that check alone never engages on TV, which
+  // is exactly where fast, repeated D-pad presses can otherwise queue a
+  // decode burst large enough to OOM. Track recent scroll offsets ourselves
+  // so a rapid run of driven scrolls is caught the same way a fling is.
+  final List<(Duration, double)> _recentOffsets = <(Duration, double)>[];
+  final Stopwatch _clock = Stopwatch()..start();
+
+  static const Duration _velocityWindow = Duration(milliseconds: 180);
+  static const double _fastScrollVelocityThreshold = 2400; // logical px/sec
+
   @override
   void dispose() {
     _controller.dispose();
@@ -846,10 +859,32 @@ class _ScrollbarGridViewState extends State<ScrollbarGridView> {
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
-    final defer =
-        notification is! ScrollEndNotification &&
+    if (notification is ScrollEndNotification) {
+      _recentOffsets.clear();
+      if (_deferImageLoading) setState(() => _deferImageLoading = false);
+      return false;
+    }
+
+    var defer =
         _controller.hasClients &&
         _controller.position.recommendDeferredLoading(context);
+
+    if (notification is ScrollUpdateNotification) {
+      final now = _clock.elapsed;
+      final pixels = notification.metrics.pixels;
+      _recentOffsets
+        ..add((now, pixels))
+        ..removeWhere((sample) => now - sample.$1 > _velocityWindow);
+      if (_recentOffsets.length > 1) {
+        final oldest = _recentOffsets.first;
+        final dtMicros = (now - oldest.$1).inMicroseconds;
+        if (dtMicros > 0) {
+          final velocity = (pixels - oldest.$2).abs() * 1e6 / dtMicros;
+          if (velocity > _fastScrollVelocityThreshold) defer = true;
+        }
+      }
+    }
+
     if (defer != _deferImageLoading) {
       setState(() => _deferImageLoading = defer);
     }
