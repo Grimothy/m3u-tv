@@ -33,6 +33,30 @@ const String _anyChannelTabId = '__any__';
 bool get _isMacDesktopWindow => !kIsWeb && Platform.isMacOS;
 const double _kMacTrafficLightInset = 72;
 
+/// tvOS reports its overscan-safe area as real MediaQuery padding on every
+/// edge. This screen is pushed on the root Navigator (see
+/// `openDvrSeriesRuleOptions`'s doc comment below), outside AppShell's own
+/// TV/sidebar layout, which otherwise strips that padding via
+/// `MediaQuery.removePadding` (`_buildTvLayout` in app_shell.dart) - without
+/// the same treatment here, the whole screen renders shrunk inward on tvOS
+/// only. Mirrors go_router_config.dart's `_topLevelSafeArea`, duplicated
+/// here for the same reason `_withTopLevelBackHandling` below is: this file
+/// can't import app_shell.dart (cycle).
+bool get _isTvOS => !kIsWeb && Platform.operatingSystem == 'tvos';
+
+Widget _topLevelSafeArea(Widget screen) => Builder(
+  builder: (context) => _isTvOS
+      ? MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          removeBottom: true,
+          removeLeft: true,
+          removeRight: true,
+          child: screen,
+        )
+      : screen,
+);
+
 /// Opens the series-rule options screen and returns the picked
 /// [DvrSeriesRuleOptions] on Save, or null if the user backs out without
 /// saving.
@@ -48,10 +72,11 @@ const double _kMacTrafficLightInset = 72;
 /// relies on AppShell's gradient showing through, which a root push
 /// escapes), sat under the macOS traffic lights, and had a stray top gap on
 /// tvOS. The opaque [ColoredBox] background below fixes the first ("no
-/// background") issue; the macOS-titlebar and tvOS-overscan gaps are left
-/// unaddressed here deliberately, matching the same call already made for
-/// the VOD/Series/AIOStreams top-level routes, none of which handle them
-/// either.
+/// background") issue; the tvOS overscan padding is stripped by
+/// [_topLevelSafeArea] below (mirroring go_router_config.dart's helper of
+/// the same name); the macOS-titlebar gap is still left unaddressed here,
+/// matching the same call already made for the VOD/Series/AIOStreams
+/// top-level routes.
 ///
 /// The [show] parameter carries `channels`, `channelCount`, `nextAiringAt`,
 /// and `recentEpisodes` — used to populate the channel picker and compute
@@ -81,9 +106,11 @@ Future<DvrSeriesRuleOptions?> openDvrSeriesRuleOptions(
         fit: StackFit.expand,
         children: [
           const ColoredBox(color: Color(0xFF09090b)),
-          _withTopLevelBackHandling(
-            onBack,
-            DvrSeriesRuleOptionsScreen(show: show, initialRule: initialRule),
+          _topLevelSafeArea(
+            _withTopLevelBackHandling(
+              onBack,
+              DvrSeriesRuleOptionsScreen(show: show, initialRule: initialRule),
+            ),
           ),
         ],
       ),
