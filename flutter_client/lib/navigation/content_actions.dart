@@ -171,6 +171,10 @@ class AppShellActions {
     required this.onVodSelect,
     required this.onSeriesSelect,
     this.onMarkEpisodeWatched,
+    this.onRecordSeries,
+    this.onDeleteSeriesRule,
+    this.onScheduleEpisode,
+    this.onScheduleEpisodes,
   });
 
   final AppStateController appState;
@@ -188,6 +192,29 @@ class AppShellActions {
     required bool watched,
   })?
   onMarkEpisodeWatched;
+
+  /// See [ContentActions.onRecordSeries]/[onDeleteSeriesRule]/
+  /// [onScheduleEpisode]/[onScheduleEpisodes] - the same callbacks, exposed
+  /// here for `ShowDetailScreen` now that it's a top-level route too (see
+  /// `go_router_config.dart`).
+  final Future<CreateDvrSeriesRuleOutcome> Function({
+    int? channelId,
+    required String title,
+    DvrMatchMode? matchMode,
+    DvrSeriesMode? seriesMode,
+    int? keepLast,
+    int? priority,
+    int? startEarlySeconds,
+    int? endLateSeconds,
+  })?
+  onRecordSeries;
+  final Future<void> Function(DvrSeriesRule rule)? onDeleteSeriesRule;
+  final Future<DvrRecording?> Function(EpgShowEpisode episode)?
+  onScheduleEpisode;
+  final Future<List<DvrAiringScheduleResult>> Function(
+    List<EpgShowEpisode>,
+  )?
+  onScheduleEpisodes;
 
   XtreamService get xtreamService => appState.xtreamService;
   List<Progress> get progressList => appState.progressList;

@@ -257,6 +257,32 @@ class _AsyncSeriesDetails extends StatelessWidget {
   }
 }
 
+/// Placeholder for the (in practice unreachable) case a show-details route
+/// builds with no `EpgShow` in hand - every in-app entry point always
+/// supplies one via `extra`. Split out to a top-level widget so the
+/// localized message call sits at a low enough indent for `dart format` to
+/// keep it on one line - `show_route_contract_test.dart` scans the raw
+/// source for the literal `AppLocalizations.of(context).showNotFound(` text.
+class _ShowNotFoundPage extends StatelessWidget {
+  const _ShowNotFoundPage({required this.normalizedTitle});
+
+  final String normalizedTitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        bottom: false,
+        child: Center(
+          child: Text(
+            AppLocalizations.of(context).showNotFound(normalizedTitle),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 GoRouter createGoRouter({
   required AppStateController appState,
   required bool nativeTelevisionHint,
@@ -412,9 +438,7 @@ GoRouter createGoRouter({
               ),
             ],
           ),
-          // Branch 6: DVR with nested show-detail (Shows is now a tab on
-          // DvrRecordingsScreen, not a top-level sidebar destination, so
-          // /dvr/shows/:normalizedTitle lives under this branch).
+          // Branch 6: DVR (show-detail is a top-level route - see below).
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -422,44 +446,6 @@ GoRouter createGoRouter({
                 pageBuilder: (context, state) => NoTransitionPage(
                   child: _withGradient(_tabScreen(context, RouteNames.dvr)),
                 ),
-                routes: [
-                  GoRoute(
-                    path: RouteNames.showsDetailsPath,
-                    pageBuilder: (context, state) {
-                      final normalizedTitle =
-                          state.pathParameters['normalizedTitle'] ?? '';
-                      final extra = state.extra;
-                      final show = extra is EpgShow ? extra : null;
-                      if (show == null) {
-                        return NoTransitionPage(
-                          child: Scaffold(
-                            body: SafeArea(
-                              bottom: false,
-                              child: Center(
-                                child: Text(
-                                  AppLocalizations.of(context).showNotFound(
-                                    normalizedTitle,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-                      final actions = ContentActions.of(context);
-                      return _slidePage(
-                        ShowDetailScreen(
-                          show: show,
-                          onRecordSeries: actions.onRecordSeries,
-                          onDeleteSeriesRule: actions.onDeleteSeriesRule,
-                          onScheduleEpisode: actions.onScheduleEpisode,
-                          onScheduleEpisodes: actions.onScheduleEpisodes,
-                          onHandleTopLevelBack: actions.onHandleTopLevelBack,
-                        ),
-                      );
-                    },
-                  ),
-                ],
               ),
             ],
           ),
@@ -668,6 +654,42 @@ GoRouter createGoRouter({
               seriesId: seriesId,
               actions: actions,
               appShellKey: appShellKey,
+            ),
+          );
+        },
+      ),
+      // Top-level for the same reason as VOD/Series/AIOStreams above. Shows
+      // is reached only in-app (from the Shows tab's search results or a
+      // related-episode tap, both of which always carry the `EpgShow` via
+      // `extra`), so there's no deep-link/async-catalog-lookup fallback
+      // path here the way VOD/Series have - just the pre-existing "not
+      // found" placeholder for the (in practice unreachable) case `extra`
+      // is missing.
+      GoRoute(
+        path: RouteNames.showDetailsPath,
+        pageBuilder: (context, state) {
+          final normalizedTitle = state.pathParameters['normalizedTitle'] ?? '';
+          final extra = state.extra;
+          final show = extra is EpgShow ? extra : null;
+          if (show == null) {
+            return NoTransitionPage(
+              child: _ShowNotFoundPage(normalizedTitle: normalizedTitle),
+            );
+          }
+          final actions = _topLevelActions(appShellKey, appState);
+          return _slidePage(
+            _withTopLevelBackHandling(
+              appShellKey,
+              ShowDetailScreen(
+                show: show,
+                onRecordSeries: actions.onRecordSeries,
+                onDeleteSeriesRule: actions.onDeleteSeriesRule,
+                onScheduleEpisode: actions.onScheduleEpisode,
+                onScheduleEpisodes: actions.onScheduleEpisodes,
+                onHandleTopLevelBack: () =>
+                    appShellKey.currentState?.handleBackFromTopLevelRoute() ??
+                    false,
+              ),
             ),
           );
         },

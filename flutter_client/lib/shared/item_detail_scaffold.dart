@@ -1,4 +1,8 @@
+import 'dart:io' show Platform;
+import 'dart:ui' show ImageFilter;
+
 import 'package:dpad/dpad.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
@@ -15,6 +19,20 @@ double detailAppBarHeight(BuildContext context) {
   final scale = FontSizeScope.scaleOf(context);
   return kToolbarHeight * scale + MediaQuery.paddingOf(context).top;
 }
+
+/// macOS renders this app with `titleBarStyle: hidden` (see main.dart's
+/// `_configureDesktopWindow`), so the native traffic-light buttons float
+/// over the top-left of the window with no OS-reserved space for them.
+/// AppShell clears them for its own sidebar/content layout by inserting a
+/// top titlebar strip (`_kMacTitlebarInset` in app_shell.dart), but this
+/// scaffold backs the top-level VOD/Series/AIOStreams detail routes (see
+/// go_router_config.dart's top-level `GoRoute`s), which render *outside*
+/// AppShell's subtree entirely and never got that treatment - so the
+/// leading back button sat directly under the traffic lights. Shifting it
+/// right by the traffic-light cluster's width clears them without
+/// disturbing the rest of the AppBar's vertical layout.
+bool get _isMacDesktopWindow => !kIsWeb && Platform.isMacOS;
+const double _kMacTrafficLightInset = 72;
 
 /// Shared outer chrome for standalone item detail screens (VOD, Series,
 /// AIOStreams movie/series). Provides the back-button AppBar and the
@@ -52,6 +70,7 @@ class ItemDetailScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scale = FontSizeScope.scaleOf(context);
+    final macInset = _isMacDesktopWindow ? _kMacTrafficLightInset : 0.0;
     return DpadRegion(
       horizontalEdge: DpadEdgeBehavior.stop,
       onEdge: (direction) {
@@ -66,7 +85,7 @@ class ItemDetailScaffold extends StatelessWidget {
         // clipped by a padded container short of it.
         extendBodyBehindAppBar: true,
         appBar: AppBar(
-          title: Text(title),
+          title: _GlassTitle(title: title, scale: scale),
           automaticallyImplyLeading: false,
           backgroundColor: Colors.transparent,
           scrolledUnderElevation: 0,
@@ -77,9 +96,14 @@ class ItemDetailScaffold extends StatelessWidget {
           // height, and the GradientBorderEffect stadium border sizes to
           // the squeezed/clipped bounds instead of the button's real size.
           toolbarHeight: kToolbarHeight * scale,
-          leadingWidth: 56 * scale,
+          leadingWidth: (56 * scale) + macInset,
           leading: Padding(
-            padding: EdgeInsets.all(8 * scale),
+            padding: EdgeInsets.fromLTRB(
+              8 * scale + macInset,
+              8 * scale,
+              8 * scale,
+              8 * scale,
+            ),
             child: Focus(
               canRequestFocus: false,
               skipTraversal: true,
@@ -102,6 +126,48 @@ class ItemDetailScaffold extends StatelessWidget {
           ),
         ),
         body: body,
+      ),
+    );
+  }
+}
+
+/// The AppBar title, wrapped in a permanent frosted-glass pill so it stays
+/// legible over whatever hero art/content is behind it instead of floating
+/// as bare text. Kept as a plain, static decoration (no scroll listener, no
+/// `setState`, no animation) deliberately - an earlier version faded the
+/// pill in only after scrolling, which meant a per-frame rebuild tied to
+/// scroll position; on slower TV hardware that's one more thing competing
+/// with the page's own transition animation for frame budget, for a look
+/// that's barely different from "always on".
+class _GlassTitle extends StatelessWidget {
+  const _GlassTitle({required this.title, required this.scale});
+
+  final String title;
+  final double scale;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: 14 * scale,
+            vertical: 6 * scale,
+          ),
+          decoration: BoxDecoration(
+            color: const Color(0xFF09090b).withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+          ),
+          child: Text(
+            title,
+            overflow: TextOverflow.ellipsis,
+            style: theme.appBarTheme.titleTextStyle,
+          ),
+        ),
       ),
     );
   }

@@ -54,6 +54,7 @@ class RouteNames {
   static const String vodDetailsPath = '/vod/details/:vodId';
   static const String seriesDetailsPath = '/series/details/:seriesId';
   static const String showsDetailsPath = 'shows/:normalizedTitle';
+  static const String showDetailsPath = '/dvr/shows/:normalizedTitle';
   static const String aiostreamsDetailsPath =
       '/aiostreams/details/:integrationId/:type/:id';
   static const String aiostreamsSearchPath = '/aiostreams/search';

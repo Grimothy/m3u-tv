@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -19,6 +21,12 @@ import 'package:m3u_tv/shared/dvr_schedule_feedback.dart';
 import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/leading_tile.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
+
+/// See `item_detail_scaffold.dart`'s identical constant/getter for why: this
+/// screen is a top-level route too (see go_router_config.dart), so its
+/// leading back button needs the same macOS traffic-light clearance.
+bool get _isMacDesktopWindow => !kIsWeb && Platform.isMacOS;
+const double _kMacTrafficLightInset = 72;
 
 /// Detail screen for a single EPG show. Receives the [EpgShow] as the route
 /// `extra` from `RouteNames.showDetailsFor`. The "Record Series" button
@@ -383,6 +391,7 @@ class _ShowDetailScreenState extends ConsumerState<ShowDetailScreen> {
     final recordings = ref.watch(dvrRecordingsProvider);
     final recordingIndex = EpgRecordingIndex.fromRecordings(recordings);
     final scale = FontSizeScope.scaleOf(context);
+    final macInset = _isMacDesktopWindow ? _kMacTrafficLightInset : 0.0;
 
     return Scaffold(
       appBar: AppBar(
@@ -392,9 +401,14 @@ class _ShowDetailScreenState extends ConsumerState<ShowDetailScreen> {
         // scaling it too, AppIconButton's larger footprint gets squeezed
         // into that fixed height (see item_detail_scaffold.dart).
         toolbarHeight: kToolbarHeight * scale,
-        leadingWidth: 56 * scale,
+        leadingWidth: (56 * scale) + macInset,
         leading: Padding(
-          padding: EdgeInsets.all(8 * scale),
+          padding: EdgeInsets.fromLTRB(
+            8 * scale + macInset,
+            8 * scale,
+            8 * scale,
+            8 * scale,
+          ),
           child: AppIconButton(
             icon: Icons.arrow_back,
             tooltip: MaterialLocalizations.of(context).backButtonTooltip,

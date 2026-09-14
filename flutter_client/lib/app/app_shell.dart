@@ -1227,6 +1227,10 @@ class AppShellState extends ConsumerState<AppShell>
     onVodSelect: _openVod,
     onSeriesSelect: _openSeries,
     onMarkEpisodeWatched: _markEpisodeWatched,
+    onRecordSeries: _createDvrSeriesRule,
+    onDeleteSeriesRule: _deleteDvrSeriesRule,
+    onScheduleEpisode: _scheduleDvrAiring,
+    onScheduleEpisodes: _scheduleDvrAirings,
   );
 
   /// Same `GlobalKey` reach-through as [actionsForTopLevelRoutes], for
@@ -1391,12 +1395,11 @@ class AppShellState extends ConsumerState<AppShell>
   }
 
   void _openShow(EpgShow show) {
+    // No `fullScreen: true` - the show details route is top-level too (see
+    // _openVod), so it already covers the whole screen by painting above
+    // AppShell in the root Navigator.
     unawaited(
-      _pushDetail(
-        RouteNames.showDetailsFor(show.normalizedTitle),
-        extra: show,
-        fullScreen: true,
-      ),
+      _pushDetail(RouteNames.showDetailsFor(show.normalizedTitle), extra: show),
     );
   }
 

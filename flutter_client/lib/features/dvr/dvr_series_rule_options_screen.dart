@@ -26,6 +26,13 @@ bool _isRemoteDrivenEnvironment(BuildContext context) {
 
 const String _anyChannelTabId = '__any__';
 
+/// See `item_detail_scaffold.dart`'s identical constant/getter for why: this
+/// screen is pushed onto the root Navigator too (see
+/// [openDvrSeriesRuleOptions]'s doc comment), so its leading back button
+/// needs the same macOS traffic-light clearance.
+bool get _isMacDesktopWindow => !kIsWeb && Platform.isMacOS;
+const double _kMacTrafficLightInset = 72;
+
 /// Opens the series-rule options screen and returns the picked
 /// [DvrSeriesRuleOptions] on Save, or null if the user backs out without
 /// saving.
@@ -246,6 +253,7 @@ class _DvrSeriesRuleOptionsScreenState
     final l10n = AppLocalizations.of(context);
     final show = widget.show;
     final scale = FontSizeScope.scaleOf(context);
+    final macInset = _isMacDesktopWindow ? _kMacTrafficLightInset : 0.0;
 
     return Scaffold(
       resizeToAvoidBottomInset: !_isRemoteDrivenEnvironment(context),
@@ -255,9 +263,14 @@ class _DvrSeriesRuleOptionsScreenState
         // scaling it too, AppIconButton's larger footprint gets squeezed
         // into that fixed height (see item_detail_scaffold.dart).
         toolbarHeight: kToolbarHeight * scale,
-        leadingWidth: 56 * scale,
+        leadingWidth: (56 * scale) + macInset,
         leading: Padding(
-          padding: EdgeInsets.all(8 * scale),
+          padding: EdgeInsets.fromLTRB(
+            8 * scale + macInset,
+            8 * scale,
+            8 * scale,
+            8 * scale,
+          ),
           child: AppIconButton(
             icon: Icons.arrow_back,
             tooltip: MaterialLocalizations.of(context).backButtonTooltip,
