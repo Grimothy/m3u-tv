@@ -1883,7 +1883,7 @@ abstract class AppLocalizations {
   /// No description provided for @dvrRecordingsTitle.
   ///
   /// In en, this message translates to:
-  /// **'DVR Recordings'**
+  /// **'Recordings'**
   String get dvrRecordingsTitle;
 
   /// No description provided for @dvrRecordingsSubtitle.
@@ -2195,7 +2195,7 @@ abstract class AppLocalizations {
   /// No description provided for @dvrSeriesRulesTitle.
   ///
   /// In en, this message translates to:
-  /// **'Series Rules'**
+  /// **'Rules'**
   String get dvrSeriesRulesTitle;
 
   /// No description provided for @dvrSeriesMatchModeContains.

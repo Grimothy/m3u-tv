@@ -46,6 +46,7 @@ class MediaCategoryNav extends StatefulWidget {
     this.memoryKeyPrefix = 'media-category-nav',
     this.searchAutofocus = false,
     this.onEntryFocusScopeReady,
+    this.onTopEdge,
   });
 
   final bool useSidebarLayout;
@@ -98,6 +99,15 @@ class MediaCategoryNav extends StatefulWidget {
   /// `AppShell._deactivateSidebar` for why that matters.
   final ValueChanged<FocusScopeNode>? onEntryFocusScopeReady;
 
+  /// TV/desktop only: called when d-pad Up is pressed at the strip's top
+  /// edge. The strip runs inside its own [FocusScope] (so `requestFocus`
+  /// can restore whichever item was last focused), but that also bounds
+  /// `dpad`'s directional traversal to the scope's own descendants. Up can
+  /// never reach anything above the strip on its own, so a caller with
+  /// content up there (e.g. a `DpadTabBar`) must be told explicitly and
+  /// move focus itself.
+  final VoidCallback? onTopEdge;
+
   @override
   State<MediaCategoryNav> createState() => MediaCategoryNavState();
 }
@@ -133,6 +143,8 @@ class MediaCategoryNavState extends State<MediaCategoryNav> {
       } else {
         widget.gridFocusScopeNode?.requestFocus();
       }
+    } else if (direction == TraversalDirection.up) {
+      widget.onTopEdge?.call();
     }
   }
 
@@ -153,6 +165,7 @@ class MediaCategoryNavState extends State<MediaCategoryNav> {
         child: DpadRegion(
           memoryKey: '${widget.memoryKeyPrefix}/strip',
           horizontalEdge: DpadEdgeBehavior.stop,
+          verticalEdge: DpadEdgeBehavior.stop,
           onEdge: _handleStripEdge,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(

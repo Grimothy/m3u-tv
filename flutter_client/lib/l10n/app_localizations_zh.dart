@@ -979,7 +979,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get requestsStatusUnknown => '未知';
 
   @override
-  String get dvrRecordingsTitle => 'DVR 录制';
+  String get dvrRecordingsTitle => '录制';
 
   @override
   String get dvrRecordingsSubtitle => '已完成的录制和正在录制的节目';
@@ -1159,7 +1159,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dvrDeleteSeriesRuleSuccess => '剧集规则已删除';
 
   @override
-  String get dvrSeriesRulesTitle => '剧集规则';
+  String get dvrSeriesRulesTitle => '规则';
 
   @override
   String get dvrSeriesMatchModeContains => '包含';

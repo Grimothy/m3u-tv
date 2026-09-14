@@ -1017,7 +1017,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get requestsStatusUnknown => 'Desconocido';
 
   @override
-  String get dvrRecordingsTitle => 'Grabaciones DVR';
+  String get dvrRecordingsTitle => 'Grabaciones';
 
   @override
   String get dvrRecordingsSubtitle => 'Grabaciones completadas y en curso';
@@ -1201,7 +1201,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get dvrDeleteSeriesRuleSuccess => 'Regla de serie eliminada';
 
   @override
-  String get dvrSeriesRulesTitle => 'Reglas de series';
+  String get dvrSeriesRulesTitle => 'Reglas';
 
   @override
   String get dvrSeriesMatchModeContains => 'Contiene';
