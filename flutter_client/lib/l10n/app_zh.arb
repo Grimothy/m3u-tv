@@ -814,6 +814,8 @@
   "seriesSortDialogTitle": "剧集排序",
   "mediaSortDefault": "默认",
   "mediaSortRating": "评分",
+  "mediaSortReleaseDateNewest": "最新优先",
+  "mediaSortReleaseDateOldest": "最早优先",
   "settingsDefaultStartPage": "默认启动页面",
   "settingsHdrMode": "HDR 模式",
   "settingsHdrModeHint": "允许 HDR 视频将显示器切换到 HDR 模式。仅限 Windows 和 Linux。",

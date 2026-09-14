@@ -1451,6 +1451,12 @@ class AppLocalizationsFr extends AppLocalizations {
   String get mediaSortRating => 'Note';
 
   @override
+  String get mediaSortReleaseDateNewest => 'Plus récents d\'abord';
+
+  @override
+  String get mediaSortReleaseDateOldest => 'Plus anciens d\'abord';
+
+  @override
   String get settingsDefaultStartPage => 'Page de démarrage par défaut';
 
   @override

@@ -332,7 +332,7 @@ void main() {
         expect(find.text('Filter'), findsOneWidget);
         expect(find.text('Sort'), findsOneWidget);
 
-        await tester.tap(find.text('Sort'));
+        await tester.tap(find.byIcon(Icons.sort));
         await tester.pumpAndSettle();
 
         expect(find.text('Sort Series By'), findsOneWidget);
@@ -360,12 +360,14 @@ void main() {
           name: 'AAAA Highest',
           categoryId: '20',
           rating: 9,
+          year: '2020',
         ),
         Series(
           id: 2,
           name: 'BBBB Mid',
           categoryId: '20',
           rating: 7,
+          year: '1999',
         ),
         Series(
           id: 3,
@@ -377,6 +379,7 @@ void main() {
           name: 'DDDD Third',
           categoryId: '20',
           rating: 8,
+          year: '2010',
         ),
       ];
       sortCategories = const [Category(id: '20', name: 'Action')];
@@ -407,7 +410,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Sort'));
+        await tester.tap(find.byIcon(Icons.sort));
         await tester.pumpAndSettle();
 
         expect(find.text('Sort Series By'), findsOneWidget);
@@ -433,7 +436,7 @@ void main() {
           'DDDD Third',
         ]);
 
-        await tester.tap(find.text('Sort'));
+        await tester.tap(find.byIcon(Icons.sort));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Rating'));
         await tester.pumpAndSettle();
@@ -498,6 +501,29 @@ void main() {
           'DDDD Third',
           'BBBB Mid',
           'CCCC Unrated',
+        ]);
+      },
+    );
+
+    testWidgets(
+      'selecting Oldest First sorts series by release date ascending, unknown last',
+      (tester) async {
+        final repo = await _buildRepo(tester, sortItems);
+        await tester.pumpWidget(
+          _TestApp(catalogRepository: repo, categories: sortCategories),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.sort));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Oldest First'));
+        await tester.pumpAndSettle();
+
+        expect(gridTitles(tester), [
+          'BBBB Mid', // 1999
+          'DDDD Third', // 2010
+          'AAAA Highest', // 2020
+          'CCCC Unrated', // no year - last, not first
         ]);
       },
     );

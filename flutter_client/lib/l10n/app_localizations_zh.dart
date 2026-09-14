@@ -1397,6 +1397,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mediaSortRating => '评分';
 
   @override
+  String get mediaSortReleaseDateNewest => '最新优先';
+
+  @override
+  String get mediaSortReleaseDateOldest => '最早优先';
+
+  @override
   String get settingsDefaultStartPage => '默认启动页面';
 
   @override

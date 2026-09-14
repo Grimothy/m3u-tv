@@ -814,6 +814,8 @@
   "seriesSortDialogTitle": "Serien sortieren nach",
   "mediaSortDefault": "Standard",
   "mediaSortRating": "Bewertung",
+  "mediaSortReleaseDateNewest": "Neueste zuerst",
+  "mediaSortReleaseDateOldest": "Älteste zuerst",
   "settingsDefaultStartPage": "Standardstartseite",
   "settingsHdrMode": "HDR-Modus",
   "settingsHdrModeHint": "HDR-Videos dürfen das Display in den HDR-Modus schalten. Nur Windows und Linux.",

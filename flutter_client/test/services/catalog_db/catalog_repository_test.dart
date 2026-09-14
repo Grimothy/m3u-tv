@@ -4,15 +4,21 @@ import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
 import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 
-VodItem _vod(int id, String name, {String? category, double? rating}) =>
-    VodItem(
-      id: id,
-      name: name,
-      streamUrl: 'http://host/movie/$id.mp4',
-      containerExtension: 'mp4',
-      categoryId: category,
-      rating: rating,
-    );
+VodItem _vod(
+  int id,
+  String name, {
+  String? category,
+  double? rating,
+  String? year,
+}) => VodItem(
+  id: id,
+  name: name,
+  streamUrl: 'http://host/movie/$id.mp4',
+  containerExtension: 'mp4',
+  categoryId: category,
+  rating: rating,
+  year: year,
+);
 
 Channel _channel(int id, String name, {String? category}) => Channel(
   id: id,
@@ -208,6 +214,74 @@ void main() {
       expect(percent.map((v) => v.id), [3]);
     },
   );
+
+  group('CatalogSort', () {
+    setUp(() async {
+      await repo.replaceItems(
+        sourceKey: 's1',
+        kind: kCatalogKindVod,
+        items: [
+          _vod(1, 'AAAA Highest', rating: 9, year: '2020'),
+          _vod(2, 'BBBB Mid', rating: 7, year: '1999'),
+          _vod(3, 'CCCC Unrated'),
+          _vod(4, 'DDDD Third', rating: 8, year: '2010'),
+        ],
+      );
+    });
+
+    Future<List<String>> namesFor(CatalogSort sort) async {
+      final rows = await repo.pageItems<VodItem>(
+        sourceKey: 's1',
+        kind: kCatalogKindVod,
+        sort: sort,
+        offset: 0,
+        limit: 50,
+      );
+      return rows.map((v) => v.name).toList();
+    }
+
+    test('providerOrder matches insertion order (the default)', () async {
+      expect(await namesFor(CatalogSort.providerOrder), [
+        'AAAA Highest',
+        'BBBB Mid',
+        'CCCC Unrated',
+        'DDDD Third',
+      ]);
+    });
+
+    test('ratingDesc sinks unrated rows to the bottom', () async {
+      expect(await namesFor(CatalogSort.ratingDesc), [
+        'AAAA Highest',
+        'DDDD Third',
+        'BBBB Mid',
+        'CCCC Unrated',
+      ]);
+    });
+
+    test(
+      'yearDesc (newest first) sinks unknown-year rows to the bottom',
+      () async {
+        expect(await namesFor(CatalogSort.yearDesc), [
+          'AAAA Highest', // 2020
+          'DDDD Third', // 2010
+          'BBBB Mid', // 1999
+          'CCCC Unrated', // no year
+        ]);
+      },
+    );
+
+    test(
+      'yearAsc (oldest first) also sinks unknown-year rows to the bottom',
+      () async {
+        expect(await namesFor(CatalogSort.yearAsc), [
+          'BBBB Mid', // 1999
+          'DDDD Third', // 2010
+          'AAAA Highest', // 2020
+          'CCCC Unrated', // no year - last, not first
+        ]);
+      },
+    );
+  });
 
   test('categories round-trip in provider order', () async {
     await repo.replaceCategories(

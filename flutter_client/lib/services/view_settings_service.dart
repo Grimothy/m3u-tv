@@ -72,13 +72,15 @@ enum ChannelColumnLayout {
       );
 }
 
-/// Sort order for a press-and-hold-sortable media grid (VOD, Series).
-/// Defaults to the server's natural order so existing callers see no change.
-/// New sort dimensions should be appended here rather than overloading
-/// existing values.
+/// Sort order for a sortable media grid (VOD, Series). Defaults to the
+/// server's natural order so existing callers see no change. New sort
+/// dimensions should be appended here rather than overloading existing
+/// values.
 enum MediaSortOption {
   defaultOrder('defaultOrder'),
-  ratingDesc('ratingDesc');
+  ratingDesc('ratingDesc'),
+  releaseDateDesc('releaseDateDesc'),
+  releaseDateAsc('releaseDateAsc');
 
   const MediaSortOption(this.value);
   final String value;

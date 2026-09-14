@@ -4,9 +4,9 @@ import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 
-/// Shows the "Sort By" modal shared by every press-and-hold-sortable media
-/// grid (VOD, Series). Returns the newly selected [MediaSortOption], or null
-/// if the dialog was dismissed (Cancel, back, tap outside) without one.
+/// Shows the "Sort By" modal shared by every sortable media grid (VOD,
+/// Series). Returns the newly selected [MediaSortOption], or null if the
+/// dialog was dismissed (Cancel, back, tap outside) without one.
 Future<MediaSortOption?> showMediaSortDialog(
   BuildContext context, {
   required String title,
@@ -16,6 +16,16 @@ Future<MediaSortOption?> showMediaSortDialog(
   final options = <(IconData, String, MediaSortOption)>[
     (Icons.list_alt, l.mediaSortDefault, MediaSortOption.defaultOrder),
     (Icons.star_rate, l.mediaSortRating, MediaSortOption.ratingDesc),
+    (
+      Icons.south,
+      l.mediaSortReleaseDateNewest,
+      MediaSortOption.releaseDateDesc,
+    ),
+    (
+      Icons.north,
+      l.mediaSortReleaseDateOldest,
+      MediaSortOption.releaseDateAsc,
+    ),
   ];
   return showDialog<MediaSortOption>(
     context: context,

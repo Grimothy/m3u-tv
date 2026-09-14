@@ -1448,6 +1448,12 @@ class AppLocalizationsEs extends AppLocalizations {
   String get mediaSortRating => 'Calificación';
 
   @override
+  String get mediaSortReleaseDateNewest => 'Más recientes primero';
+
+  @override
+  String get mediaSortReleaseDateOldest => 'Más antiguos primero';
+
+  @override
   String get settingsDefaultStartPage => 'Página de inicio predeterminada';
 
   @override

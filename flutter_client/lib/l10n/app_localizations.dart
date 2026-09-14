@@ -2576,6 +2576,18 @@ abstract class AppLocalizations {
   /// **'Rating'**
   String get mediaSortRating;
 
+  /// No description provided for @mediaSortReleaseDateNewest.
+  ///
+  /// In en, this message translates to:
+  /// **'Newest First'**
+  String get mediaSortReleaseDateNewest;
+
+  /// No description provided for @mediaSortReleaseDateOldest.
+  ///
+  /// In en, this message translates to:
+  /// **'Oldest First'**
+  String get mediaSortReleaseDateOldest;
+
   /// No description provided for @settingsDefaultStartPage.
   ///
   /// In en, this message translates to:

@@ -17,6 +17,7 @@ import 'package:m3u_tv/shared/catalog_window_grid.dart';
 import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/media_category_nav.dart';
+import 'package:m3u_tv/shared/media_sort.dart';
 import 'package:m3u_tv/shared/media_sort_dialog.dart';
 
 /// VOD (Movies) screen with category filtering and poster grid.
@@ -132,7 +133,7 @@ class _VodScreenState extends ConsumerState<VodScreen> {
           kind: kCatalogKindVod,
           categoryId: categoryId,
           search: search,
-          sortByRatingDesc: _sortOption == MediaSortOption.ratingDesc,
+          sort: catalogSortFor(_sortOption),
           offset: offset,
           limit: limit,
         ),
@@ -196,17 +197,13 @@ class _VodScreenState extends ConsumerState<VodScreen> {
   }
 
   /// Applies [_sortOption] to the (already category/query-filtered)
-  /// favorites list. The windowed catalog tabs sort in SQL via
-  /// [CatalogRepository.pageActiveItems]; favorites is a small,
-  /// fully-materialized list, so sorting it client-side is simplest.
-  List<VodItem> _sortedFavorites(List<VodItem> items) {
-    if (_sortOption != MediaSortOption.ratingDesc) return items;
-    // Unrated items sink below every rated one - keeps the grid visually
-    // anchored on the best-rated movies and treats missing data as "less
-    // informative" rather than "zero stars".
-    return items.toList(growable: false)
-      ..sort((a, b) => (b.rating ?? -1).compareTo(a.rating ?? -1));
-  }
+  /// favorites list - see [sortMediaItems].
+  List<VodItem> _sortedFavorites(List<VodItem> items) => sortMediaItems(
+    items,
+    _sortOption,
+    ratingOf: (item) => item.rating,
+    yearOf: (item) => int.tryParse(item.year ?? ''),
+  );
 
   /// Refreshes tab-count labels (total / favorites / per-category) when the
   /// category list changes (a fresh catalog load) or the favorites count
@@ -473,12 +470,13 @@ class _VodScreenState extends ConsumerState<VodScreen> {
   /// vertical category list on TV/desktop, next to the "Filter" button on
   /// mobile - so sorting is discoverable and one press away regardless of
   /// layout, instead of hidden behind a press-and-hold on a category chip
-  /// that visually suggested a per-category action it wasn't.
+  /// that visually suggested a per-category action it wasn't. The label
+  /// doubles as a status indicator - see [mediaSortButtonLabel].
   Widget _buildSortButton(BuildContext context) {
     final l = AppLocalizations.of(context);
     return AppButton(
       icon: Icons.sort,
-      label: l.mediaCategorySortButton,
+      label: mediaSortButtonLabel(l, _sortOption),
       onPressed: () => _showSortMenu(context),
     );
   }

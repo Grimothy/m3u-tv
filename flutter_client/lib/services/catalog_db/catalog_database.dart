@@ -36,6 +36,12 @@ class CatalogItems extends Table {
 
   RealColumn get rating => real().nullable()();
 
+  /// Four-digit release year (VOD/Series only; null for live channels and
+  /// any item the provider didn't report a year for), promoted from the
+  /// domain object's `year` string so release-date sort can run in SQL
+  /// instead of over a fully materialized list.
+  IntColumn get year => integer().nullable()();
+
   /// Position in the provider's original ordering, so the default sort is
   /// stable without a name comparison.
   IntColumn get sortIndex => integer()();
@@ -130,7 +136,7 @@ class CatalogDatabase extends _$CatalogDatabase {
   ];
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(

@@ -814,6 +814,8 @@
   "seriesSortDialogTitle": "Trier les séries par",
   "mediaSortDefault": "Par défaut",
   "mediaSortRating": "Note",
+  "mediaSortReleaseDateNewest": "Plus récents d'abord",
+  "mediaSortReleaseDateOldest": "Plus anciens d'abord",
   "settingsDefaultStartPage": "Page de démarrage par défaut",
   "settingsHdrMode": "Mode HDR",
   "settingsHdrModeHint": "Autoriser les vidéos HDR à basculer l'écran en mode HDR. Windows et Linux uniquement.",

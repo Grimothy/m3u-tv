@@ -416,6 +416,7 @@ void main() {
           containerExtension: 'mp4',
           categoryId: '20',
           rating: 9,
+          year: '2020',
         ),
         VodItem(
           id: 2,
@@ -424,6 +425,7 @@ void main() {
           containerExtension: 'mp4',
           categoryId: '20',
           rating: 7,
+          year: '1999',
         ),
         VodItem(
           id: 3,
@@ -439,6 +441,7 @@ void main() {
           containerExtension: 'mp4',
           categoryId: '20',
           rating: 8,
+          year: '2010',
         ),
       ];
       sortCategories = const [Category(id: '20', name: 'Action')];
@@ -476,7 +479,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Sort'));
+        await tester.tap(find.byIcon(Icons.sort));
         await tester.pumpAndSettle();
 
         expect(find.text('Sort Movies By'), findsOneWidget);
@@ -506,7 +509,7 @@ void main() {
           'DDDD Third',
         ]);
 
-        await tester.tap(find.text('Sort'));
+        await tester.tap(find.byIcon(Icons.sort));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Rating'));
         await tester.pumpAndSettle();
@@ -535,13 +538,13 @@ void main() {
         await tester.pumpAndSettle();
 
         // Apply Rating first so we have something to revert.
-        await tester.tap(find.text('Sort'));
+        await tester.tap(find.byIcon(Icons.sort));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Rating'));
         await tester.pumpAndSettle();
 
         // Now switch back to Default.
-        await tester.tap(find.text('Sort'));
+        await tester.tap(find.byIcon(Icons.sort));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Default'));
         await tester.pumpAndSettle();
@@ -568,13 +571,13 @@ void main() {
         await tester.pumpAndSettle();
 
         // Switch to Rating first so Default is NOT active.
-        await tester.tap(find.text('Sort'));
+        await tester.tap(find.byIcon(Icons.sort));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Rating'));
         await tester.pumpAndSettle();
 
         // Re-open the dialog - Rating should now be the active row.
-        await tester.tap(find.text('Sort'));
+        await tester.tap(find.byIcon(Icons.sort));
         await tester.pumpAndSettle();
 
         // The check icon is the active-row indicator. It must sit next to
@@ -621,7 +624,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Apply Rating once.
-        await tester.tap(find.text('Sort'));
+        await tester.tap(find.byIcon(Icons.sort));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Rating'));
         await tester.pumpAndSettle();
@@ -699,7 +702,7 @@ void main() {
         expect(find.text('Filter'), findsOneWidget);
         expect(find.text('Sort'), findsOneWidget);
 
-        await tester.tap(find.text('Sort'));
+        await tester.tap(find.byIcon(Icons.sort));
         await tester.pumpAndSettle();
 
         expect(find.text('Sort Movies By'), findsOneWidget);
@@ -712,6 +715,80 @@ void main() {
           'BBBB Mid',
           'CCCC Unrated',
         ]);
+      },
+    );
+
+    testWidgets(
+      'selecting Newest First sorts by release date descending, unknown last',
+      (tester) async {
+        final repo = await _buildRepo(tester, sortItems);
+        await tester.pumpWidget(
+          _TestApp(catalogRepository: repo, categories: sortCategories),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.sort));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Newest First'));
+        await tester.pumpAndSettle();
+
+        expect(gridTitles(tester), [
+          'AAAA Highest', // 2020
+          'DDDD Third', // 2010
+          'BBBB Mid', // 1999
+          'CCCC Unrated', // no year
+        ]);
+      },
+    );
+
+    testWidgets(
+      'selecting Oldest First sorts by release date ascending, unknown still last',
+      (tester) async {
+        final repo = await _buildRepo(tester, sortItems);
+        await tester.pumpWidget(
+          _TestApp(catalogRepository: repo, categories: sortCategories),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.sort));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Oldest First'));
+        await tester.pumpAndSettle();
+
+        expect(gridTitles(tester), [
+          'BBBB Mid', // 1999
+          'DDDD Third', // 2010
+          'AAAA Highest', // 2020
+          'CCCC Unrated', // no year - last, not first
+        ]);
+      },
+    );
+
+    testWidgets(
+      'the Sort button label reflects the active sort, and reverts to "Sort" for Default',
+      (tester) async {
+        final repo = await _buildRepo(tester, sortItems);
+        await tester.pumpWidget(
+          _TestApp(catalogRepository: repo, categories: sortCategories),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Sort'), findsOneWidget);
+
+        await tester.tap(find.byIcon(Icons.sort));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Newest First'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Newest First'), findsOneWidget);
+        expect(find.text('Sort'), findsNothing);
+
+        await tester.tap(find.byIcon(Icons.sort));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Default'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Sort'), findsOneWidget);
       },
     );
   });

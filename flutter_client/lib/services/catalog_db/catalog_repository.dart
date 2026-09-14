@@ -6,6 +6,19 @@ import 'package:m3u_tv/services/catalog_db/catalog_codec.dart';
 import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 
+/// Which promoted column (if any) a windowed page/count query orders by,
+/// beyond the provider's own [CatalogItems.sortIndex]. A dedicated enum
+/// rather than a `sortByXDesc` bool per dimension, so a new sort dimension
+/// is one more case here instead of one more parameter on
+/// `CatalogRepository.pageItems`.
+enum CatalogSort {
+  /// [CatalogItems.sortIndex] - the provider's own order.
+  providerOrder,
+  ratingDesc,
+  yearDesc,
+  yearAsc,
+}
+
 /// Domain-facing wrapper over [CatalogDatabase]. Encodes/decodes rows through
 /// `catalog_codec`, keeps the promoted columns in sync, and exposes both the
 /// full-list reads the app still relies on and the windowed page/count reads
@@ -39,7 +52,7 @@ class CatalogRepository {
     required String kind,
     String? categoryId,
     String? search,
-    bool sortByRatingDesc = false,
+    CatalogSort sort = CatalogSort.providerOrder,
     required int offset,
     required int limit,
   }) => pageItems<T>(
@@ -47,7 +60,7 @@ class CatalogRepository {
     kind: kind,
     categoryId: categoryId,
     search: search,
-    sortByRatingDesc: sortByRatingDesc,
+    sort: sort,
     offset: offset,
     limit: limit,
   );
@@ -193,6 +206,7 @@ class CatalogRepository {
             vod.categoryIds.isEmpty ? null : jsonEncode(vod.categoryIds),
           ),
           rating: Value(vod.rating),
+          year: Value(_parseYear(vod.year)),
           sortIndex: sortIndex,
           json: jsonEncode(encodeVod(vod)),
         );
@@ -209,6 +223,7 @@ class CatalogRepository {
             series.categoryIds.isEmpty ? null : jsonEncode(series.categoryIds),
           ),
           rating: Value(series.rating),
+          year: Value(_parseYear(series.year)),
           sortIndex: sortIndex,
           json: jsonEncode(encodeSeries(series)),
         );
@@ -216,6 +231,10 @@ class CatalogRepository {
         throw ArgumentError.value(kind, 'kind', 'unknown catalog kind');
     }
   }
+
+  /// Parses a domain object's four-digit `year` string into the promoted
+  /// column's int, or null for anything absent/malformed.
+  int? _parseYear(String? year) => year == null ? null : int.tryParse(year);
 
   Object _decodeRow(String kind, String json) {
     final map = asMap(jsonDecode(json));
@@ -243,37 +262,56 @@ class CatalogRepository {
   }
 
   /// A windowed slice of [kind], provider order, optionally filtered to
-  /// [categoryId] and/or a case-insensitive [search] substring of the name.
-  /// [sortByRatingDesc] orders by `rating` descending instead - SQLite sorts
-  /// NULL as smaller than any value, so unrated rows naturally sink to the
-  /// bottom without a separate case.
+  /// [categoryId] and/or a case-insensitive [search] substring of the name,
+  /// ordered per [sort] (see [_orderingFor]).
   Future<List<T>> pageItems<T>({
     required String sourceKey,
     required String kind,
     String? categoryId,
     String? search,
-    bool sortByRatingDesc = false,
+    CatalogSort sort = CatalogSort.providerOrder,
     required int offset,
     required int limit,
   }) async {
     final query = _db.select(_db.catalogItems)
       ..where((t) => _itemFilter(t, sourceKey, kind, categoryId, search))
-      ..orderBy(
-        sortByRatingDesc
-            ? [
-                (t) => OrderingTerm(
-                  expression: t.rating,
-                  mode: OrderingMode.desc,
-                ),
-                (t) => OrderingTerm(expression: t.sortIndex),
-              ]
-            : [(t) => OrderingTerm(expression: t.sortIndex)],
-      )
+      ..orderBy(_orderingFor(sort))
       ..limit(limit, offset: offset);
     final rows = await query.get();
     return rows
         .map((r) => _decodeRow(kind, r.json) as T)
         .toList(growable: false);
+  }
+
+  /// Ordering terms for [sort], always ending in [CatalogItems.sortIndex] as
+  /// a stable tiebreaker. `ratingDesc`/`yearDesc` rely on SQLite's default
+  /// NULL-sorts-smaller-than-anything behavior to sink unrated/unknown-year
+  /// rows to the bottom for free; `yearAsc` orders oldest-first but still
+  /// wants unknown years last rather than first, so it asks for that
+  /// explicitly via `nulls: NullsOrder.last`.
+  List<OrderingTerm Function($CatalogItemsTable)> _orderingFor(
+    CatalogSort sort,
+  ) {
+    OrderingTerm tiebreaker($CatalogItemsTable t) =>
+        OrderingTerm(expression: t.sortIndex);
+    return switch (sort) {
+      CatalogSort.providerOrder => [tiebreaker],
+      CatalogSort.ratingDesc => [
+        (t) => OrderingTerm(expression: t.rating, mode: OrderingMode.desc),
+        tiebreaker,
+      ],
+      CatalogSort.yearDesc => [
+        (t) => OrderingTerm(expression: t.year, mode: OrderingMode.desc),
+        tiebreaker,
+      ],
+      CatalogSort.yearAsc => [
+        (t) => OrderingTerm(
+          expression: t.year,
+          nulls: NullsOrder.last,
+        ),
+        tiebreaker,
+      ],
+    };
   }
 
   Future<int> countItems({

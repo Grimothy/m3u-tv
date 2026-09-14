@@ -812,6 +812,8 @@
   "seriesSortDialogTitle": "Ordenar series por",
   "mediaSortDefault": "Predeterminado",
   "mediaSortRating": "Calificación",
+  "mediaSortReleaseDateNewest": "Más recientes primero",
+  "mediaSortReleaseDateOldest": "Más antiguos primero",
   "settingsEpgStartViewCurrentTime": "Hora actual",
   "settingsEpgStartViewPrimeTime": "Horario estelar",
   "settingsDefaultStartPage": "Página de inicio predeterminada",
