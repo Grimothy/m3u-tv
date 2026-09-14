@@ -265,6 +265,7 @@ class Media3PlaybackPlugin(
 
     private fun releasePlayer(playerId: String) {
         val state = states.remove(playerId) ?: return
+        state.resumeStallRunnable?.let { mainHandler.removeCallbacks(it) }
         state.mediaSession?.release()
         // Detach the surface before release() instead of letting release()
         // discover and tear it down itself: ACodec's disconnectFromSurface
@@ -395,6 +396,78 @@ class Media3PlaybackPlugin(
         return if (trackType == C.TRACK_TYPE_AUDIO) "Audio ${index + 1}" else "Subtitle ${index + 1}"
     }
 
+    // Video-stall watchdog (issue #291) -- see ResumeStallPolicy for the coverage argument.
+    // Runs on the main handler, same as everything else here.
+
+    private fun armResumeStallWatchdog(playerId: String) {
+        cancelResumeStallWatchdog(playerId)
+        val state = states[playerId] ?: return
+        val player = state.player
+        if (state.resumeStallRecoveryCount >= ResumeStallPolicy.MAX_RECOVERIES_PER_SESSION) return
+
+        // A cold decoder (0 frames ever rendered) is startup buffering's territory, not this watchdog's.
+        val baselineFrames = player.videoDecoderCounters?.renderedOutputBufferCount ?: return
+        if (baselineFrames <= 0) return
+        val hasVideoTrack = player.currentTracks.groups.any {
+            it.type == C.TRACK_TYPE_VIDEO && it.isSelected
+        }
+        if (!hasVideoTrack) return
+
+        state.resumeStallBaselineFrames = baselineFrames
+        state.resumeStallBaselinePositionMs = player.currentPosition
+        state.resumeStallRechecksLeft = ResumeStallPolicy.MAX_RECHECKS
+        val windowMs = ResumeStallPolicy.checkWindowMs(player.videoFormat?.frameRate, player.playbackParameters.speed)
+        val runnable = Runnable { checkResumeStall(playerId, windowMs) }
+        state.resumeStallRunnable = runnable
+        mainHandler.postDelayed(runnable, windowMs)
+    }
+
+    private fun cancelResumeStallWatchdog(playerId: String) {
+        val state = states[playerId] ?: return
+        state.resumeStallRunnable?.let { mainHandler.removeCallbacks(it) }
+        state.resumeStallRunnable = null
+    }
+
+    private fun checkResumeStall(playerId: String, windowMs: Long) {
+        val state = states[playerId] ?: return
+        state.resumeStallRunnable = null
+        val player = state.player
+        if (!player.isPlaying || player.playbackState != Player.STATE_READY) return
+        val hasVideoTrack = player.currentTracks.groups.any {
+            it.type == C.TRACK_TYPE_VIDEO && it.isSelected
+        }
+        if (!hasVideoTrack) return
+        val currentFrames = player.videoDecoderCounters?.renderedOutputBufferCount ?: return
+
+        when (
+            ResumeStallPolicy.evaluate(
+                baselineFrames = state.resumeStallBaselineFrames,
+                currentFrames = currentFrames,
+                baselinePositionMs = state.resumeStallBaselinePositionMs,
+                currentPositionMs = player.currentPosition,
+                durationMs = player.duration,
+                windowMs = windowMs,
+            )
+        ) {
+            ResumeStallPolicy.Verdict.HEALTHY, ResumeStallPolicy.Verdict.SKIP_NEAR_EOF -> Unit
+            ResumeStallPolicy.Verdict.RECHECK -> {
+                if (state.resumeStallRechecksLeft-- > 0) {
+                    val runnable = Runnable { checkResumeStall(playerId, windowMs) }
+                    state.resumeStallRunnable = runnable
+                    mainHandler.postDelayed(runnable, windowMs)
+                }
+            }
+            ResumeStallPolicy.Verdict.STALLED -> recoverFromResumeStall(playerId)
+        }
+    }
+
+    private fun recoverFromResumeStall(playerId: String) {
+        val state = states[playerId] ?: return
+        state.resumeStallRecoveryCount += 1
+        val targetMs = (state.player.currentPosition - ResumeStallPolicy.SEEK_BACK_MS).coerceAtLeast(0L)
+        state.player.seekTo(targetMs)
+    }
+
     private inner class Media3Listener(private val playerId: String) : Player.Listener {
         override fun onVideoSizeChanged(videoSize: VideoSize) {
             val state = states[playerId] ?: return
@@ -435,6 +508,7 @@ class Media3PlaybackPlugin(
             val player = states[playerId]?.player ?: return
             val dur = player.duration.takeIf { it != C.TIME_UNSET && it > 0 }
             emit(playerId, if (isPlaying) "playing" else "ready", positionMs = player.currentPosition, durationMs = dur)
+            if (isPlaying) armResumeStallWatchdog(playerId) else cancelResumeStallWatchdog(playerId)
         }
 
         override fun onPlayerError(error: PlaybackException) {
@@ -465,6 +539,11 @@ class Media3PlaybackPlugin(
         var retriedHlsAsProgressive: Boolean = false,
         var lastVideoWidth: Int = 0,
         var lastVideoHeight: Int = 0,
+        var resumeStallRunnable: Runnable? = null,
+        var resumeStallBaselineFrames: Int = 0,
+        var resumeStallBaselinePositionMs: Long = 0L,
+        var resumeStallRechecksLeft: Int = 0,
+        var resumeStallRecoveryCount: Int = 0,
     ) {
         fun retryAsTs(error: PlaybackException): Boolean {
             if (retriedHlsAsProgressive || !error.looksLikeFormatMismatch()) {

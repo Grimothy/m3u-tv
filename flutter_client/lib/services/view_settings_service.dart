@@ -72,6 +72,73 @@ enum ChannelColumnLayout {
       );
 }
 
+/// Sort order for a sortable media grid (VOD, Series). Defaults to the
+/// server's natural order so existing callers see no change. New sort
+/// dimensions should be appended here rather than overloading existing
+/// values.
+enum MediaSortOption {
+  defaultOrder('defaultOrder'),
+  ratingDesc('ratingDesc'),
+  releaseDateDesc('releaseDateDesc'),
+  releaseDateAsc('releaseDateAsc');
+
+  const MediaSortOption(this.value);
+  final String value;
+
+  static MediaSortOption fromValue(String? value) =>
+      MediaSortOption.values.firstWhere(
+        (option) => option.value == value,
+        orElse: () => MediaSortOption.defaultOrder,
+      );
+}
+
+/// Whether to optimize image rendering for visual quality or performance.
+enum OptimizeFor {
+  quality('quality'),
+  speed('speed');
+
+  const OptimizeFor(this.value);
+  final String value;
+
+  static OptimizeFor fromValue(String? value) => OptimizeFor.values.firstWhere(
+    (opt) => opt.value == value,
+    orElse: () => OptimizeFor.quality,
+  );
+}
+
+/// Baseline multiplier applied under all three named sizes below, so one
+/// tweak here nudges Normal/Large/Very Large up or down together while
+/// keeping their relative ratios (1x/1.2x/1.5x) intact.
+const double _fontSizeBase = 1.15;
+
+/// Base font size multiplier for the UI.
+enum AppFontSize {
+  normal('normal', 1 * _fontSizeBase),
+  large('large', 1.2 * _fontSizeBase),
+  veryLarge('veryLarge', 1.5 * _fontSizeBase);
+
+  const AppFontSize(this.value, this.scale);
+  final String value;
+  final double scale;
+
+  static AppFontSize fromValue(String? value) => AppFontSize.values.firstWhere(
+    (size) => size.value == value,
+    orElse: () => AppFontSize.normal,
+  );
+
+  /// The effective size to render/show as selected: [stored] when the user
+  /// has explicitly chosen one, otherwise a device-aware default. TV starts
+  /// at [veryLarge] - content read from couch distance needs to start
+  /// bigger than the desktop/mobile default. The single source of truth for
+  /// this fallback - `main.dart` (drives the actual render scale) and the
+  /// Settings screen (drives which chip shows as selected) both call this so
+  /// they can't drift apart.
+  static AppFontSize resolveDefault({
+    required AppFontSize? stored,
+    required bool isTv,
+  }) => stored ?? (isTv ? AppFontSize.veryLarge : AppFontSize.normal);
+}
+
 /// Persists non-credential view preferences such as the Live TV default layout
 /// and the EPG default starting view.
 class ViewSettingsService extends ChangeNotifier {
@@ -84,9 +151,14 @@ class ViewSettingsService extends ChangeNotifier {
   static const epgStartViewKey = 'm3ue_tv_epg_start_view';
   static const channelColumnLayoutKey = 'm3ue_tv_channel_column_layout';
   static const hdrEnabledKey = 'm3ue_tv_hdr_enabled';
+  static const rememberMediaSortKey = 'm3ue_tv_remember_vod_sort';
+  static const vodSortOptionKey = 'm3ue_tv_vod_sort_option';
+  static const seriesSortOptionKey = 'm3ue_tv_series_sort_option';
   static const matchRefreshRateKey = 'm3ue_tv_match_refresh_rate';
   static const defaultStartPageKey = 'm3ue_tv_default_start_page';
   static const windowBoundsKey = 'm3ue_tv_window_bounds';
+  static const optimizeForKey = 'm3ue_tv_optimize_for';
+  static const fontSizeKey = 'm3ue_tv_font_size';
 
   final Map<String, Object?> _memory;
   final PersistentJsonStore? store;
@@ -174,6 +246,57 @@ class ViewSettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Whether the user's chosen media sort order (VOD, Series) survives
+  /// across launches. Defaults to `false` so existing users keep today's
+  /// session-only behavior (resets to server order on each fresh boot of the
+  /// app). Shared across every sortable screen - persisted as its own key so
+  /// toggling this off doesn't clear the separately-stored [vodSortOption]/
+  /// [seriesSortOption], which are simply ignored until re-enabled.
+  Future<bool> rememberMediaSort() async {
+    final raw = await _read(rememberMediaSortKey);
+    return raw as bool? ?? false;
+  }
+
+  /// Synchronous accessor - see [hdrEnabledSync].
+  bool get rememberMediaSortSync =>
+      (_memory[rememberMediaSortKey] as bool?) ?? false;
+
+  Future<void> setRememberMediaSort(
+    // ignore: avoid_positional_boolean_parameters
+    bool value,
+  ) async {
+    await _write(rememberMediaSortKey, value);
+    notifyListeners();
+  }
+
+  Future<MediaSortOption> vodSortOption() async {
+    final raw = await _read(vodSortOptionKey);
+    return MediaSortOption.fromValue(raw as String?);
+  }
+
+  /// Synchronous accessor - see [hdrEnabledSync].
+  MediaSortOption get vodSortOptionSync =>
+      MediaSortOption.fromValue(_memory[vodSortOptionKey] as String?);
+
+  Future<void> setVodSortOption(MediaSortOption option) async {
+    await _write(vodSortOptionKey, option.value);
+    notifyListeners();
+  }
+
+  Future<MediaSortOption> seriesSortOption() async {
+    final raw = await _read(seriesSortOptionKey);
+    return MediaSortOption.fromValue(raw as String?);
+  }
+
+  /// Synchronous accessor - see [hdrEnabledSync].
+  MediaSortOption get seriesSortOptionSync =>
+      MediaSortOption.fromValue(_memory[seriesSortOptionKey] as String?);
+
+  Future<void> setSeriesSortOption(MediaSortOption option) async {
+    await _write(seriesSortOptionKey, option.value);
+    notifyListeners();
+  }
+
   /// Whether the Windows desktop backend may switch the monitor to a refresh
   /// rate matching the source frame rate when playback starts (the classic
   /// "24Hz mode" home-theater feature). Defaults off: the display mode change
@@ -207,6 +330,53 @@ class ViewSettingsService extends ChangeNotifier {
 
   Future<void> setWindowBounds(WindowBounds bounds) async {
     await _write(windowBoundsKey, bounds.toJson());
+  }
+
+  Future<OptimizeFor> optimizeFor() async {
+    final raw = await _read(optimizeForKey);
+    return OptimizeFor.fromValue(raw as String?);
+  }
+
+  /// Synchronous access to the in-memory cached optimize-for setting.
+  OptimizeFor get optimizeForSync =>
+      OptimizeFor.fromValue(_memory[optimizeForKey] as String?);
+
+  Future<void> setOptimizeFor(OptimizeFor value) async {
+    await _write(optimizeForKey, value.value);
+    notifyListeners();
+  }
+
+  Future<AppFontSize> fontSize() async {
+    final raw = await _read(fontSizeKey);
+    return AppFontSize.fromValue(raw as String?);
+  }
+
+  /// The persisted font size, or null if the user has never chosen one. See
+  /// [fontSizeSyncOrNull] for why this differs from [fontSize].
+  Future<AppFontSize?> fontSizeOrNull() async {
+    final raw = await _read(fontSizeKey);
+    return raw == null ? null : AppFontSize.fromValue(raw as String?);
+  }
+
+  /// Synchronous access to the in-memory cached font size setting.
+  AppFontSize get fontSizeSync =>
+      AppFontSize.fromValue(_memory[fontSizeKey] as String?);
+
+  /// Synchronous access to the persisted font size, or null if the user has
+  /// never chosen one. Lets callers apply a device-specific default (e.g. TV
+  /// defaults to [AppFontSize.large]) only on first launch, instead of the
+  /// fixed [AppFontSize.normal] fallback [fontSizeSync] always returns.
+  /// Only meaningful after [fontSize] has been awaited at least once (see the
+  /// preload in `main.dart`) - before that the key is simply absent from the
+  /// in-memory cache and this also returns null.
+  AppFontSize? get fontSizeSyncOrNull {
+    final raw = _memory[fontSizeKey] as String?;
+    return raw == null ? null : AppFontSize.fromValue(raw);
+  }
+
+  Future<void> setFontSize(AppFontSize value) async {
+    await _write(fontSizeKey, value.value);
+    notifyListeners();
   }
 
   Future<Object?> _read(String key) async {

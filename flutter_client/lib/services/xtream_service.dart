@@ -726,16 +726,22 @@ class XtreamService {
     UserCredentials credentials,
     String uuid,
   ) async {
-    final response = await _requestWithCredentials(
-      credentials,
-      'cancel_dvr_recording',
-      method: 'POST',
-      body: {'recording_id': uuid},
-    );
-    final map = _asMap(response);
-    final errorMessage = map['error'];
-    if (errorMessage != null && '$errorMessage'.trim().isNotEmpty) {
-      throw XtreamDvrScheduleException('$errorMessage');
+    try {
+      final response = await _requestWithCredentials(
+        credentials,
+        'cancel_dvr_recording',
+        method: 'POST',
+        body: {'recording_id': uuid},
+      );
+      final map = _asMap(response);
+      final errorMessage = map['error'];
+      if (errorMessage != null && '$errorMessage'.trim().isNotEmpty) {
+        throw XtreamDvrScheduleException('$errorMessage');
+      }
+    } on XtreamHttpException catch (e) {
+      throw XtreamDvrScheduleException(
+        e.serverMessage ?? 'Recording not found or not cancellable',
+      );
     }
   }
 
@@ -752,16 +758,22 @@ class XtreamService {
     UserCredentials credentials,
     String uuid,
   ) async {
-    final response = await _requestWithCredentials(
-      credentials,
-      'delete_dvr_recording',
-      method: 'POST',
-      body: {'recording_id': uuid},
-    );
-    final map = _asMap(response);
-    final errorMessage = map['error'];
-    if (errorMessage != null && '$errorMessage'.trim().isNotEmpty) {
-      throw XtreamDvrScheduleException('$errorMessage');
+    try {
+      final response = await _requestWithCredentials(
+        credentials,
+        'delete_dvr_recording',
+        method: 'POST',
+        body: {'recording_id': uuid},
+      );
+      final map = _asMap(response);
+      final errorMessage = map['error'];
+      if (errorMessage != null && '$errorMessage'.trim().isNotEmpty) {
+        throw XtreamDvrScheduleException('$errorMessage');
+      }
+    } on XtreamHttpException catch (e) {
+      throw XtreamDvrScheduleException(
+        e.serverMessage ?? 'Recording not found or not deletable',
+      );
     }
   }
 
@@ -1123,7 +1135,14 @@ class XtreamService {
     final response = await _request(
       'get_short_epg',
       params: {'stream_id': '$streamId', 'limit': '$limit'},
+      wantsRawText: true,
     );
+    if (response is XtreamRawResponse) {
+      return _parseEpgProgramsFromRaw(
+        response.text,
+        fallbackChannelId: channelId ?? '$streamId',
+      );
+    }
     return _parseEpgPrograms(
       response,
       fallbackChannelId: channelId ?? '$streamId',
@@ -1190,14 +1209,25 @@ class XtreamService {
             'limit': '$limit',
             if (date != null) 'date': _formatEpgDate(date),
           },
+          wantsRawText: true,
         );
-        programs.addAll(
-          _parseEpgPrograms(
-            response,
-            channelIdsByStream: channelIdsByStream,
-            dropPlaceholders: dropPlaceholders,
-          ),
-        );
+        if (response is XtreamRawResponse) {
+          programs.addAll(
+            await _parseEpgProgramsFromRaw(
+              response.text,
+              channelIdsByStream: channelIdsByStream,
+              dropPlaceholders: dropPlaceholders,
+            ),
+          );
+        } else {
+          programs.addAll(
+            _parseEpgPrograms(
+              response,
+              channelIdsByStream: channelIdsByStream,
+              dropPlaceholders: dropPlaceholders,
+            ),
+          );
+        }
       }
     }
     programs.sort((a, b) => a.start.compareTo(b.start));
@@ -1533,6 +1563,34 @@ Future<List<Series>> _parseSeries(String rawJson) {
       ? Future.value(parse())
       : Isolate.run(parse);
 }
+
+// EPG sweep batches recur throughout the background sweep (not a one-time
+// startup cost like the catalog lists above), so - unlike
+// `_parseLiveStreams`/`_parseVodStreams`/`_parseSeries` - offload
+// unconditionally rather than gating on `_rawParseOffloadBytes`: repeated
+// small hops off the UI isolate beat repeated inline decodes stacking up as
+// visible jank during the sweep. Only takes effect when the transport
+// honored `wantsRawText` (the real IO transport); callers still branch on
+// `response is XtreamRawResponse` and fall back to calling `_parseEpgPrograms`
+// inline exactly as before, matching `getLiveStreams`/`getVodStreams`/
+// `getSeries` above - an `await` on this is never inserted into a path that
+// used to complete synchronously (an `await`, even of an already-available
+// value, always yields a microtask in Dart, which broke callers relying on
+// that synchronous completion, e.g. `AppStateController`'s unawaited EPG
+// prime finishing before other awaited work in the same call chain).
+Future<List<EpgProgram>> _parseEpgProgramsFromRaw(
+  String rawJson, {
+  String? fallbackChannelId,
+  Map<String, String> channelIdsByStream = const <String, String>{},
+  bool dropPlaceholders = false,
+}) => Isolate.run(
+  () => _parseEpgPrograms(
+    jsonDecode(rawJson),
+    fallbackChannelId: fallbackChannelId,
+    channelIdsByStream: channelIdsByStream,
+    dropPlaceholders: dropPlaceholders,
+  ),
+);
 
 List<EpgProgram> _parseEpgPrograms(
   Object? response, {

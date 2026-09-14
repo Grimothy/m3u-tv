@@ -12,7 +12,8 @@
   "navMore": "Plus",
   "notificationsDesktopOpen": "Ouvrir",
   "appBackToExit": "Appuyez à nouveau sur Retour pour quitter",
-  "appRecordingScheduled": "Enregistrement programmé : {title}",
+  "appRecordingScheduling": "Enregistrement en cours de programmation\u2026",
+  "appRecordingScheduled": "Enregistrement programmé : {title}",
   "@appRecordingScheduled": {
     "placeholders": {
       "title": {
@@ -34,6 +35,7 @@
   "unknown": "Inconnu",
   "admin": "Administrateur",
   "mediaCategoryFilterButton": "Filter",
+  "mediaCategorySortButton": "Trier",
   "mediaCategoryFilterScreenTitle": "Categories",
   "liveTvViewModeList": "List",
   "liveTvViewModeGrid": "Grid",
@@ -119,6 +121,19 @@
   "epgNoData": "Aucune donnée EPG",
   "epgProgramScheduledToRecord": "Programmé pour enregistrement",
   "epgProgramCurrentlyRecording": "En cours d'enregistrement",
+  "epgSweepLoadingTitle": "Chargement du guide des programmes",
+  "epgSweepLoadingBody": "{loaded} sur {total} chaînes",
+  "@epgSweepLoadingBody": {
+    "description": "Body text on the in-app toast shown while the EPG background sweep fetches program guide data for the remaining channels after app start, so the user understands the app is not frozen. Non-blocking - dismisses automatically when the sweep finishes.",
+    "placeholders": {
+      "loaded": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "playerGoBack": "Retour",
   "playerResumeWatching": "Reprendre la lecture",
   "playerContinue": "Continuer",
@@ -156,6 +171,8 @@
   "playerUpNext": "À suivre",
   "playerUpNextPlay": "Lire la suite",
   "playerUpNextDismiss": "Ignorer",
+  "playerLiveStreamEnded": "Diffusion terminée",
+  "playerReturningToMenu": "Retour au menu…",
   "searchHint": "Rechercher Télévision en direct, films et séries…",
   "searchSectionLiveTv": "Télévision en direct",
   "searchSectionMovies": "Films",
@@ -219,6 +236,40 @@
   },
   "settingsAppViewRelease": "Voir la version",
   "settingsAppScanQr": "Scanner pour ouvrir sur votre téléphone",
+  "settingsReleaseNotesTab": "Nouveautés",
+  "settingsReleaseNotesLoading": "Chargement des notes de version…",
+  "settingsReleaseNotesError": "Impossible de charger les notes de version. Vérifiez votre connexion et réessayez.",
+  "settingsReleaseNotesRetry": "Réessayer",
+  "settingsReleaseNotesCurrentBadge": "Actuelle",
+  "settingsReleaseNotesNewBadge": "Nouvelle",
+  "settingsReleaseNotesYouAreOn": "Vous utilisez la version {version}",
+  "@settingsReleaseNotesYouAreOn": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsReleaseNotesLatestIs": "Dernière : {version}",
+  "@settingsReleaseNotesLatestIs": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsReleaseNotesNewerCount": "{count} plus récentes",
+  "@settingsReleaseNotesNewerCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsReleaseNotesUpToDate": "Vous utilisez la dernière version",
+  "settingsReleaseNotesViewOnGithub": "Tout voir sur GitHub",
+  "settingsReleaseNotesNoneForVersion": "Aucune note pour cette version.",
+  "settingsReleaseNotesSelectVersion": "Sélectionner une version",
   "settingsFillAllFields": "Veuillez remplir tous les champs",
   "settingsConnectionSettings": "Paramètres de connexion",
   "settingsConnectionSettingsSubtitle": "Entrez vos identifiants Xtream Codes",
@@ -344,6 +395,7 @@
   },
   "seriesSeasons": "Saisons",
   "seriesCast": "Casting",
+  "relatedTitle": "Contenus similaires",
   "seriesEpisodeCount": "{count, plural, =1{1 épisode} other{{count} épisodes}}",
   "@seriesEpisodeCount": {
     "placeholders": {
@@ -505,7 +557,7 @@
   "requestsStatusRejected": "Rejeté",
   "requestsStatusCompleted": "Terminé",
   "requestsStatusUnknown": "Inconnu",
-  "dvrRecordingsTitle": "Enregistrements DVR",
+  "dvrRecordingsTitle": "Enregistrements",
   "dvrRecordingsSubtitle": "Enregistrements terminés et en cours",
   "dvrNoRecordings": "Aucun enregistrement DVR disponible",
   "dvrNotConfigured": "Veuillez vous connecter à votre service dans les paramètres",
@@ -602,7 +654,7 @@
   "dvrDeleteSeriesRuleConfirm": "Supprimer cette règle de série ?",
   "dvrSeriesCancel": "Annuler",
   "dvrDeleteSeriesRuleSuccess": "Règle de série supprimée",
-  "dvrSeriesRulesTitle": "Règles de séries",
+  "dvrSeriesRulesTitle": "Règles",
   "dvrSeriesMatchModeContains": "Contient",
   "dvrSeriesMatchModeExact": "Exact",
   "dvrSeriesModeUseDefault": "Par défaut",
@@ -755,11 +807,29 @@
   "settingsEpgStartView": "Le guide démarre à",
   "settingsEpgStartViewCurrentTime": "Heure actuelle",
   "settingsEpgStartViewPrimeTime": "Prime time",
+  "settingsFilterPersistence": "Persistance du filtre",
+  "settingsFilterPersistenceRemember": "Mémoriser",
+  "settingsFilterPersistenceReset": "Réinitialiser à chaque fois",
+  "vodSortDialogTitle": "Trier les films par",
+  "seriesSortDialogTitle": "Trier les séries par",
+  "mediaSortDefault": "Par défaut",
+  "mediaSortRating": "Note",
+  "mediaSortReleaseDateNewest": "Plus récents d'abord",
+  "mediaSortReleaseDateOldest": "Plus anciens d'abord",
   "settingsDefaultStartPage": "Page de démarrage par défaut",
   "settingsHdrMode": "Mode HDR",
   "settingsHdrModeHint": "Autoriser les vidéos HDR à basculer l'écran en mode HDR. Windows et Linux uniquement.",
   "settingsMatchRefreshRate": "Adapter la fréquence de rafraîchissement",
   "settingsMatchRefreshRateHint": "Bascule le moniteur sur la fréquence d'images de la vidéo au démarrage de la lecture. Peut brièvement rendre l'écran noir. Windows uniquement.",
   "settingsToggleOn": "Activé",
-  "settingsToggleOff": "Désactivé"
+  "settingsToggleOff": "Désactivé",
+  "settingsOptimizeFor": "Optimiser pour",
+  "settingsOptimizeForQuality": "Qualité",
+  "settingsOptimizeForQualityHint": "Images plus nettes, utilisation mémoire accrue.",
+  "settingsOptimizeForSpeed": "Vitesse",
+  "settingsOptimizeForSpeedHint": "Chargement plus rapide, qualité image réduite.",
+  "settingsFontSize": "Taille d'affichage",
+  "settingsFontSizeNormal": "Normal",
+  "settingsFontSizeLarge": "Grand",
+  "settingsFontSizeVeryLarge": "Très grand"
 }

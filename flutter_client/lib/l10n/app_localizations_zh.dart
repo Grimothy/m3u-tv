@@ -45,6 +45,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appBackToExit => '再次按返回键退出';
 
   @override
+  String get appRecordingScheduling => '正在安排录制…';
+
+  @override
   String appRecordingScheduled(String title) {
     return '录制已安排：$title';
   }
@@ -71,6 +74,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get mediaCategoryFilterButton => 'Filter';
+
+  @override
+  String get mediaCategorySortButton => '排序';
 
   @override
   String get mediaCategoryFilterScreenTitle => 'Categories';
@@ -233,6 +239,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get epgProgramCurrentlyRecording => '正在录制';
 
   @override
+  String get epgSweepLoadingTitle => '正在加载节目指南';
+
+  @override
+  String epgSweepLoadingBody(int loaded, int total) {
+    return '$total 个频道中已加载 $loaded 个';
+  }
+
+  @override
   String get playerGoBack => '返回';
 
   @override
@@ -295,6 +309,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get playerUpNextDismiss => '关闭';
+
+  @override
+  String get playerLiveStreamEnded => '直播已结束';
+
+  @override
+  String get playerReturningToMenu => '正在返回菜单…';
 
   @override
   String get searchHint => '搜索直播电视、电影和剧集…';
@@ -505,6 +525,51 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsAppScanQr => '扫描以在手机上打开';
 
   @override
+  String get settingsReleaseNotesTab => '最近更新';
+
+  @override
+  String get settingsReleaseNotesLoading => '正在加载版本说明…';
+
+  @override
+  String get settingsReleaseNotesError => '无法加载版本说明。请检查网络连接后重试。';
+
+  @override
+  String get settingsReleaseNotesRetry => '重试';
+
+  @override
+  String get settingsReleaseNotesCurrentBadge => '当前';
+
+  @override
+  String get settingsReleaseNotesNewBadge => '新';
+
+  @override
+  String settingsReleaseNotesYouAreOn(String version) {
+    return '你的版本为 $version';
+  }
+
+  @override
+  String settingsReleaseNotesLatestIs(String version) {
+    return '最新：$version';
+  }
+
+  @override
+  String settingsReleaseNotesNewerCount(int count) {
+    return '$count 个更新版本';
+  }
+
+  @override
+  String get settingsReleaseNotesUpToDate => '你使用的是最新版本';
+
+  @override
+  String get settingsReleaseNotesViewOnGithub => '在 GitHub 上查看全部';
+
+  @override
+  String get settingsReleaseNotesNoneForVersion => '此版本没有说明。';
+
+  @override
+  String get settingsReleaseNotesSelectVersion => '选择版本';
+
+  @override
   String get settingsFillAllFields => '请填写所有字段';
 
   @override
@@ -668,6 +733,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get seriesCast => '演员阵容';
+
+  @override
+  String get relatedTitle => '相关内容';
 
   @override
   String seriesEpisodeCount(int count) {
@@ -914,7 +982,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get requestsStatusUnknown => '未知';
 
   @override
-  String get dvrRecordingsTitle => 'DVR 录制';
+  String get dvrRecordingsTitle => '录制';
 
   @override
   String get dvrRecordingsSubtitle => '已完成的录制和正在录制的节目';
@@ -1094,7 +1162,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dvrDeleteSeriesRuleSuccess => '剧集规则已删除';
 
   @override
-  String get dvrSeriesRulesTitle => '剧集规则';
+  String get dvrSeriesRulesTitle => '规则';
 
   @override
   String get dvrSeriesMatchModeContains => '包含';
@@ -1308,6 +1376,33 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsEpgStartViewPrimeTime => '黄金时段';
 
   @override
+  String get settingsFilterPersistence => '筛选保留';
+
+  @override
+  String get settingsFilterPersistenceRemember => '记住';
+
+  @override
+  String get settingsFilterPersistenceReset => '每次重置';
+
+  @override
+  String get vodSortDialogTitle => '电影排序';
+
+  @override
+  String get seriesSortDialogTitle => '剧集排序';
+
+  @override
+  String get mediaSortDefault => '默认';
+
+  @override
+  String get mediaSortRating => '评分';
+
+  @override
+  String get mediaSortReleaseDateNewest => '最新优先';
+
+  @override
+  String get mediaSortReleaseDateOldest => '最早优先';
+
+  @override
   String get settingsDefaultStartPage => '默认启动页面';
 
   @override
@@ -1329,4 +1424,31 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsToggleOff => '关';
+
+  @override
+  String get settingsOptimizeFor => '优化目标';
+
+  @override
+  String get settingsOptimizeForQuality => '画质';
+
+  @override
+  String get settingsOptimizeForQualityHint => '图像更清晰，内存占用更高。';
+
+  @override
+  String get settingsOptimizeForSpeed => '速度';
+
+  @override
+  String get settingsOptimizeForSpeedHint => '加载更快，图像质量降低。';
+
+  @override
+  String get settingsFontSize => '显示大小';
+
+  @override
+  String get settingsFontSizeNormal => '标准';
+
+  @override
+  String get settingsFontSizeLarge => '大';
+
+  @override
+  String get settingsFontSizeVeryLarge => '特大';
 }

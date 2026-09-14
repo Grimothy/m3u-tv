@@ -1,13 +1,56 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/features/series/series_screen.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
+import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 
+/// Builds a fresh in-memory catalog repository populated with [seriesList].
+/// Opening the database needs `tester.runAsync` (real drift I/O doesn't
+/// resolve under flutter_test's default fakeAsync zone); once it's open,
+/// query pumps back in the normal zone resolve fine via plain
+/// `pumpAndSettle`.
+Future<CatalogRepository> _buildRepo(
+  WidgetTester tester,
+  List<Series> seriesList,
+) async {
+  final repo = await tester.runAsync(() async {
+    final db = CatalogDatabase.memory();
+    addTearDown(db.close);
+    final repo = CatalogRepository(db);
+    await repo.replaceItems(
+      sourceKey: CatalogRepository.activeSource,
+      kind: kCatalogKindSeries,
+      items: seriesList,
+    );
+    return repo;
+  });
+  return repo!;
+}
+
 void main() {
+  // See vod_screen_test.dart: a real poster/cover URL can drive
+  // flutter_cache_manager into a real path_provider call once any
+  // tester.runAsync bridge has run in this test file, which otherwise throws
+  // MissingPluginException (sometimes attributed to a later test).
+  setUpAll(() {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (call) async => Directory.systemTemp.path,
+        );
+  });
+
   group('SeriesScreen', () {
     late List<Series> testSeriesList;
     late List<Category> testCategories;
@@ -36,8 +79,9 @@ void main() {
     });
 
     testWidgets('renders series grid with names', (tester) async {
+      final repo = await _buildRepo(tester, testSeriesList);
       await tester.pumpWidget(
-        _TestApp(seriesList: testSeriesList, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
       await tester.pumpAndSettle();
 
@@ -46,8 +90,9 @@ void main() {
     });
 
     testWidgets('renders All Series and category tabs', (tester) async {
+      final repo = await _buildRepo(tester, testSeriesList);
       await tester.pumpWidget(
-        _TestApp(seriesList: testSeriesList, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
       await tester.pumpAndSettle();
 
@@ -71,6 +116,7 @@ void main() {
           categoryId: '30',
         ),
       );
+      final repo = await _buildRepo(tester, manySeries);
 
       for (final viewport in [
         const Size(1440, 900),
@@ -79,7 +125,7 @@ void main() {
       ]) {
         tester.view.physicalSize = viewport;
         await tester.pumpWidget(
-          _TestApp(seriesList: manySeries, categories: testCategories),
+          _TestApp(catalogRepository: repo, categories: testCategories),
         );
         await tester.pumpAndSettle();
 
@@ -94,8 +140,9 @@ void main() {
     });
 
     testWidgets('tapping category tab filters series', (tester) async {
+      final repo = await _buildRepo(tester, testSeriesList);
       await tester.pumpWidget(
-        _TestApp(seriesList: testSeriesList, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
       await tester.pumpAndSettle();
 
@@ -103,6 +150,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Breaking Bad'), findsOneWidget);
+      expect(find.text('Stranger Things'), findsNothing);
     });
 
     testWidgets(
@@ -123,9 +171,10 @@ void main() {
           const Category(id: '900000002', name: 'Trending Shows'),
           const Category(id: '30', name: 'Thriller'),
         ];
+        final repo = await _buildRepo(tester, seriesList);
 
         await tester.pumpWidget(
-          _TestApp(seriesList: seriesList, categories: categories),
+          _TestApp(catalogRepository: repo, categories: categories),
         );
         await tester.pumpAndSettle();
 
@@ -137,46 +186,13 @@ void main() {
       },
     );
 
-    testWidgets('shows loading indicator only when there is nothing to show', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _TestApp(
-          seriesList: const [],
-          categories: testCategories,
-          isLoading: true,
-        ),
-      );
-      await tester.pump();
-
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    });
-
-    testWidgets(
-      'keeps the populated grid visible during a background refresh',
-      (
-        tester,
-      ) async {
-        await tester.pumpWidget(
-          _TestApp(
-            seriesList: testSeriesList,
-            categories: testCategories,
-            isLoading: true,
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        expect(find.byType(CircularProgressIndicator), findsNothing);
-        expect(find.text('Breaking Bad'), findsOneWidget);
-      },
-    );
-
     testWidgets('shows not configured message when not connected', (
       tester,
     ) async {
+      final repo = await _buildRepo(tester, testSeriesList);
       await tester.pumpWidget(
         _TestApp(
-          seriesList: testSeriesList,
+          catalogRepository: repo,
           categories: testCategories,
           isConfigured: false,
         ),
@@ -196,9 +212,10 @@ void main() {
         16,
         (index) => Category(id: '$index', name: 'Category $index'),
       );
+      final repo = await _buildRepo(tester, testSeriesList);
 
       await tester.pumpWidget(
-        _TestApp(seriesList: testSeriesList, categories: manyCategories),
+        _TestApp(catalogRepository: repo, categories: manyCategories),
       );
       await tester.pumpAndSettle();
 
@@ -208,8 +225,9 @@ void main() {
     testWidgets('inline search filters series case-insensitively', (
       tester,
     ) async {
+      final repo = await _buildRepo(tester, testSeriesList);
       await tester.pumpWidget(
-        _TestApp(seriesList: testSeriesList, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
       await tester.pumpAndSettle();
 
@@ -223,8 +241,9 @@ void main() {
     });
 
     testWidgets('inline search composes with category filter', (tester) async {
+      final repo = await _buildRepo(tester, testSeriesList);
       await tester.pumpWidget(
-        _TestApp(seriesList: testSeriesList, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
       await tester.pumpAndSettle();
 
@@ -243,9 +262,10 @@ void main() {
       tester,
     ) async {
       Series? selectedSeries;
+      final repo = await _buildRepo(tester, testSeriesList);
       await tester.pumpWidget(
         _TestApp(
-          seriesList: testSeriesList,
+          catalogRepository: repo,
           categories: testCategories,
           onSeriesSelect: (series) => selectedSeries = series,
         ),
@@ -260,8 +280,9 @@ void main() {
     });
 
     testWidgets('shows rating when available', (tester) async {
+      final repo = await _buildRepo(tester, testSeriesList);
       await tester.pumpWidget(
-        _TestApp(seriesList: testSeriesList, categories: testCategories),
+        _TestApp(catalogRepository: repo, categories: testCategories),
       );
       await tester.pumpAndSettle();
 
@@ -272,9 +293,10 @@ void main() {
       'mobile layout shows a Filter button instead of category chips, '
       'and selecting a category filters the grid',
       (tester) async {
+        final repo = await _buildRepo(tester, testSeriesList);
         await tester.pumpWidget(
           _TestApp(
-            seriesList: testSeriesList,
+            catalogRepository: repo,
             categories: testCategories,
             useSidebarLayout: false,
           ),
@@ -293,35 +315,248 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
+
+    testWidgets(
+      'mobile layout renders a Sort button next to Filter',
+      (tester) async {
+        final repo = await _buildRepo(tester, testSeriesList);
+        await tester.pumpWidget(
+          _TestApp(
+            catalogRepository: repo,
+            categories: testCategories,
+            useSidebarLayout: false,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Filter'), findsOneWidget);
+        expect(find.text('Sort'), findsOneWidget);
+
+        await tester.tap(find.byIcon(Icons.sort));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Sort Series By'), findsOneWidget);
+      },
+    );
+  });
+
+  // ---------------------------------------------------------------------
+  // Series sort via the dedicated "Sort" button (mirrors VodScreen's sort
+  // test group).
+  //
+  // All four items are in the same category so the category filter is a
+  // no-op and any reorder is purely the sort step. The default (server)
+  // order is AAAA → BBBB → CCCC → DDDD; ratingDesc produces
+  // AAAA → DDDD → BBBB → CCCC (unrated sinks last).
+  // ---------------------------------------------------------------------
+  group('SeriesScreen sort', () {
+    late List<Series> sortItems;
+    late List<Category> sortCategories;
+
+    setUp(() {
+      sortItems = const [
+        Series(
+          id: 1,
+          name: 'AAAA Highest',
+          categoryId: '20',
+          rating: 9,
+          year: '2020',
+        ),
+        Series(
+          id: 2,
+          name: 'BBBB Mid',
+          categoryId: '20',
+          rating: 7,
+          year: '1999',
+        ),
+        Series(
+          id: 3,
+          name: 'CCCC Unrated',
+          categoryId: '20',
+        ),
+        Series(
+          id: 4,
+          name: 'DDDD Third',
+          categoryId: '20',
+          rating: 8,
+          year: '2010',
+        ),
+      ];
+      sortCategories = const [Category(id: '20', name: 'Action')];
+    });
+
+    List<String> gridTitles(WidgetTester tester) {
+      const knownNames = {
+        'AAAA Highest',
+        'BBBB Mid',
+        'CCCC Unrated',
+        'DDDD Third',
+      };
+      return tester
+          .widgetList<Text>(find.byType(Text))
+          .where(
+            (text) => text.data != null && knownNames.contains(text.data),
+          )
+          .map((text) => text.data!)
+          .toList();
+    }
+
+    testWidgets(
+      'tapping Sort opens the sort menu with Default, Rating, Cancel',
+      (tester) async {
+        final repo = await _buildRepo(tester, sortItems);
+        await tester.pumpWidget(
+          _TestApp(catalogRepository: repo, categories: sortCategories),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.sort));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Sort Series By'), findsOneWidget);
+        expect(find.text('Default'), findsOneWidget);
+        expect(find.text('Rating'), findsOneWidget);
+        expect(find.text('Cancel'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'selecting Rating re-sorts the grid descending by rating, unrated last',
+      (tester) async {
+        final repo = await _buildRepo(tester, sortItems);
+        await tester.pumpWidget(
+          _TestApp(catalogRepository: repo, categories: sortCategories),
+        );
+        await tester.pumpAndSettle();
+
+        expect(gridTitles(tester), [
+          'AAAA Highest',
+          'BBBB Mid',
+          'CCCC Unrated',
+          'DDDD Third',
+        ]);
+
+        await tester.tap(find.byIcon(Icons.sort));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Rating'));
+        await tester.pumpAndSettle();
+
+        expect(gridTitles(tester), [
+          'AAAA Highest',
+          'DDDD Third',
+          'BBBB Mid',
+          'CCCC Unrated',
+        ]);
+      },
+    );
+
+    testWidgets(
+      'sorting VOD and Series independently does not cross-contaminate',
+      (tester) async {
+        final service = ViewSettingsService();
+        await service.setRememberMediaSort(true);
+        await service.setVodSortOption(MediaSortOption.ratingDesc);
+
+        final repo = await _buildRepo(tester, sortItems);
+        await tester.pumpWidget(
+          _TestApp(
+            catalogRepository: repo,
+            categories: sortCategories,
+            viewSettingsService: service,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Series was never sorted - only VOD's persisted sort was set - so
+        // it should still open at the default server order.
+        expect(gridTitles(tester), [
+          'AAAA Highest',
+          'BBBB Mid',
+          'CCCC Unrated',
+          'DDDD Third',
+        ]);
+        expect(await service.seriesSortOption(), MediaSortOption.defaultOrder);
+      },
+    );
+
+    testWidgets(
+      'with rememberMediaSort true, the persisted Series sort is restored on restart',
+      (tester) async {
+        final service = ViewSettingsService();
+        await service.setRememberMediaSort(true);
+        await service.setSeriesSortOption(MediaSortOption.ratingDesc);
+
+        final repo = await _buildRepo(tester, sortItems);
+        await tester.pumpWidget(
+          _TestApp(
+            catalogRepository: repo,
+            categories: sortCategories,
+            viewSettingsService: service,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(gridTitles(tester), [
+          'AAAA Highest',
+          'DDDD Third',
+          'BBBB Mid',
+          'CCCC Unrated',
+        ]);
+      },
+    );
+
+    testWidgets(
+      'selecting Oldest First sorts series by release date ascending, unknown last',
+      (tester) async {
+        final repo = await _buildRepo(tester, sortItems);
+        await tester.pumpWidget(
+          _TestApp(catalogRepository: repo, categories: sortCategories),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.sort));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Oldest First'));
+        await tester.pumpAndSettle();
+
+        expect(gridTitles(tester), [
+          'BBBB Mid', // 1999
+          'DDDD Third', // 2010
+          'AAAA Highest', // 2020
+          'CCCC Unrated', // no year - last, not first
+        ]);
+      },
+    );
   });
 }
 
 class _TestApp extends StatelessWidget {
   const _TestApp({
-    required this.seriesList,
+    required this.catalogRepository,
     required this.categories,
-    this.isLoading = false,
     this.isConfigured = true,
     this.useSidebarLayout = true,
     this.onSeriesSelect,
+    this.viewSettingsService,
   });
 
-  final List<Series> seriesList;
+  final CatalogRepository catalogRepository;
   final List<Category> categories;
-  final bool isLoading;
   final bool isConfigured;
   final bool useSidebarLayout;
   final void Function(Series)? onSeriesSelect;
+  final ViewSettingsService? viewSettingsService;
 
   @override
   Widget build(BuildContext context) {
+    final service = viewSettingsService ?? ViewSettingsService();
     return ProviderScope(
       overrides: [
         isBootstrappingProvider.overrideWith((_) => false),
         isConfiguredProvider.overrideWith((_) => isConfigured),
-        isLoadingContentProvider.overrideWith((_) => isLoading),
-        seriesListProvider.overrideWith((_) => seriesList),
         seriesCategoriesProvider.overrideWith((_) => categories),
+        catalogRepositoryProvider.overrideWith((_) => catalogRepository),
+        viewSettingsServiceProvider.overrideWith((_) => service),
       ],
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,

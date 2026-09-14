@@ -8,11 +8,16 @@ import 'package:flutter/services.dart'
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
 import 'package:m3u_tv/shared/hover_scroll_arrows.dart';
+import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
 const double _kCardWidth = 150;
-const double _kCardHeight = 152;
 const double _kAvatarSize = 72;
+const double _kAvatarGap = 8;
+// Name + role text below the avatar (each maxLines: 1) - scales with the
+// global TextScaler in main.dart on top of the multiplication below, so it
+// needs its own (larger) budget - see CastStripState.build.
+const double _kCardTextHeight = 72;
 const double _kCardGap = 12;
 
 /// A "locked focus" horizontal cast row for TV / desktop detail screens.
@@ -135,7 +140,10 @@ class CastStripState extends State<CastStrip> {
     return KeyEventResult.ignored;
   }
 
-  double get _itemExtent => _kCardWidth + _kCardGap;
+  double get _scale => FontSizeScope.scaleOf(context);
+  double get _cardWidth => _kCardWidth * _scale;
+  double get _cardGap => _kCardGap * _scale;
+  double get _itemExtent => _cardWidth + _cardGap;
 
   /// KNOWN ISSUE (shared with the episode strip - see `_centerFocused` in
   /// series_details_screen.dart): aggressive fast left/right key-repeat can
@@ -152,7 +160,7 @@ class CastStripState extends State<CastStrip> {
       final position = _controller.position;
       final target =
           (_focusedIndex * _itemExtent +
-                  _kCardWidth / 2 -
+                  _cardWidth / 2 -
                   position.viewportDimension / 2)
               .clamp(0.0, position.maxScrollExtent);
       if ((target - position.pixels).abs() < 1) return;
@@ -189,7 +197,10 @@ class CastStripState extends State<CastStrip> {
       descendantsAreFocusable: false,
       onKeyEvent: _handleKeyEvent,
       child: SizedBox(
-        height: _kCardHeight,
+        height:
+            _kAvatarSize * _scale +
+            _kAvatarGap +
+            _kCardTextHeight * FontSizeScope.scaleOf(context),
         // Desktop mouse users get hover arrows here (the scrollbar is hidden);
         // TV / phone pass straight through.
         child: HoverScrollArrows(
@@ -200,7 +211,7 @@ class CastStripState extends State<CastStrip> {
             itemExtent: _itemExtent,
             itemCount: members.length,
             itemBuilder: (context, index) => Padding(
-              padding: const EdgeInsets.only(right: _kCardGap),
+              padding: EdgeInsets.only(right: _cardGap),
               child: _CastStripCard(
                 member: members[index],
                 focused: _hasFocus && index == _focusedIndex,
@@ -222,6 +233,8 @@ class _CastStripCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scale = FontSizeScope.scaleOf(context);
+    final avatarSize = _kAvatarSize * scale;
     final character = member.character?.trim();
     final body = Padding(
       // Keep the focus border off the avatar / a long name.
@@ -231,18 +244,18 @@ class _CastStripCard extends StatelessWidget {
         children: [
           ClipOval(
             child: SizedBox(
-              width: _kAvatarSize,
-              height: _kAvatarSize,
+              width: avatarSize,
+              height: avatarSize,
               child: ResilientMediaImage(
                 imageUrl: member.photo,
                 fallbackIcon: Icons.person,
-                width: _kAvatarSize,
-                height: _kAvatarSize,
+                width: avatarSize,
+                height: avatarSize,
                 borderRadius: 0,
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: _kAvatarGap),
           Text(
             member.name,
             maxLines: 1,
@@ -268,7 +281,7 @@ class _CastStripCard extends StatelessWidget {
       ),
     );
     return SizedBox(
-      width: _kCardWidth,
+      width: _kCardWidth * scale,
       child: GradientBorderEffect(
         borderRadius: BorderRadius.circular(8),
       ).build(context, DpadFocusState(focused: focused, pressed: false), body),

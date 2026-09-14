@@ -19,6 +19,8 @@ import 'package:m3u_tv/playback/player_adapter.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/cache_service.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/services/resume_service.dart';
@@ -325,6 +327,44 @@ void main() {
 
       expect(find.text('Route Recording'), findsOneWidget);
     });
+
+    testWidgets(
+      'sidebar reveals a feature that resolves after the shell is mounted',
+      (tester) async {
+        final service = _NavigationXtreamService();
+        final appState = _testAppState(xtreamService: service);
+        addTearDown(appState.dispose);
+        await appState.connectXtream(
+          const UserCredentials(
+            server: 'http://example.com',
+            username: 'user',
+            password: 'pass',
+          ),
+        );
+
+        await tester.pumpWidget(
+          _TestApp(deviceType: DeviceType.tv, appState: appState),
+        );
+        await _pumpAppFrame(tester);
+        expect(_sidebarText('DVR'), findsNothing);
+
+        // DVR capability comes back on a later player_api round-trip. The
+        // shell is already mounted and nothing touches the sidebar (no focus
+        // or hover) between the flag flipping and this assertion.
+        service.features = const <String>['progress', 'dvr'];
+        await appState.connectXtream(
+          const UserCredentials(
+            server: 'http://example.com',
+            username: 'user',
+            password: 'pass',
+          ),
+        );
+        await _pumpAppFrame(tester);
+
+        expect(_sidebarText('DVR'), findsOneWidget);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
 
     testWidgets('hides Requests navigation when backend lacks requests', (
       tester,
@@ -1873,6 +1913,55 @@ void main() {
       expect(find.byType(NavigationSidebar), findsOneWidget);
     });
 
+    testWidgets(
+      'single hardware back on TV pops the detail without opening the sidebar',
+      (tester) async {
+        final appState = _testAppState(
+          xtreamService: _NavigationXtreamService(),
+        );
+        addTearDown(appState.dispose);
+        await appState.connectXtream(
+          const UserCredentials(
+            server: 'http://example.com',
+            username: 'user',
+            password: 'pass',
+          ),
+        );
+
+        await tester.pumpWidget(
+          _TestApp(deviceType: DeviceType.tv, appState: appState),
+        );
+        await _pumpAppFrame(tester);
+
+        await tester.tap(_sidebarText('Movies'));
+        await _pumpAppFrame(tester);
+        await tester.tap(find.text('Route Movie').last);
+        await _pumpAppFrame(tester);
+        expect(find.text('Play movie'), findsOneWidget);
+
+        // Android TV delivers one Back press on both paths: a goBack key event
+        // (routed like Escape through _BackIntent -> _handleShortcutBack) and
+        // the platform popRoute message (-> _handleSystemBack). The pair must
+        // pop the detail once and leave the sidebar collapsed.
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await _sendPlatformNavigationMethod(
+          tester,
+          const MethodCall('popRoute'),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Play movie'), findsNothing);
+        expect(find.text('Route Movie'), findsWidgets);
+        expect(
+          tester
+              .widget<NavigationSidebar>(find.byType(NavigationSidebar))
+              .sidebarActive,
+          isFalse,
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
     testWidgets('back on phone pops detail route', (tester) async {
       final appState = _testAppState(xtreamService: _NavigationXtreamService());
       addTearDown(appState.dispose);
@@ -2042,6 +2131,12 @@ void main() {
         expect(find.text('Play movie'), findsOneWidget);
 
         await backgroundAndResume(tester, away: const Duration(seconds: 30));
+        // The reset now also pops a top-level detail route (VOD/Series are
+        // no longer nested under the shell - see go_router_config.dart), and
+        // that pop plays _slidePage's own exit transition; _pumpAppFrame's
+        // fixed 250ms budget was tuned for the old goBranch-only reset (an
+        // instant IndexedStack swap, no page transition involved).
+        await tester.pumpAndSettle();
 
         // Back on the Live TV start page; the Movies detail is no longer shown.
         expect(find.text('Play movie'), findsNothing);
@@ -2260,10 +2355,22 @@ class _TestAppState extends State<_TestApp> {
 
 AppStateController _testAppState({required XtreamService xtreamService}) {
   final memory = <String, Object?>{};
+  // CacheService and AppStateController must share one CatalogRepository -
+  // each self-defaults its own private in-memory one otherwise (see
+  // CacheService/AppStateController constructors), so connectXtream's
+  // replaceItems() writes would land in a database that
+  // catalogRepositoryProvider (and so VodScreen/SeriesScreen's windowed
+  // grid) never reads from. Production wires this the same way in
+  // main._buildAppState.
+  final catalogRepository = CatalogRepository(CatalogDatabase.memory());
   return AppStateController(
     xtreamService: xtreamService,
     secureStorage: InMemorySecureStorage(),
-    cacheService: CacheService(memory: <String, Object?>{}),
+    cacheService: CacheService(
+      memory: <String, Object?>{},
+      catalogRepository: catalogRepository,
+    ),
+    catalogRepository: catalogRepository,
     favoritesService: FavoritesService(memory: memory),
     resumeService: ResumeService(memory: memory),
     viewerService: ViewerService(memory: memory),
@@ -2442,7 +2549,9 @@ class _NavigationXtreamService extends XtreamService {
   final List<VodItem> vodItems;
   final List<Series> seriesList;
   final List<Progress> recentlyWatched;
-  final List<String> features;
+  // Mutable so a test can model a capability that only resolves on a later
+  // player_api round-trip, after the shell is already mounted.
+  List<String> features;
   final List<DvrRecording> dvrRecordings;
 
   @override

@@ -12,6 +12,9 @@ import 'package:m3u_tv/navigation/go_router_config.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/cache_service.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/epg_service.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
@@ -675,7 +678,12 @@ void main() {
           jsonEncode(<String, String>{'type': 'xtream'}),
         );
 
-        final cache = CacheService(memory: cacheMemory);
+        final catalogRepository = CatalogRepository(CatalogDatabase.memory());
+        addTearDown(catalogRepository.close);
+        final cache = CacheService(
+          memory: cacheMemory,
+          catalogRepository: catalogRepository,
+        );
         await cache.set('sourceType', 'xtream');
         await cache.set('liveCategories', const <Category>[
           Category(id: 'cached-live', name: 'Cached Live'),
@@ -717,6 +725,7 @@ void main() {
         final controller = _controller(
           storage: storage,
           cacheMemory: cacheMemory,
+          catalogRepository: catalogRepository,
           localMemory: localMemory,
           transport: _FakeXtreamTransport.success()
               .withResponse('get_live_categories', catalogGate.future)
@@ -731,8 +740,8 @@ void main() {
         expect(controller.isBootstrapping, isFalse);
         expect(controller.liveCategories.single.name, 'Cached Live');
         expect(controller.channels.single.name, 'Cached BBC');
-        expect(controller.vodItems.single.name, 'Cached Movie');
-        expect(controller.seriesList.single.name, 'Cached Show');
+        expect((await _vodItems(controller)).single.name, 'Cached Movie');
+        expect((await _seriesList(controller)).single.name, 'Cached Show');
         expect(controller.activeViewer?.ulid, 'viewer-admin');
         expect(controller.progressList.single.streamId, 902);
         expect(controller.progressList.single.title, 'Cached Movie');
@@ -770,7 +779,12 @@ void main() {
           jsonEncode(<String, String>{'type': 'xtream'}),
         );
 
-        final cache = CacheService(memory: cacheMemory);
+        final catalogRepository = CatalogRepository(CatalogDatabase.memory());
+        addTearDown(catalogRepository.close);
+        final cache = CacheService(
+          memory: cacheMemory,
+          catalogRepository: catalogRepository,
+        );
         await cache.set('sourceType', 'xtream');
         await cache.set('liveStreams', const <Channel>[
           Channel(id: 901, name: 'Cached BBC', streamUrl: 'cached-live-url'),
@@ -790,6 +804,7 @@ void main() {
         final controller = _controller(
           storage: storage,
           cacheMemory: cacheMemory,
+          catalogRepository: catalogRepository,
           transport: _FakeXtreamTransport.success()
               .withResponse('get_live_categories', catalogGate.future)
               .withResponse('get_recently_watched', recentlyWatchedGate.future)
@@ -857,7 +872,7 @@ void main() {
         await Future<void>.delayed(Duration.zero);
       }
 
-      expect(controller.vodItems.single.name, 'Big Buck Bunny');
+      expect((await _vodItems(controller)).single.name, 'Big Buck Bunny');
       expect(controller.activeViewer?.ulid, 'viewer-admin');
       expect(controller.progressList.single.positionSeconds, 91);
 
@@ -964,8 +979,8 @@ void main() {
         expect(controller.isBootstrapping, isFalse);
         expect(controller.liveCategories.single.name, 'News');
         expect(controller.channels.single.name, 'BBC One');
-        expect(controller.vodItems.single.name, 'Big Buck Bunny');
-        expect(controller.seriesList.single.name, 'Fixture Show');
+        expect((await _vodItems(controller)).single.name, 'Big Buck Bunny');
+        expect((await _seriesList(controller)).single.name, 'Fixture Show');
         expect(await controller.favoritesService.isFavorite(101), isTrue);
 
         await _tapSidebarDestination(tester, 'Live TV');
@@ -1990,7 +2005,12 @@ void main() {
 
         final now = DateTime.utc(2026, 7, 30, 12);
         final cacheMemory = <String, Object?>{};
-        final seed = CacheService(memory: cacheMemory);
+        final catalogRepository = CatalogRepository(CatalogDatabase.memory());
+        addTearDown(catalogRepository.close);
+        final seed = CacheService(
+          memory: cacheMemory,
+          catalogRepository: catalogRepository,
+        );
         await seed.set('sourceType', 'xtream');
         await seed.set<List<Category>>('liveCategories', const [
           Category(id: '10', name: 'News'),
@@ -2030,6 +2050,7 @@ void main() {
         final controller = _controller(
           storage: storage,
           cacheMemory: cacheMemory,
+          catalogRepository: catalogRepository,
           epgService: EpgService(clock: () => now),
           transport: transport,
         );
@@ -2062,7 +2083,12 @@ void main() {
 
       final now = DateTime.utc(2026, 7, 30, 12);
       final cacheMemory = <String, Object?>{};
-      final seed = CacheService(memory: cacheMemory);
+      final catalogRepository = CatalogRepository(CatalogDatabase.memory());
+      addTearDown(catalogRepository.close);
+      final seed = CacheService(
+        memory: cacheMemory,
+        catalogRepository: catalogRepository,
+      );
       await seed.set('sourceType', 'xtream');
       await seed.set<List<Channel>>('liveStreams', const [
         Channel(
@@ -2092,6 +2118,7 @@ void main() {
       final controller = _controller(
         storage: storage,
         cacheMemory: cacheMemory,
+        catalogRepository: catalogRepository,
         epgService: EpgService(clock: () => now),
         transport: transport,
       );
@@ -2213,21 +2240,48 @@ Map<String, Object?> _epgResponse(String title, DateTime start) => {
   ],
 };
 
+/// VOD/series content lives in the catalog repository now, not on the
+/// controller.
+Future<List<VodItem>> _vodItems(AppStateController controller) =>
+    controller.catalogRepository.allItems<VodItem>(
+      CatalogRepository.activeSource,
+      kCatalogKindVod,
+    );
+
+Future<List<Series>> _seriesList(AppStateController controller) =>
+    controller.catalogRepository.allItems<Series>(
+      CatalogRepository.activeSource,
+      kCatalogKindSeries,
+    );
+
 AppStateController _controller({
   required InMemorySecureStorage storage,
   required XtreamTransport transport,
   Map<String, Object?>? cacheMemory,
   Map<String, Object?>? localMemory,
   EpgService? epgService,
+  CatalogRepository? catalogRepository,
 }) {
   final sharedLocalMemory = localMemory ?? <String, Object?>{};
+  // Catalog keys live in SQLite; the two CacheService instances below must
+  // share one repository (and any pre-seeded one from the test) or boot won't
+  // see the cached catalog.
+  final sharedCatalogRepository =
+      catalogRepository ?? CatalogRepository(CatalogDatabase.memory());
   return AppStateController(
     xtreamService: XtreamService(
       transport: transport,
-      cache: CacheService(memory: cacheMemory ?? <String, Object?>{}),
+      cache: CacheService(
+        memory: cacheMemory ?? <String, Object?>{},
+        catalogRepository: sharedCatalogRepository,
+      ),
     ),
     secureStorage: storage,
-    cacheService: CacheService(memory: cacheMemory ?? <String, Object?>{}),
+    cacheService: CacheService(
+      memory: cacheMemory ?? <String, Object?>{},
+      catalogRepository: sharedCatalogRepository,
+    ),
+    catalogRepository: sharedCatalogRepository,
     epgService: epgService,
     favoritesService: FavoritesService(memory: sharedLocalMemory),
     resumeService: ResumeService(memory: sharedLocalMemory),

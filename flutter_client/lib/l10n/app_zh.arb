@@ -12,6 +12,7 @@
   "navMore": "更多",
   "notificationsDesktopOpen": "打开",
   "appBackToExit": "再次按返回键退出",
+  "appRecordingScheduling": "正在安排录制\u2026",
   "appRecordingScheduled": "录制已安排：{title}",
   "@appRecordingScheduled": {
     "placeholders": {
@@ -34,6 +35,7 @@
   "unknown": "未知",
   "admin": "管理员",
   "mediaCategoryFilterButton": "Filter",
+  "mediaCategorySortButton": "排序",
   "mediaCategoryFilterScreenTitle": "Categories",
   "liveTvViewModeList": "List",
   "liveTvViewModeGrid": "Grid",
@@ -119,6 +121,19 @@
   "epgNoData": "暂无 EPG 数据",
   "epgProgramScheduledToRecord": "已计划录制",
   "epgProgramCurrentlyRecording": "正在录制",
+  "epgSweepLoadingTitle": "正在加载节目指南",
+  "epgSweepLoadingBody": "{total} 个频道中已加载 {loaded} 个",
+  "@epgSweepLoadingBody": {
+    "description": "Body text on the in-app toast shown while the EPG background sweep fetches program guide data for the remaining channels after app start, so the user understands the app is not frozen. Non-blocking - dismisses automatically when the sweep finishes.",
+    "placeholders": {
+      "loaded": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "playerGoBack": "返回",
   "playerResumeWatching": "继续观看",
   "playerContinue": "继续",
@@ -156,6 +171,8 @@
   "playerUpNext": "即将播放",
   "playerUpNextPlay": "播放下一集",
   "playerUpNextDismiss": "关闭",
+  "playerLiveStreamEnded": "直播已结束",
+  "playerReturningToMenu": "正在返回菜单…",
   "searchHint": "搜索直播电视、电影和剧集…",
   "searchSectionLiveTv": "直播电视",
   "searchSectionMovies": "电影",
@@ -219,6 +236,40 @@
   },
   "settingsAppViewRelease": "查看版本",
   "settingsAppScanQr": "扫描以在手机上打开",
+  "settingsReleaseNotesTab": "最近更新",
+  "settingsReleaseNotesLoading": "正在加载版本说明…",
+  "settingsReleaseNotesError": "无法加载版本说明。请检查网络连接后重试。",
+  "settingsReleaseNotesRetry": "重试",
+  "settingsReleaseNotesCurrentBadge": "当前",
+  "settingsReleaseNotesNewBadge": "新",
+  "settingsReleaseNotesYouAreOn": "你的版本为 {version}",
+  "@settingsReleaseNotesYouAreOn": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsReleaseNotesLatestIs": "最新：{version}",
+  "@settingsReleaseNotesLatestIs": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsReleaseNotesNewerCount": "{count} 个更新版本",
+  "@settingsReleaseNotesNewerCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsReleaseNotesUpToDate": "你使用的是最新版本",
+  "settingsReleaseNotesViewOnGithub": "在 GitHub 上查看全部",
+  "settingsReleaseNotesNoneForVersion": "此版本没有说明。",
+  "settingsReleaseNotesSelectVersion": "选择版本",
   "settingsFillAllFields": "请填写所有字段",
   "settingsConnectionSettings": "连接设置",
   "settingsConnectionSettingsSubtitle": "输入您的 Xtream Codes 信息",
@@ -344,6 +395,7 @@
   },
   "seriesSeasons": "剧集季",
   "seriesCast": "演员阵容",
+  "relatedTitle": "相关内容",
   "seriesEpisodeCount": "{count, plural, =1{1 集} other{{count} 集}}",
   "@seriesEpisodeCount": {
     "placeholders": {
@@ -505,7 +557,7 @@
   "requestsStatusRejected": "已拒绝",
   "requestsStatusCompleted": "已完成",
   "requestsStatusUnknown": "未知",
-  "dvrRecordingsTitle": "DVR 录制",
+  "dvrRecordingsTitle": "录制",
   "dvrRecordingsSubtitle": "已完成的录制和正在录制的节目",
   "dvrNoRecordings": "没有可用的 DVR 录制",
   "dvrNotConfigured": "请在设置中连接到您的服务",
@@ -602,7 +654,7 @@
   "dvrDeleteSeriesRuleConfirm": "确定删除此剧集规则？",
   "dvrSeriesCancel": "取消",
   "dvrDeleteSeriesRuleSuccess": "剧集规则已删除",
-  "dvrSeriesRulesTitle": "剧集规则",
+  "dvrSeriesRulesTitle": "规则",
   "dvrSeriesMatchModeContains": "包含",
   "dvrSeriesMatchModeExact": "精确",
   "dvrSeriesModeUseDefault": "使用默认",
@@ -755,11 +807,29 @@
   "settingsEpgStartView": "节目单起始时间",
   "settingsEpgStartViewCurrentTime": "当前时间",
   "settingsEpgStartViewPrimeTime": "黄金时段",
+  "settingsFilterPersistence": "筛选保留",
+  "settingsFilterPersistenceRemember": "记住",
+  "settingsFilterPersistenceReset": "每次重置",
+  "vodSortDialogTitle": "电影排序",
+  "seriesSortDialogTitle": "剧集排序",
+  "mediaSortDefault": "默认",
+  "mediaSortRating": "评分",
+  "mediaSortReleaseDateNewest": "最新优先",
+  "mediaSortReleaseDateOldest": "最早优先",
   "settingsDefaultStartPage": "默认启动页面",
   "settingsHdrMode": "HDR 模式",
   "settingsHdrModeHint": "允许 HDR 视频将显示器切换到 HDR 模式。仅限 Windows 和 Linux。",
   "settingsMatchRefreshRate": "匹配显示器刷新率",
   "settingsMatchRefreshRateHint": "播放开始时将显示器切换为视频的帧率。可能会使屏幕短暂黑屏。仅限 Windows。",
   "settingsToggleOn": "开",
-  "settingsToggleOff": "关"
+  "settingsToggleOff": "关",
+  "settingsOptimizeFor": "优化目标",
+  "settingsOptimizeForQuality": "画质",
+  "settingsOptimizeForQualityHint": "图像更清晰，内存占用更高。",
+  "settingsOptimizeForSpeed": "速度",
+  "settingsOptimizeForSpeedHint": "加载更快，图像质量降低。",
+  "settingsFontSize": "显示大小",
+  "settingsFontSizeNormal": "标准",
+  "settingsFontSizeLarge": "大",
+  "settingsFontSizeVeryLarge": "特大"
 }

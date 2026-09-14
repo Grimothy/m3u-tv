@@ -45,6 +45,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get appBackToExit => 'Zum Beenden erneut Zurück drücken';
 
   @override
+  String get appRecordingScheduling => 'Aufnahme wird geplant…';
+
+  @override
   String appRecordingScheduled(String title) {
     return 'Aufnahme geplant: $title';
   }
@@ -72,6 +75,9 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get mediaCategoryFilterButton => 'Filter';
+
+  @override
+  String get mediaCategorySortButton => 'Sortieren';
 
   @override
   String get mediaCategoryFilterScreenTitle => 'Categories';
@@ -242,6 +248,14 @@ class AppLocalizationsDe extends AppLocalizations {
   String get epgProgramCurrentlyRecording => 'Wird aufgenommen';
 
   @override
+  String get epgSweepLoadingTitle => 'Programmführer wird geladen';
+
+  @override
+  String epgSweepLoadingBody(int loaded, int total) {
+    return '$loaded von $total Sendern';
+  }
+
+  @override
   String get playerGoBack => 'Zurück';
 
   @override
@@ -304,6 +318,12 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get playerUpNextDismiss => 'Schließen';
+
+  @override
+  String get playerLiveStreamEnded => 'Übertragung beendet';
+
+  @override
+  String get playerReturningToMenu => 'Rückkehr zum Menü…';
 
   @override
   String get searchHint => 'Live-TV, Filme und Serien durchsuchen …';
@@ -522,6 +542,53 @@ class AppLocalizationsDe extends AppLocalizations {
   String get settingsAppScanQr => 'Scannen, um auf deinem Handy zu öffnen';
 
   @override
+  String get settingsReleaseNotesTab => 'Neuigkeiten';
+
+  @override
+  String get settingsReleaseNotesLoading => 'Versionshinweise werden geladen…';
+
+  @override
+  String get settingsReleaseNotesError =>
+      'Versionshinweise konnten nicht geladen werden. Prüfe deine Verbindung und versuche es erneut.';
+
+  @override
+  String get settingsReleaseNotesRetry => 'Erneut versuchen';
+
+  @override
+  String get settingsReleaseNotesCurrentBadge => 'Aktuell';
+
+  @override
+  String get settingsReleaseNotesNewBadge => 'Neu';
+
+  @override
+  String settingsReleaseNotesYouAreOn(String version) {
+    return 'Du nutzt $version';
+  }
+
+  @override
+  String settingsReleaseNotesLatestIs(String version) {
+    return 'Neueste: $version';
+  }
+
+  @override
+  String settingsReleaseNotesNewerCount(int count) {
+    return '$count neuere';
+  }
+
+  @override
+  String get settingsReleaseNotesUpToDate => 'Du nutzt die neueste Version';
+
+  @override
+  String get settingsReleaseNotesViewOnGithub => 'Alle auf GitHub ansehen';
+
+  @override
+  String get settingsReleaseNotesNoneForVersion =>
+      'Keine Hinweise für diese Version.';
+
+  @override
+  String get settingsReleaseNotesSelectVersion => 'Version auswählen';
+
+  @override
   String get settingsFillAllFields => 'Bitte fülle alle Felder aus';
 
   @override
@@ -698,6 +765,9 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get seriesCast => 'Besetzung';
+
+  @override
+  String get relatedTitle => 'Ähnliche Titel';
 
   @override
   String seriesEpisodeCount(int count) {
@@ -949,7 +1019,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get requestsStatusUnknown => 'Unbekannt';
 
   @override
-  String get dvrRecordingsTitle => 'DVR-Aufnahmen';
+  String get dvrRecordingsTitle => 'Aufnahmen';
 
   @override
   String get dvrRecordingsSubtitle => 'Abgeschlossene und laufende Aufnahmen';
@@ -1133,7 +1203,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get dvrDeleteSeriesRuleSuccess => 'Serien-Regel gelöscht';
 
   @override
-  String get dvrSeriesRulesTitle => 'Serien-Regeln';
+  String get dvrSeriesRulesTitle => 'Regeln';
 
   @override
   String get dvrSeriesMatchModeContains => 'Enthält';
@@ -1355,6 +1425,33 @@ class AppLocalizationsDe extends AppLocalizations {
   String get settingsEpgStartViewPrimeTime => 'Prime Time';
 
   @override
+  String get settingsFilterPersistence => 'Filterpersistenz';
+
+  @override
+  String get settingsFilterPersistenceRemember => 'Merken';
+
+  @override
+  String get settingsFilterPersistenceReset => 'Bei jedem Start zurücksetzen';
+
+  @override
+  String get vodSortDialogTitle => 'Filme sortieren nach';
+
+  @override
+  String get seriesSortDialogTitle => 'Serien sortieren nach';
+
+  @override
+  String get mediaSortDefault => 'Standard';
+
+  @override
+  String get mediaSortRating => 'Bewertung';
+
+  @override
+  String get mediaSortReleaseDateNewest => 'Neueste zuerst';
+
+  @override
+  String get mediaSortReleaseDateOldest => 'Älteste zuerst';
+
+  @override
   String get settingsDefaultStartPage => 'Standardstartseite';
 
   @override
@@ -1376,4 +1473,33 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get settingsToggleOff => 'Aus';
+
+  @override
+  String get settingsOptimizeFor => 'Optimierung';
+
+  @override
+  String get settingsOptimizeForQuality => 'Qualität';
+
+  @override
+  String get settingsOptimizeForQualityHint =>
+      'Schärfere Bilder, höherer Speicherverbrauch.';
+
+  @override
+  String get settingsOptimizeForSpeed => 'Geschwindigkeit';
+
+  @override
+  String get settingsOptimizeForSpeedHint =>
+      'Schnelleres Laden, niedrigere Bildqualität.';
+
+  @override
+  String get settingsFontSize => 'Anzeigegröße';
+
+  @override
+  String get settingsFontSizeNormal => 'Normal';
+
+  @override
+  String get settingsFontSizeLarge => 'Groß';
+
+  @override
+  String get settingsFontSizeVeryLarge => 'Sehr groß';
 }

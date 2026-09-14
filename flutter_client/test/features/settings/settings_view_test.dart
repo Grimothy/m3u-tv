@@ -88,6 +88,9 @@ void main() {
       expect(find.text(l.settingsLiveTvLayoutTimeline), findsOneWidget);
       expect(find.text(l.settingsEpgStartViewCurrentTime), findsOneWidget);
       expect(find.text(l.settingsEpgStartViewPrimeTime), findsOneWidget);
+      expect(find.text(l.settingsFilterPersistence), findsOneWidget);
+      expect(find.text(l.settingsFilterPersistenceRemember), findsOneWidget);
+      expect(find.text(l.settingsFilterPersistenceReset), findsOneWidget);
 
       final gridChip = find.widgetWithText(
         DpadInkWell,
@@ -111,6 +114,40 @@ void main() {
 
       expect(await viewSettingsService.epgStartView(), EpgStartView.primeTime);
     });
+
+    testWidgets(
+      'Filter Persistence defaults to Reset and toggles Remember/Reset',
+      (tester) async {
+        await pumpSettingsScreen(tester);
+        final l = await AppLocalizations.delegate.load(const Locale('en'));
+
+        // Default state: rememberMediaSort is false → "Reset Each Time" is
+        // the active chip, "Remember" is not.
+        expect(await viewSettingsService.rememberMediaSort(), isFalse);
+
+        final rememberChip = find.widgetWithText(
+          DpadInkWell,
+          l.settingsFilterPersistenceRemember,
+        );
+        await tester.ensureVisible(rememberChip);
+        await tester.pumpAndSettle();
+        await tester.tap(rememberChip);
+        await tester.pumpAndSettle();
+
+        expect(await viewSettingsService.rememberMediaSort(), isTrue);
+
+        final resetChip = find.widgetWithText(
+          DpadInkWell,
+          l.settingsFilterPersistenceReset,
+        );
+        await tester.ensureVisible(resetChip);
+        await tester.pumpAndSettle();
+        await tester.tap(resetChip);
+        await tester.pumpAndSettle();
+
+        expect(await viewSettingsService.rememberMediaSort(), isFalse);
+      },
+    );
 
     testWidgets('renders default start page chips and persists the choice', (
       tester,

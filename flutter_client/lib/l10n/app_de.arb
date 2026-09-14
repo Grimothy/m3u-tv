@@ -12,6 +12,7 @@
   "navMore": "Mehr",
   "notificationsDesktopOpen": "Öffnen",
   "appBackToExit": "Zum Beenden erneut Zurück drücken",
+  "appRecordingScheduling": "Aufnahme wird geplant\u2026",
   "appRecordingScheduled": "Aufnahme geplant: {title}",
   "@appRecordingScheduled": {
     "placeholders": {
@@ -34,6 +35,7 @@
   "unknown": "Unbekannt",
   "admin": "Admin",
   "mediaCategoryFilterButton": "Filter",
+  "mediaCategorySortButton": "Sortieren",
   "mediaCategoryFilterScreenTitle": "Categories",
   "liveTvViewModeList": "List",
   "liveTvViewModeGrid": "Grid",
@@ -119,6 +121,19 @@
   "epgNoData": "Keine EPG-Daten",
   "epgProgramScheduledToRecord": "Aufnahme geplant",
   "epgProgramCurrentlyRecording": "Wird aufgenommen",
+  "epgSweepLoadingTitle": "Programmführer wird geladen",
+  "epgSweepLoadingBody": "{loaded} von {total} Sendern",
+  "@epgSweepLoadingBody": {
+    "description": "Body text on the in-app toast shown while the EPG background sweep fetches program guide data for the remaining channels after app start, so the user understands the app is not frozen. Non-blocking - dismisses automatically when the sweep finishes.",
+    "placeholders": {
+      "loaded": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "playerGoBack": "Zurück",
   "playerResumeWatching": "Weiterschauen",
   "playerContinue": "Fortsetzen",
@@ -156,6 +171,8 @@
   "playerUpNext": "Als Nächstes",
   "playerUpNextPlay": "Nächste Folge",
   "playerUpNextDismiss": "Schließen",
+  "playerLiveStreamEnded": "Übertragung beendet",
+  "playerReturningToMenu": "Rückkehr zum Menü…",
   "searchHint": "Live-TV, Filme und Serien durchsuchen …",
   "searchSectionLiveTv": "Live-TV",
   "searchSectionMovies": "Filme",
@@ -219,6 +236,40 @@
   },
   "settingsAppViewRelease": "Release ansehen",
   "settingsAppScanQr": "Scannen, um auf deinem Handy zu öffnen",
+  "settingsReleaseNotesTab": "Neuigkeiten",
+  "settingsReleaseNotesLoading": "Versionshinweise werden geladen…",
+  "settingsReleaseNotesError": "Versionshinweise konnten nicht geladen werden. Prüfe deine Verbindung und versuche es erneut.",
+  "settingsReleaseNotesRetry": "Erneut versuchen",
+  "settingsReleaseNotesCurrentBadge": "Aktuell",
+  "settingsReleaseNotesNewBadge": "Neu",
+  "settingsReleaseNotesYouAreOn": "Du nutzt {version}",
+  "@settingsReleaseNotesYouAreOn": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsReleaseNotesLatestIs": "Neueste: {version}",
+  "@settingsReleaseNotesLatestIs": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsReleaseNotesNewerCount": "{count} neuere",
+  "@settingsReleaseNotesNewerCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsReleaseNotesUpToDate": "Du nutzt die neueste Version",
+  "settingsReleaseNotesViewOnGithub": "Alle auf GitHub ansehen",
+  "settingsReleaseNotesNoneForVersion": "Keine Hinweise für diese Version.",
+  "settingsReleaseNotesSelectVersion": "Version auswählen",
   "settingsFillAllFields": "Bitte fülle alle Felder aus",
   "settingsConnectionSettings": "Verbindungseinstellungen",
   "settingsConnectionSettingsSubtitle": "Gib deine Xtream-Codes-Daten ein",
@@ -344,6 +395,7 @@
   },
   "seriesSeasons": "Staffeln",
   "seriesCast": "Besetzung",
+  "relatedTitle": "Ähnliche Titel",
   "seriesEpisodeCount": "{count, plural, =1{1 Folge} other{{count} Folgen}}",
   "@seriesEpisodeCount": {
     "placeholders": {
@@ -505,7 +557,7 @@
   "requestsStatusRejected": "Abgelehnt",
   "requestsStatusCompleted": "Abgeschlossen",
   "requestsStatusUnknown": "Unbekannt",
-  "dvrRecordingsTitle": "DVR-Aufnahmen",
+  "dvrRecordingsTitle": "Aufnahmen",
   "dvrRecordingsSubtitle": "Abgeschlossene und laufende Aufnahmen",
   "dvrNoRecordings": "Keine DVR-Aufnahmen verfügbar",
   "dvrNotConfigured": "Bitte verbinde dich in den Einstellungen mit deinem Dienst",
@@ -602,7 +654,7 @@
   "dvrDeleteSeriesRuleConfirm": "Diese Serien-Regel löschen?",
   "dvrSeriesCancel": "Abbrechen",
   "dvrDeleteSeriesRuleSuccess": "Serien-Regel gelöscht",
-  "dvrSeriesRulesTitle": "Serien-Regeln",
+  "dvrSeriesRulesTitle": "Regeln",
   "dvrSeriesMatchModeContains": "Enthält",
   "dvrSeriesMatchModeExact": "Genau",
   "dvrSeriesModeUseDefault": "Standard",
@@ -755,11 +807,29 @@
   "settingsEpgStartView": "EPG startet um",
   "settingsEpgStartViewCurrentTime": "Aktuelle Uhrzeit",
   "settingsEpgStartViewPrimeTime": "Prime Time",
+  "settingsFilterPersistence": "Filterpersistenz",
+  "settingsFilterPersistenceRemember": "Merken",
+  "settingsFilterPersistenceReset": "Bei jedem Start zurücksetzen",
+  "vodSortDialogTitle": "Filme sortieren nach",
+  "seriesSortDialogTitle": "Serien sortieren nach",
+  "mediaSortDefault": "Standard",
+  "mediaSortRating": "Bewertung",
+  "mediaSortReleaseDateNewest": "Neueste zuerst",
+  "mediaSortReleaseDateOldest": "Älteste zuerst",
   "settingsDefaultStartPage": "Standardstartseite",
   "settingsHdrMode": "HDR-Modus",
   "settingsHdrModeHint": "HDR-Videos dürfen das Display in den HDR-Modus schalten. Nur Windows und Linux.",
   "settingsMatchRefreshRate": "Bildwiederholrate anpassen",
   "settingsMatchRefreshRateHint": "Schaltet den Monitor beim Start der Wiedergabe auf die Bildrate des Videos. Kann den Bildschirm kurz schwarz werden lassen. Nur Windows.",
   "settingsToggleOn": "Ein",
-  "settingsToggleOff": "Aus"
+  "settingsToggleOff": "Aus",
+  "settingsOptimizeFor": "Optimierung",
+  "settingsOptimizeForQuality": "Qualität",
+  "settingsOptimizeForQualityHint": "Schärfere Bilder, höherer Speicherverbrauch.",
+  "settingsOptimizeForSpeed": "Geschwindigkeit",
+  "settingsOptimizeForSpeedHint": "Schnelleres Laden, niedrigere Bildqualität.",
+  "settingsFontSize": "Anzeigegröße",
+  "settingsFontSizeNormal": "Normal",
+  "settingsFontSizeLarge": "Groß",
+  "settingsFontSizeVeryLarge": "Sehr groß"
 }

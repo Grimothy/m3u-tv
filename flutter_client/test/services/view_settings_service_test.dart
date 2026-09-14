@@ -18,6 +18,9 @@ void main() {
     test('default values when no persisted settings exist', () async {
       expect(await service.liveTvLayout(), LiveTvLayout.list);
       expect(await service.epgStartView(), EpgStartView.currentTime);
+      expect(await service.rememberMediaSort(), isFalse);
+      expect(await service.vodSortOption(), MediaSortOption.defaultOrder);
+      expect(await service.seriesSortOption(), MediaSortOption.defaultOrder);
       expect(await service.defaultStartPage(), DefaultStartPage.home);
     });
 
@@ -59,13 +62,62 @@ void main() {
       }
     });
 
+    test(
+      'persists and restores rememberMediaSort with bool semantics',
+      () async {
+        // Defaults to false (conservative; not the always-true hdrEnabled
+        // default - preserves today's "reset each launch" behavior).
+        expect(await service.rememberMediaSort(), isFalse);
+        await service.setRememberMediaSort(true);
+        expect(await service.rememberMediaSort(), isTrue);
+        await service.setRememberMediaSort(false);
+        expect(await service.rememberMediaSort(), isFalse);
+      },
+    );
+
+    test('persists and restores VOD sort option', () async {
+      for (final option in MediaSortOption.values) {
+        await service.setVodSortOption(option);
+        expect(await service.vodSortOption(), option);
+      }
+    });
+
+    test(
+      'persists and restores Series sort option independently of VOD',
+      () async {
+        for (final option in MediaSortOption.values) {
+          await service.setSeriesSortOption(option);
+          expect(await service.seriesSortOption(), option);
+        }
+        await service.setVodSortOption(MediaSortOption.ratingDesc);
+        await service.setSeriesSortOption(MediaSortOption.defaultOrder);
+        expect(await service.vodSortOption(), MediaSortOption.ratingDesc);
+        expect(await service.seriesSortOption(), MediaSortOption.defaultOrder);
+      },
+    );
+
+    test(
+      'sort option survives with rememberMediaSort=false (still persisted, ignored at read time)',
+      () async {
+        // Stored independently - toggling rememberMediaSort off doesn't
+        // clear the sort key; the screen just refuses to read it.
+        await service.setVodSortOption(MediaSortOption.ratingDesc);
+        expect(await service.rememberMediaSort(), isFalse);
+        expect(await service.vodSortOption(), MediaSortOption.ratingDesc);
+      },
+    );
+
     test('values survive service recreation with same store', () async {
       await service.setLiveTvLayout(LiveTvLayout.grid);
       await service.setEpgStartView(EpgStartView.primeTime);
+      await service.setRememberMediaSort(true);
+      await service.setVodSortOption(MediaSortOption.ratingDesc);
 
       final recreated = ViewSettingsService(memory: memory);
       expect(await recreated.liveTvLayout(), LiveTvLayout.grid);
       expect(await recreated.epgStartView(), EpgStartView.primeTime);
+      expect(await recreated.rememberMediaSort(), isTrue);
+      expect(await recreated.vodSortOption(), MediaSortOption.ratingDesc);
     });
 
     test(
@@ -89,6 +141,34 @@ void main() {
       expect(service.liveTvLayoutSync, LiveTvLayout.timeline);
       expect(service.epgStartViewSync, EpgStartView.primeTime);
     });
+
+    test('new sync getters reflect loaded values', () async {
+      await service.setLiveTvLayout(LiveTvLayout.timeline);
+      await service.setEpgStartView(EpgStartView.primeTime);
+      await service.setRememberMediaSort(true);
+      await service.setVodSortOption(MediaSortOption.ratingDesc);
+      await service.setSeriesSortOption(MediaSortOption.ratingDesc);
+
+      expect(service.rememberMediaSortSync, isTrue);
+      expect(service.vodSortOptionSync, MediaSortOption.ratingDesc);
+      expect(service.seriesSortOptionSync, MediaSortOption.ratingDesc);
+    });
+
+    test(
+      'ignores unknown persisted VOD sort and falls back to default',
+      () async {
+        memory[ViewSettingsService.vodSortOptionKey] = 'unknown_sort';
+        expect(await service.vodSortOption(), MediaSortOption.defaultOrder);
+      },
+    );
+
+    test(
+      'ignores unknown persisted Series sort and falls back to default',
+      () async {
+        memory[ViewSettingsService.seriesSortOptionKey] = 'unknown_sort';
+        expect(await service.seriesSortOption(), MediaSortOption.defaultOrder);
+      },
+    );
 
     test(
       'sync getters reflect values loaded from disk via the async getters',

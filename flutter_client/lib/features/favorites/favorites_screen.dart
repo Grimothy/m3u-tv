@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart'
+    show kCatalogKindSeries, kCatalogKindVod;
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/shared/cached_media_thumbnail.dart';
@@ -14,8 +17,7 @@ class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({
     super.key,
     required this.channels,
-    required this.vodItems,
-    required this.seriesList,
+    required this.catalogRepository,
     required this.isConfigured,
     required this.channelFavoritesService,
     required this.vodFavoritesService,
@@ -26,8 +28,7 @@ class FavoritesScreen extends StatefulWidget {
   });
 
   final List<Channel> channels;
-  final List<VodItem> vodItems;
-  final List<Series> seriesList;
+  final CatalogRepository catalogRepository;
   final bool isConfigured;
   final FavoritesService channelFavoritesService;
   final FavoritesService vodFavoritesService;
@@ -44,8 +45,9 @@ class _FavoritesScreenState extends State<FavoritesScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   Set<int> _favoriteChannelIds = {};
-  Set<int> _favoriteVodIds = {};
-  Set<int> _favoriteSeriesIds = {};
+  List<VodItem> _favoriteVodItems = const [];
+  List<Series> _favoriteSeriesList = const [];
+  bool _loadedOnce = false;
 
   static const _tabs = [
     Tab(text: 'Live TV'),
@@ -67,27 +69,29 @@ class _FavoritesScreenState extends State<FavoritesScreen>
   }
 
   Future<void> _loadFavorites() async {
-    final channels = await widget.channelFavoritesService.all();
-    final vod = await widget.vodFavoritesService.all();
-    final series = await widget.seriesFavoritesService.all();
+    final channelIds = await widget.channelFavoritesService.all();
+    final vodIds = await widget.vodFavoritesService.all();
+    final seriesIds = await widget.seriesFavoritesService.all();
+    final vodItems = await widget.catalogRepository.activeItemsByIds<VodItem>(
+      kind: kCatalogKindVod,
+      ids: vodIds,
+    );
+    final seriesList = await widget.catalogRepository.activeItemsByIds<Series>(
+      kind: kCatalogKindSeries,
+      ids: seriesIds,
+    );
     if (mounted) {
       setState(() {
-        _favoriteChannelIds = channels;
-        _favoriteVodIds = vod;
-        _favoriteSeriesIds = series;
+        _favoriteChannelIds = channelIds;
+        _favoriteVodItems = vodItems;
+        _favoriteSeriesList = seriesList;
+        _loadedOnce = true;
       });
     }
   }
 
   List<Channel> get _favoriteChannels =>
       widget.channels.where((c) => _favoriteChannelIds.contains(c.id)).toList();
-
-  List<VodItem> get _favoriteVodItems =>
-      widget.vodItems.where((v) => _favoriteVodIds.contains(v.id)).toList();
-
-  List<Series> get _favoriteSeriesList => widget.seriesList
-      .where((s) => _favoriteSeriesIds.contains(s.id))
-      .toList();
 
   bool get _hasAnyFavorites =>
       _favoriteChannels.isNotEmpty ||
@@ -105,6 +109,10 @@ class _FavoritesScreenState extends State<FavoritesScreen>
           ),
         ),
       );
+    }
+
+    if (!_loadedOnce) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (!_hasAnyFavorites) {
@@ -157,10 +165,15 @@ class _FavoritesScreenState extends State<FavoritesScreen>
           },
           child: ListTile(
             leading: channel.logoUrl != null && channel.logoUrl!.isNotEmpty
-                ? CircleAvatar(
-                    backgroundImage: NetworkImage(channel.logoUrl!),
-                    onBackgroundImageError: (_, _) {},
-                    child: const Icon(Icons.tv),
+                ? ClipOval(
+                    child: CachedMediaThumbnail(
+                      url: channel.logoUrl!,
+                      width: 40,
+                      height: 40,
+                      fit: BoxFit.cover,
+                      oversample: 2,
+                      fallback: const CircleAvatar(child: Icon(Icons.tv)),
+                    ),
                   )
                 : const CircleAvatar(child: Icon(Icons.tv)),
             title: Text(channel.name),

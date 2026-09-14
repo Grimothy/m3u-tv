@@ -176,6 +176,12 @@ abstract class AppLocalizations {
   /// **'Press back again to exit'**
   String get appBackToExit;
 
+  /// No description provided for @appRecordingScheduling.
+  ///
+  /// In en, this message translates to:
+  /// **'Recording is being scheduled…'**
+  String get appRecordingScheduling;
+
   /// No description provided for @appRecordingScheduled.
   ///
   /// In en, this message translates to:
@@ -223,6 +229,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Filter'**
   String get mediaCategoryFilterButton;
+
+  /// No description provided for @mediaCategorySortButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort'**
+  String get mediaCategorySortButton;
 
   /// No description provided for @mediaCategoryFilterScreenTitle.
   ///
@@ -524,6 +536,18 @@ abstract class AppLocalizations {
   /// **'Currently recording'**
   String get epgProgramCurrentlyRecording;
 
+  /// No description provided for @epgSweepLoadingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading program guide'**
+  String get epgSweepLoadingTitle;
+
+  /// Body text on the in-app toast shown while the EPG background sweep fetches program guide data for the remaining channels after app start, so the user understands the app is not frozen. Non-blocking - dismisses automatically when the sweep finishes.
+  ///
+  /// In en, this message translates to:
+  /// **'{loaded} of {total} channels'**
+  String epgSweepLoadingBody(int loaded, int total);
+
   /// No description provided for @playerGoBack.
   ///
   /// In en, this message translates to:
@@ -643,6 +667,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Dismiss'**
   String get playerUpNextDismiss;
+
+  /// No description provided for @playerLiveStreamEnded.
+  ///
+  /// In en, this message translates to:
+  /// **'Stream ended'**
+  String get playerLiveStreamEnded;
+
+  /// No description provided for @playerReturningToMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'Returning to the menu…'**
+  String get playerReturningToMenu;
 
   /// No description provided for @searchHint.
   ///
@@ -1046,6 +1082,84 @@ abstract class AppLocalizations {
   /// **'Scan to open on your phone'**
   String get settingsAppScanQr;
 
+  /// No description provided for @settingsReleaseNotesTab.
+  ///
+  /// In en, this message translates to:
+  /// **'What\'s New'**
+  String get settingsReleaseNotesTab;
+
+  /// No description provided for @settingsReleaseNotesLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading release notes…'**
+  String get settingsReleaseNotesLoading;
+
+  /// No description provided for @settingsReleaseNotesError.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load release notes. Check your connection and try again.'**
+  String get settingsReleaseNotesError;
+
+  /// No description provided for @settingsReleaseNotesRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get settingsReleaseNotesRetry;
+
+  /// No description provided for @settingsReleaseNotesCurrentBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Current'**
+  String get settingsReleaseNotesCurrentBadge;
+
+  /// No description provided for @settingsReleaseNotesNewBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'New'**
+  String get settingsReleaseNotesNewBadge;
+
+  /// No description provided for @settingsReleaseNotesYouAreOn.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re on {version}'**
+  String settingsReleaseNotesYouAreOn(String version);
+
+  /// No description provided for @settingsReleaseNotesLatestIs.
+  ///
+  /// In en, this message translates to:
+  /// **'Latest: {version}'**
+  String settingsReleaseNotesLatestIs(String version);
+
+  /// No description provided for @settingsReleaseNotesNewerCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} newer'**
+  String settingsReleaseNotesNewerCount(int count);
+
+  /// No description provided for @settingsReleaseNotesUpToDate.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re on the latest version'**
+  String get settingsReleaseNotesUpToDate;
+
+  /// No description provided for @settingsReleaseNotesViewOnGithub.
+  ///
+  /// In en, this message translates to:
+  /// **'View all on GitHub'**
+  String get settingsReleaseNotesViewOnGithub;
+
+  /// No description provided for @settingsReleaseNotesNoneForVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'No notes for this release.'**
+  String get settingsReleaseNotesNoneForVersion;
+
+  /// No description provided for @settingsReleaseNotesSelectVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Select a version'**
+  String get settingsReleaseNotesSelectVersion;
+
   /// No description provided for @settingsFillAllFields.
   ///
   /// In en, this message translates to:
@@ -1345,6 +1459,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cast'**
   String get seriesCast;
+
+  /// No description provided for @relatedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Related'**
+  String get relatedTitle;
 
   /// No description provided for @seriesEpisodeCount.
   ///
@@ -1769,7 +1889,7 @@ abstract class AppLocalizations {
   /// No description provided for @dvrRecordingsTitle.
   ///
   /// In en, this message translates to:
-  /// **'DVR Recordings'**
+  /// **'Recordings'**
   String get dvrRecordingsTitle;
 
   /// No description provided for @dvrRecordingsSubtitle.
@@ -2081,7 +2201,7 @@ abstract class AppLocalizations {
   /// No description provided for @dvrSeriesRulesTitle.
   ///
   /// In en, this message translates to:
-  /// **'Series Rules'**
+  /// **'Rules'**
   String get dvrSeriesRulesTitle;
 
   /// No description provided for @dvrSeriesMatchModeContains.
@@ -2414,6 +2534,60 @@ abstract class AppLocalizations {
   /// **'Prime time'**
   String get settingsEpgStartViewPrimeTime;
 
+  /// No description provided for @settingsFilterPersistence.
+  ///
+  /// In en, this message translates to:
+  /// **'Filter Persistence'**
+  String get settingsFilterPersistence;
+
+  /// No description provided for @settingsFilterPersistenceRemember.
+  ///
+  /// In en, this message translates to:
+  /// **'Remember'**
+  String get settingsFilterPersistenceRemember;
+
+  /// No description provided for @settingsFilterPersistenceReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset Each Time'**
+  String get settingsFilterPersistenceReset;
+
+  /// No description provided for @vodSortDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort Movies By'**
+  String get vodSortDialogTitle;
+
+  /// No description provided for @seriesSortDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort Series By'**
+  String get seriesSortDialogTitle;
+
+  /// No description provided for @mediaSortDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get mediaSortDefault;
+
+  /// No description provided for @mediaSortRating.
+  ///
+  /// In en, this message translates to:
+  /// **'Rating'**
+  String get mediaSortRating;
+
+  /// No description provided for @mediaSortReleaseDateNewest.
+  ///
+  /// In en, this message translates to:
+  /// **'Newest First'**
+  String get mediaSortReleaseDateNewest;
+
+  /// No description provided for @mediaSortReleaseDateOldest.
+  ///
+  /// In en, this message translates to:
+  /// **'Oldest First'**
+  String get mediaSortReleaseDateOldest;
+
   /// No description provided for @settingsDefaultStartPage.
   ///
   /// In en, this message translates to:
@@ -2455,6 +2629,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Off'**
   String get settingsToggleOff;
+
+  /// No description provided for @settingsOptimizeFor.
+  ///
+  /// In en, this message translates to:
+  /// **'Optimize for'**
+  String get settingsOptimizeFor;
+
+  /// No description provided for @settingsOptimizeForQuality.
+  ///
+  /// In en, this message translates to:
+  /// **'Quality'**
+  String get settingsOptimizeForQuality;
+
+  /// No description provided for @settingsOptimizeForQualityHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Sharper images, higher memory usage.'**
+  String get settingsOptimizeForQualityHint;
+
+  /// No description provided for @settingsOptimizeForSpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'Speed'**
+  String get settingsOptimizeForSpeed;
+
+  /// No description provided for @settingsOptimizeForSpeedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Faster loading, lower image quality.'**
+  String get settingsOptimizeForSpeedHint;
+
+  /// No description provided for @settingsFontSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Display size'**
+  String get settingsFontSize;
+
+  /// No description provided for @settingsFontSizeNormal.
+  ///
+  /// In en, this message translates to:
+  /// **'Normal'**
+  String get settingsFontSizeNormal;
+
+  /// No description provided for @settingsFontSizeLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'Large'**
+  String get settingsFontSizeLarge;
+
+  /// No description provided for @settingsFontSizeVeryLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'Very Large'**
+  String get settingsFontSizeVeryLarge;
 }
 
 class _AppLocalizationsDelegate

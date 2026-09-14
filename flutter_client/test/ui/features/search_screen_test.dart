@@ -4,6 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/features/search/search_screen.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/shared/dpad_tab_bar.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
@@ -13,8 +16,10 @@ void main() {
     late List<Channel> testChannels;
     late List<VodItem> testVodItems;
     late List<Series> testSeriesList;
+    late CatalogDatabase testDb;
+    late CatalogRepository testRepo;
 
-    setUp(() {
+    setUp(() async {
       testChannels = [
         const Channel(
           id: 1,
@@ -56,14 +61,30 @@ void main() {
         ),
         const Series(id: 21, name: 'Bad Sisters', categoryId: '31'),
       ];
+      // Runs before flutter_test's per-testWidgets fakeAsync zone exists, so
+      // this real drift I/O completes normally without needing
+      // tester.runAsync (unlike DB work done inside a testWidgets body).
+      testDb = CatalogDatabase.memory();
+      testRepo = CatalogRepository(testDb);
+      await testRepo.replaceItems(
+        sourceKey: CatalogRepository.activeSource,
+        kind: kCatalogKindVod,
+        items: testVodItems,
+      );
+      await testRepo.replaceItems(
+        sourceKey: CatalogRepository.activeSource,
+        kind: kCatalogKindSeries,
+        items: testSeriesList,
+      );
     });
+
+    tearDown(() => testDb.close());
 
     testWidgets('renders search field', (tester) async {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -75,8 +96,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -95,8 +115,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -111,8 +130,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -131,8 +149,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -156,8 +173,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -182,8 +198,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -210,8 +225,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -233,8 +247,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
           onChannelSelect: (channel) => selectedChannel = channel,
           onVodSelect: (item) => selectedVod = item,
           onSeriesSelect: (series) => selectedSeries = series,
@@ -273,8 +286,7 @@ void main() {
         await tester.pumpWidget(
           _TestApp(
             channels: testChannels,
-            vodItems: testVodItems,
-            seriesList: testSeriesList,
+            catalogRepository: testRepo,
             onChannelContextChanged: (channels) => reportedContext = channels,
           ),
         );
@@ -294,8 +306,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -312,8 +323,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
           isConfigured: false,
         ),
       );
@@ -384,8 +394,7 @@ void main() {
           await tester.pumpWidget(
             _TestApp(
               channels: testChannels,
-              vodItems: testVodItems,
-              seriesList: testSeriesList,
+              catalogRepository: testRepo,
               onSearchShows: staticShows(showResults),
             ),
           );
@@ -431,8 +440,7 @@ void main() {
           await tester.pumpWidget(
             _TestApp(
               channels: testChannels,
-              vodItems: testVodItems,
-              seriesList: testSeriesList,
+              catalogRepository: testRepo,
               onSearchShows: (query) async {
                 return query == 'bear' ? showResults : const [];
               },
@@ -469,8 +477,7 @@ void main() {
           await tester.pumpWidget(
             _TestApp(
               channels: testChannels,
-              vodItems: testVodItems,
-              seriesList: testSeriesList,
+              catalogRepository: testRepo,
               onSearchShows: staticShows(showResults),
             ),
           );
@@ -500,8 +507,7 @@ void main() {
           await tester.pumpWidget(
             _TestApp(
               channels: testChannels,
-              vodItems: testVodItems,
-              seriesList: testSeriesList,
+              catalogRepository: testRepo,
               onSearchShows: (query) async {
                 return query == 'bear' ? showResults : const [];
               },
@@ -529,8 +535,7 @@ void main() {
           await tester.pumpWidget(
             _TestApp(
               channels: testChannels,
-              vodItems: testVodItems,
-              seriesList: testSeriesList,
+              catalogRepository: testRepo,
               onSearchShows: staticShows(showResults),
               onChannelSelect: (channel) => selectedChannel = channel,
               onChannelContextChanged: (channels) => reportedContext = channels,
@@ -559,8 +564,7 @@ void main() {
           await tester.pumpWidget(
             _TestApp(
               channels: testChannels,
-              vodItems: testVodItems,
-              seriesList: testSeriesList,
+              catalogRepository: testRepo,
               onSearchShows: staticShows(showResults),
               onShowSelect: (show) => selectedShow = show,
             ),
@@ -586,8 +590,7 @@ void main() {
           await tester.pumpWidget(
             _TestApp(
               channels: testChannels,
-              vodItems: testVodItems,
-              seriesList: testSeriesList,
+              catalogRepository: testRepo,
               // No onSearchShows callback - the screen should behave
               // exactly like pre-#227.
             ),
@@ -614,8 +617,7 @@ void main() {
           await tester.pumpWidget(
             _TestApp(
               channels: testChannels,
-              vodItems: testVodItems,
-              seriesList: testSeriesList,
+              catalogRepository: testRepo,
               onSearchShows: staticShows(showResults),
             ),
           );
@@ -663,8 +665,7 @@ void main() {
 class _TestApp extends StatelessWidget {
   const _TestApp({
     required this.channels,
-    required this.vodItems,
-    required this.seriesList,
+    required this.catalogRepository,
     this.isConfigured = true,
     this.onChannelSelect,
     this.onChannelContextChanged,
@@ -675,8 +676,7 @@ class _TestApp extends StatelessWidget {
   });
 
   final List<Channel> channels;
-  final List<VodItem> vodItems;
-  final List<Series> seriesList;
+  final CatalogRepository catalogRepository;
   final bool isConfigured;
   final void Function(Channel)? onChannelSelect;
   final void Function(List<Channel>)? onChannelContextChanged;
@@ -692,8 +692,7 @@ class _TestApp extends StatelessWidget {
         isBootstrappingProvider.overrideWith((_) => false),
         isConfiguredProvider.overrideWith((_) => isConfigured),
         liveChannelsProvider.overrideWith((_) => channels),
-        vodItemsProvider.overrideWith((_) => vodItems),
-        seriesListProvider.overrideWith((_) => seriesList),
+        catalogRepositoryProvider.overrideWith((_) => catalogRepository),
       ],
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,

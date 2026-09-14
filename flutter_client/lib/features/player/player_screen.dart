@@ -28,6 +28,7 @@ import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/services/xtream_service.dart';
 import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
+import 'package:m3u_tv/shared/image_quality_scope.dart';
 
 const bool _showPlaybackDiagnostics = bool.fromEnvironment(
   'M3U_TV_SHOW_PLAYBACK_DIAGNOSTICS',
@@ -60,6 +61,7 @@ class PlayerScreen extends StatefulWidget {
     this.viewerId = '',
     this.onClose,
     this.onPlaybackFailure,
+    this.onLiveStreamEnded,
     this.onNextChannel,
     this.onPreviousChannel,
     this.onReplaceItem,
@@ -84,6 +86,7 @@ class PlayerScreen extends StatefulWidget {
   final ViewSettingsService? viewSettingsService;
   final VoidCallback? onClose;
   final VoidCallback? onPlaybackFailure;
+  final Future<String?> Function()? onLiveStreamEnded;
   final VoidCallback? onNextChannel;
   final VoidCallback? onPreviousChannel;
 
@@ -92,7 +95,7 @@ class PlayerScreen extends StatefulWidget {
   /// the next series episode. Mirrors how live TV reuses the player for
   /// channel skip - see `didUpdateWidget`.
   final void Function(PlayerArgs args)? onReplaceItem;
-  final void Function(EpgProgram program)? onRecordProgram;
+  final Future<void> Function(EpgProgram program)? onRecordProgram;
   final ValueChanged<bool>? onTrackDialogVisibilityChanged;
   final bool isRecordingCurrentChannel;
 
@@ -200,6 +203,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   bool _overlayVisible = true;
   bool _trackDialogVisible = false;
+  bool _dvrSchedulePending = false;
 
   // Owns the outer Focus so we can steal focus from the content area when
   // the player opens, and reclaim it whenever the overlay hides.
@@ -216,6 +220,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Timer? _progressTimer;
   Timer? _positionTimer;
   Timer? _epgTimer;
+  Timer? _liveEndHoldTimer;
+  bool _liveEndHold = false;
+  String? _liveEndReason;
   Future<void>? _epgFetch;
 
   StreamSubscription<PlaybackState>? _stateSubscription;
@@ -330,6 +337,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void didUpdateWidget(covariant PlayerScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Trigger a rebuild so PlaybackControls shows the correct record/stop icon
+    // whenever the recording state changes.
+    if (oldWidget.isRecordingCurrentChannel !=
+        widget.isRecordingCurrentChannel) {
+      if (mounted) setState(() {});
+    }
     if (_isSamePlaybackSession(oldWidget.args, widget.args)) return;
 
     if (_traktScrobbleActive) _scrobbleFor(oldWidget.args, 'stop');
@@ -343,9 +356,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _comskipBadgeTimer?.cancel();
     _introDbPromptTimer?.cancel();
     _introDbPendingSkipTimer?.cancel();
+    _liveEndHoldTimer?.cancel();
 
     setState(() {
       _status = PlaybackStatus.idle;
+      _liveEndHold = false;
+      _liveEndReason = null;
       _currentPosition = Duration.zero;
       _duration = Duration.zero;
       _errorMessage = null;
@@ -923,6 +939,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _progressTimer?.cancel();
     _positionTimer?.cancel();
     _epgTimer?.cancel();
+    _liveEndHoldTimer?.cancel();
     _comskipBadgeTimer?.cancel();
     _pendingComskipSeekTimer?.cancel();
     _introDbPromptTimer?.cancel();
@@ -1021,6 +1038,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     // unmount PlaybackControls (and steal focus back to the player) out
     // from under the still-open dialog. Rescheduled once the dialog closes.
     if (_trackDialogVisible) return;
+    // Keep the overlay visible while a DVR recording is being scheduled so
+    // the user can see the recording badge appear (or a failure message).
+    if (_dvrSchedulePending) return;
     _overlayHideTimer = Timer(_overlayTimeout, () {
       if (!_disposed && mounted) {
         setState(() => _overlayVisible = false);
@@ -1095,7 +1115,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
           _traktScrobbleActive = false;
           _scrobble('stop');
         }
-        _goBack();
+        if (_isLive) {
+          // A live stream ended unexpectedly (channel evicted by a DVR
+          // recording, provider drop, server-side stop). Hold the player
+          // immediately so SOMETHING is shown, then ask the shell for the
+          // reason (it fetches persisted notifications) and swap the generic
+          // "Stream ended" for the real message (e.g. the DVR eviction text).
+          _holdBeforeGoBack();
+          unawaited(_loadLiveEndReason());
+        } else {
+          _goBack();
+        }
       }
     });
 
@@ -1265,6 +1295,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
+  /// Holds the player on screen after a live stream ends so a notification
+  /// toast (e.g. a DVR eviction message) stays visible, then returns.
+  /// User input (back) returns immediately.
+  void _holdBeforeGoBack() {
+    if (_disposed || !mounted) return;
+    setState(() => _liveEndHold = true);
+    _liveEndHoldTimer?.cancel();
+    _liveEndHoldTimer = Timer(const Duration(seconds: 15), _goBack);
+  }
+
+  /// Fetches the reason the live stream ended (via the shell, which queries
+  /// persisted notifications - the push channel can be down) and swaps the
+  /// generic "Stream ended" for the real message.
+  Future<void> _loadLiveEndReason() async {
+    String? reason;
+    if (widget.onLiveStreamEnded != null) {
+      reason = await widget.onLiveStreamEnded!();
+    }
+    if (_disposed || !mounted) return;
+    setState(() => _liveEndReason = reason);
+  }
+
   void _goBack() {
     if (_disposed || !mounted) return;
     // Return focus to _screenFocusNode before closing. AppShell's restoration
@@ -1354,6 +1406,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _handleBack() {
     if (_trackDialogVisible) {
       unawaited(Navigator.of(context, rootNavigator: true).maybePop());
+      return;
+    }
+    if (_liveEndHold) {
+      // User pressed back during the post-stream hold - leave immediately.
+      _liveEndHoldTimer?.cancel();
+      _liveEndHold = false;
+      _goBack();
       return;
     }
     if (_errorMessage != null) {
@@ -1479,24 +1538,31 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 // [isHandheldLayout].
                 final isCompact = isHandheldLayout(context);
                 final edgePadding = overlayEdgePaddingFor(context);
-                // Compact/handheld now sits to the right of the back
-                // button, the same corner PlaybackControls itself uses --
-                // mirroring tvOS's existing placement below. It used to sit
-                // below the back button instead, which ate a big chunk of
-                // vertical space that's especially scarce in the short
-                // landscape orientation the player locks to on phones.
+                final fontScale = FontSizeScope.scaleOf(context);
+                // Sits to the right of the back button on every platform --
+                // mirroring tvOS's original placement, now applied uniformly
+                // instead of a separate flat desktop constant. It used to sit
+                // below the back button on handheld instead, which ate a big
+                // chunk of vertical space that's especially scarce in the
+                // short landscape orientation the player locks to on phones.
                 // Derive the offset from the actual button geometry instead
                 // of a magic constant: safe-area inset + PlaybackControls'
                 // own padding (edgePadding, shared with it so the two can't
-                // drift apart) + the ~44px circular back button + a gap.
-                final rightOfBackButton =
-                    isCompact || Platform.operatingSystem == 'tvos';
-                final overlayLeft = rightOfBackButton
-                    ? mediaQuery.padding.left +
-                          edgePadding +
-                          44.0 +
-                          (isCompact ? 12.0 : 16.0)
-                    : 104.0;
+                // drift apart) + the circular back button (44px at the
+                // normal display-size scale - see PlaybackControls._
+                // buildHeader's icon size + padding, which this must track
+                // or a larger display-size setting grows the real button
+                // past this reserved space) + a gap. The desktop gap (20)
+                // matches the old flat 104.0 constant at scale 1
+                // (40 edgePadding + 44 button + 20 gap).
+                final gap = isCompact
+                    ? 12.0
+                    : (Platform.operatingSystem == 'tvos' ? 16.0 : 20.0);
+                final overlayLeft =
+                    mediaQuery.padding.left +
+                    edgePadding +
+                    44.0 * fontScale +
+                    gap;
                 // Must match PlaybackControls' own edgePadding or the
                 // back button and this overlay's top edges drift apart.
                 final overlayTop = mediaQuery.padding.top + edgePadding;
@@ -1577,6 +1643,39 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
 
                     // Error display
+                    if (_liveEndHold)
+                      Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _liveEndReason ??
+                                    AppLocalizations.of(
+                                      context,
+                                    ).playerLiveStreamEnded,
+                                style: Theme.of(context).textTheme.headlineSmall
+                                    ?.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                AppLocalizations.of(
+                                  context,
+                                ).playerReturningToMenu,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 14,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     if (_errorMessage != null)
                       Center(
                         child: Padding(
@@ -1616,7 +1715,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 ],
                                 child: FilledButton.icon(
                                   onPressed: _goBack,
-                                  icon: const Icon(Icons.arrow_back),
+                                  icon: Icon(
+                                    Icons.arrow_back,
+                                    size: 24 * FontSizeScope.scaleOf(context),
+                                  ),
                                   label: Text(
                                     AppLocalizations.of(context).playerGoBack,
                                   ),
@@ -1668,8 +1770,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 (_isLive &&
                                     widget.onRecordProgram != null &&
                                     _epgData?.current != null)
-                                ? () =>
-                                      widget.onRecordProgram!(_epgData!.current)
+                                ? () async {
+                                    setState(() => _dvrSchedulePending = true);
+                                    try {
+                                      await widget.onRecordProgram!(
+                                        _epgData!.current,
+                                      );
+                                    } finally {
+                                      // Keep the overlay pinned for a moment
+                                      // so the user can see the stop icon
+                                      // appear (success) or the error SnackBar
+                                      // (failure) before the bar hides.
+                                      await Future<void>.delayed(
+                                        const Duration(seconds: 1),
+                                      );
+                                      if (mounted) {
+                                        setState(
+                                          () => _dvrSchedulePending = false,
+                                        );
+                                        _scheduleOverlayHide();
+                                      }
+                                    }
+                                  }
                                 : null,
                             isRecording: widget.isRecordingCurrentChannel,
                             skipPrompt: skipPrompt,

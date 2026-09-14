@@ -2,8 +2,38 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/features/continue_watching/continue_watching_screen.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
+
+/// Builds a fresh in-memory catalog repository populated with [vodItems]/
+/// [seriesList], via `tester.runAsync` since drift's real I/O does not
+/// resolve under flutter_test's default fakeAsync zone.
+Future<CatalogRepository> _buildRepo(
+  WidgetTester tester, {
+  List<VodItem> vodItems = const [],
+  List<Series> seriesList = const [],
+}) async {
+  final repo = await tester.runAsync(() async {
+    final db = CatalogDatabase.memory();
+    addTearDown(db.close);
+    final repo = CatalogRepository(db);
+    await repo.replaceItems(
+      sourceKey: CatalogRepository.activeSource,
+      kind: kCatalogKindVod,
+      items: vodItems,
+    );
+    await repo.replaceItems(
+      sourceKey: CatalogRepository.activeSource,
+      kind: kCatalogKindSeries,
+      items: seriesList,
+    );
+    return repo;
+  });
+  return repo!;
+}
 
 void main() {
   group('ContinueWatchingScreen', () {
@@ -31,19 +61,20 @@ void main() {
     });
 
     testWidgets('renders continue watching items', (tester) async {
+      final repo = await _buildRepo(
+        tester,
+        vodItems: const [
+          VodItem(
+            id: 10,
+            name: 'The Matrix',
+            streamUrl: 'http://example.com/10.mp4',
+            containerExtension: 'mp4',
+          ),
+        ],
+        seriesList: const [Series(id: 5, name: 'Breaking Bad')],
+      );
       await tester.pumpWidget(
-        _TestApp(
-          progressList: testProgress,
-          vodItems: const [
-            VodItem(
-              id: 10,
-              name: 'The Matrix',
-              streamUrl: 'http://example.com/10.mp4',
-              containerExtension: 'mp4',
-            ),
-          ],
-          seriesList: const [Series(id: 5, name: 'Breaking Bad')],
-        ),
+        _TestApp(progressList: testProgress, catalogRepository: repo),
       );
       await tester.pumpAndSettle();
 
@@ -54,19 +85,20 @@ void main() {
     });
 
     testWidgets('shows progress bar for items', (tester) async {
+      final repo = await _buildRepo(
+        tester,
+        vodItems: const [
+          VodItem(
+            id: 10,
+            name: 'The Matrix',
+            streamUrl: 'http://example.com/10.mp4',
+            containerExtension: 'mp4',
+          ),
+        ],
+        seriesList: const [Series(id: 5, name: 'Breaking Bad')],
+      );
       await tester.pumpWidget(
-        _TestApp(
-          progressList: testProgress,
-          vodItems: const [
-            VodItem(
-              id: 10,
-              name: 'The Matrix',
-              streamUrl: 'http://example.com/10.mp4',
-              containerExtension: 'mp4',
-            ),
-          ],
-          seriesList: const [Series(id: 5, name: 'Breaking Bad')],
-        ),
+        _TestApp(progressList: testProgress, catalogRepository: repo),
       );
       await tester.pumpAndSettle();
 
@@ -75,8 +107,9 @@ void main() {
     });
 
     testWidgets('shows empty state when no progress items', (tester) async {
+      final repo = await _buildRepo(tester);
       await tester.pumpWidget(
-        const _TestApp(progressList: [], vodItems: [], seriesList: []),
+        _TestApp(progressList: const [], catalogRepository: repo),
       );
       await tester.pumpAndSettle();
 
@@ -88,18 +121,21 @@ void main() {
       tester,
     ) async {
       Progress? selectedProgress;
+      final repo = await _buildRepo(
+        tester,
+        vodItems: const [
+          VodItem(
+            id: 10,
+            name: 'The Matrix',
+            streamUrl: 'http://example.com/10.mp4',
+            containerExtension: 'mp4',
+          ),
+        ],
+      );
       await tester.pumpWidget(
         _TestApp(
           progressList: testProgress,
-          vodItems: const [
-            VodItem(
-              id: 10,
-              name: 'The Matrix',
-              streamUrl: 'http://example.com/10.mp4',
-              containerExtension: 'mp4',
-            ),
-          ],
-          seriesList: const [],
+          catalogRepository: repo,
           onProgressSelect: (progress) => selectedProgress = progress,
         ),
       );
@@ -129,19 +165,19 @@ void main() {
           durationSeconds: 3600,
         ),
       ];
+      final repo = await _buildRepo(
+        tester,
+        vodItems: const [
+          VodItem(
+            id: 10,
+            name: 'The Matrix',
+            streamUrl: 'http://example.com/10.mp4',
+            containerExtension: 'mp4',
+          ),
+        ],
+      );
       await tester.pumpWidget(
-        _TestApp(
-          progressList: shortProgress,
-          vodItems: const [
-            VodItem(
-              id: 10,
-              name: 'The Matrix',
-              streamUrl: 'http://example.com/10.mp4',
-              containerExtension: 'mp4',
-            ),
-          ],
-          seriesList: const [],
-        ),
+        _TestApp(progressList: shortProgress, catalogRepository: repo),
       );
       await tester.pumpAndSettle();
 
@@ -154,14 +190,12 @@ void main() {
 class _TestApp extends StatelessWidget {
   const _TestApp({
     required this.progressList,
-    required this.vodItems,
-    required this.seriesList,
+    required this.catalogRepository,
     this.onProgressSelect,
   });
 
   final List<Progress> progressList;
-  final List<VodItem> vodItems;
-  final List<Series> seriesList;
+  final CatalogRepository catalogRepository;
   final void Function(Progress)? onProgressSelect;
 
   @override
@@ -172,8 +206,7 @@ class _TestApp extends StatelessWidget {
       supportedLocales: AppLocalizations.supportedLocales,
       home: ContinueWatchingScreen(
         progressList: progressList,
-        vodItems: vodItems,
-        seriesList: seriesList,
+        catalogRepository: catalogRepository,
         onProgressSelect: onProgressSelect ?? (_) {},
       ),
     );

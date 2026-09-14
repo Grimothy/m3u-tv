@@ -15,10 +15,16 @@ import 'package:m3u_tv/navigation/go_router_config.dart';
 import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
+import 'package:m3u_tv/services/cache_service.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
+import 'package:m3u_tv/services/device_performance.dart';
 import 'package:m3u_tv/services/persistent_store.dart';
 import 'package:m3u_tv/services/production_storage.dart';
+import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/services/window_state_service.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
+import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/media_image_cache_manager.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
@@ -26,10 +32,21 @@ import 'package:window_manager/window_manager.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await DevicePerformance.ensureDetected();
+  if (kDebugMode) debugPrint(DevicePerformance.describe());
+  _configureImageCache();
   tz_data.initializeTimeZones();
   final systemUiPolicy = SystemUiPolicy();
   await systemUiPolicy.applyBrowsing();
   final appState = await _buildAppState();
+  // In speed mode, cap the decoded image cache at 50 MB to prevent memory
+  // accumulation during long browsing sessions on low-RAM devices.
+  final optimizeFor = await appState.viewSettingsService.optimizeFor();
+  if (optimizeFor == OptimizeFor.speed) {
+    PaintingBinding.instance.imageCache.maximumSizeBytes =
+        50 * 1024 * 1024; // 50 MB
+    PaintingBinding.instance.imageCache.maximumSize = 200;
+  }
   if (_isDesktop) {
     await _configureDesktopWindow(appState);
   }
@@ -37,6 +54,20 @@ Future<void> main() async {
   if (_isMobilePushCapable(nativeTelevisionHint)) {
     unawaited(_initPushNotifications(appState));
   }
+  // Pre-load persisted view settings into the in-memory cache so the
+  // synchronous getters (fontSizeSync, optimizeForSync, rememberMediaSortSync,
+  // vodSortOptionSync, seriesSortOptionSync) return the correct values on the
+  // very first build - without this, fontSizeSync defaults to
+  // AppFontSize.normal and the user's saved choice is ignored until the
+  // settings screen opens and triggers an async refresh. VodScreen/
+  // SeriesScreen rely on the sort ones specifically to seed their initial
+  // sort in a single pass instead of reconfiguring their windowed grid twice.
+  await appState.viewSettingsService.fontSize();
+  await Future.wait([
+    appState.viewSettingsService.rememberMediaSort(),
+    appState.viewSettingsService.vodSortOption(),
+    appState.viewSettingsService.seriesSortOption(),
+  ]);
   // Resolve the user's preferred start page before the router is built so a
   // cold launch opens there instead of always on Home.
   final startPage = await appState.viewSettingsService.defaultStartPage();
@@ -51,6 +82,51 @@ Future<void> main() async {
       ),
     ),
   );
+}
+
+/// Raises Flutter's decoded-image memory cache above the 100 MB / 1000 entry
+/// default. Posters and channel logos are disk-cached via
+/// [MediaImageCacheManager], but the decoded bitmaps live in this in-memory
+/// [ImageCache]; on a 4K TV a single poster grid can't fit one screenful in
+/// 100 MB, so browsing (and every trip in and out of a detail screen) evicts
+/// entries and forces a visible re-decode from disk. A larger ceiling keeps
+/// recently browsed art resident so revisiting a screen is instant.
+///
+/// Sized per platform: Android TV boxes and sticks can sit on ~1 GB of RAM
+/// with an aggressive low-memory killer, so they get the smallest ceiling;
+/// tvOS has more headroom but still hard-caps per-app memory; desktop is
+/// effectively unconstrained.
+void _configureImageCache() {
+  int maximumSizeBytes;
+  int maximumSize;
+  if (_isDesktop) {
+    maximumSizeBytes = 384 * 1024 * 1024;
+    maximumSize = 1500;
+  } else if (Platform.isIOS) {
+    // tvOS
+    maximumSizeBytes = 256 * 1024 * 1024;
+    maximumSize = 1200;
+  } else {
+    // Android TV - tightest RAM budget. Raised from 160MB/900 alongside the
+    // fling-aware decode throttle in ScrollbarGridView (which caps how many
+    // decodes a single fast scroll can queue at once) - the ceiling alone
+    // never fixed decode-burst OOMs, it only delayed them, so this is
+    // deliberately a moderate bump (not all the way to desktop's 384MB) with
+    // the throttle doing the actual burst control.
+    maximumSizeBytes = 224 * 1024 * 1024;
+    maximumSize = 1100;
+  }
+  // Low-end Android hardware (32-bit, low-RAM flag, <= ~2.2 GiB): halve the
+  // ceiling so a poster-grid decode burst can't push RSS into LMK range
+  // before the watchdog samples. The watchdog is the backstop, this is the
+  // budget.
+  if (DevicePerformance.isReduced) {
+    maximumSizeBytes = (maximumSizeBytes * 0.5).round();
+    maximumSize = (maximumSize * 0.6).round();
+  }
+  PaintingBinding.instance.imageCache
+    ..maximumSizeBytes = maximumSizeBytes
+    ..maximumSize = maximumSize;
 }
 
 bool get _isDesktop =>
@@ -101,7 +177,9 @@ Future<void> _initPushNotifications(AppStateController appState) async {
 
 Future<AppStateController> _buildAppState() async {
   final operatingSystem = Platform.operatingSystem;
-  final (store, cacheStore) = await _createAppStateStores(operatingSystem);
+  final (store, cacheStore, dataDir) = await _createAppStateStores(
+    operatingSystem,
+  );
   final storage = createProductionStorage(
     operatingSystem: operatingSystem,
     persistentStore: store,
@@ -112,20 +190,86 @@ Future<AppStateController> _buildAppState() async {
       credentialStorage: storage.credentialStorage,
     );
   }
+  final catalogRepository = await _openCatalogRepository(dataDir);
+  // The catalog is a disposable cache - it's re-fetched from the source on
+  // every load - so there is nothing to migrate. Drop only the pre-SQLite
+  // catalog blobs (`m3ue_cache_liveStreams`, ...) from the JSON stores;
+  // SQLite fills itself on the next source load. The other `m3ue_cache_*`
+  // keys (`sourceType`, `viewers`) still live in the JSON store and must be
+  // left alone or the cached-content fast path in boot() never fires. Best
+  // effort: a failure here only leaves dead bytes behind.
+  final legacyCatalogKeys = <String>{
+    for (final key in CacheService.catalogKeys) 'm3ue_cache_$key',
+  };
+  for (final legacyStore in {storage.appStateStore, cacheStore}) {
+    try {
+      await legacyStore.removeWhere(legacyCatalogKeys.contains);
+    } on Object catch (error) {
+      debugPrint('[Catalog] legacy cache purge deferred: $error');
+    }
+  }
   return AppStateController(
     persistentStore: storage.appStateStore,
     cacheStore: cacheStore,
+    catalogRepository: catalogRepository,
     secureStorage: storage.credentialStorage,
   );
 }
 
-/// Returns the app-state store and the content-cache store as a pair. The
-/// cache (whole channel/VOD/series catalog) is a sibling `cache.json` so a
-/// small single-key write to `app_state.json` - e.g. the resume tracker every
-/// ~10s during playback - never has to re-serialize the catalog.
-Future<(PersistentJsonStore, PersistentJsonStore)> _createAppStateStores(
-  String operatingSystem,
-) async {
+/// Opens the SQLite catalog database in [dataDir] and probes it with a trivial
+/// query. There is no JSON fallback - the catalog is always a `CatalogRepository`.
+///
+/// The catalog is a disposable cache (it refills from the source on every
+/// load), so a file that won't open or answer - corruption, a schema mismatch -
+/// is recoverable: delete the file and reopen once. If even a fresh file can't
+/// be opened (the platform has no usable sqlite3), fall back to an in-memory
+/// database: still the same code path, just not persisted, so the app runs and
+/// rebuilds the catalog each launch instead of failing to start.
+Future<CatalogRepository> _openCatalogRepository(Directory dataDir) async {
+  await dataDir.create(recursive: true);
+  try {
+    return await _openAndProbeCatalog(dataDir);
+  } on Object catch (error, stackTrace) {
+    debugPrint('[Catalog] discarding unusable catalog database: $error');
+    if (kDebugMode) debugPrintStack(stackTrace: stackTrace);
+    for (final name in CatalogDatabase.databaseFileNames) {
+      final file = File('${dataDir.path}/$name');
+      try {
+        if (file.existsSync()) await file.delete();
+      } on Object {
+        // Best effort - a leftover sidecar is harmless once the main file is gone.
+      }
+    }
+    try {
+      return await _openAndProbeCatalog(dataDir);
+    } on Object catch (error, stackTrace) {
+      debugPrint(
+        '[Catalog] on-disk catalog unavailable, using in-memory: $error',
+      );
+      if (kDebugMode) debugPrintStack(stackTrace: stackTrace);
+      return CatalogRepository(CatalogDatabase.memory());
+    }
+  }
+}
+
+Future<CatalogRepository> _openAndProbeCatalog(Directory dataDir) async {
+  final repository = CatalogRepository(CatalogDatabase.open(dataDir));
+  try {
+    await repository.isEmpty().timeout(const Duration(seconds: 5));
+    return repository;
+  } on Object {
+    await repository.close().catchError((_) {});
+    rethrow;
+  }
+}
+
+/// Returns the app-state store, the content-cache store, and the directory
+/// both live in. The cache (whole channel/VOD/series catalog) is a sibling
+/// `cache.json` so a small single-key write to `app_state.json` - e.g. the
+/// resume tracker every ~10s during playback - never has to re-serialize the
+/// catalog.
+Future<(PersistentJsonStore, PersistentJsonStore, Directory)>
+_createAppStateStores(String operatingSystem) async {
   if (operatingSystem == 'tvos') {
     // Documents exists but is read-only on a physical Apple TV; only
     // Library/Caches and tmp are writable there. See path_provider_tvos's
@@ -144,6 +288,7 @@ Future<(PersistentJsonStore, PersistentJsonStore)> _createAppStateStores(
     return (
       PersistentJsonStore(file: File('${dir.path}/app_state.json')),
       PersistentJsonStore(file: File('${dir.path}/cache.json')),
+      dir,
     );
   }
   if (operatingSystem == 'android' || operatingSystem == 'ios') {
@@ -151,11 +296,13 @@ Future<(PersistentJsonStore, PersistentJsonStore)> _createAppStateStores(
     return (
       PersistentJsonStore(file: File('${dir.path}/app_state.json')),
       PersistentJsonStore(file: File('${dir.path}/cache.json')),
+      dir,
     );
   }
   return (
     PersistentJsonStore(),
     PersistentJsonStore(fileName: 'cache.json'),
+    Directory(PersistentJsonStore.defaultDirectoryPath()),
   );
 }
 
@@ -184,11 +331,13 @@ class _MyAppState extends State<MyApp> {
     systemUiPolicy: widget.systemUiPolicy,
     initialLocation: widget.initialLocation,
   );
+  OptimizeFor? _lastOptimizeFor;
 
   @override
   void initState() {
     super.initState();
     widget.appState?.addListener(_onAppStateChanged);
+    widget.appState?.viewSettingsService.addListener(_onAppStateChanged);
   }
 
   @override
@@ -196,17 +345,41 @@ class _MyAppState extends State<MyApp> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.appState != widget.appState) {
       oldWidget.appState?.removeListener(_onAppStateChanged);
+      oldWidget.appState?.viewSettingsService.removeListener(
+        _onAppStateChanged,
+      );
       widget.appState?.addListener(_onAppStateChanged);
+      widget.appState?.viewSettingsService.addListener(_onAppStateChanged);
     }
   }
 
   @override
   void dispose() {
+    widget.appState?.viewSettingsService.removeListener(_onAppStateChanged);
     widget.appState?.removeListener(_onAppStateChanged);
     super.dispose();
   }
 
   void _onAppStateChanged() {
+    // Update the image cache cap only when the optimize-for setting actually
+    // changes -- this listener also fires on unrelated AppStateController
+    // notifications (e.g. the 30s DVR poll), and clearing the cache on every
+    // one of those would force live logos/posters to re-decode constantly.
+    final optimizeFor = widget.appState?.viewSettingsService.optimizeForSync;
+    if (optimizeFor != _lastOptimizeFor) {
+      _lastOptimizeFor = optimizeFor;
+      if (optimizeFor == OptimizeFor.speed) {
+        PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024;
+        PaintingBinding.instance.imageCache.maximumSize = 200;
+      } else {
+        PaintingBinding.instance.imageCache.maximumSizeBytes =
+            100 * 1024 * 1024;
+        PaintingBinding.instance.imageCache.maximumSize = 1000;
+      }
+      // Clear cached images so they re-decode at the new oversample/filter
+      // quality - stale entries from the previous mode waste GPU memory.
+      PaintingBinding.instance.imageCache.clear();
+    }
     // boot() calls notifyListeners() synchronously from AppShellState.initState,
     // which fires mid-build. Deferring to post-frame avoids the setState-during-
     // build assertion in all phases (idle mount, persistent-callbacks frame, etc.)
@@ -235,6 +408,14 @@ class _MyAppState extends State<MyApp> {
           nativeTelevisionHint: widget.nativeTelevisionHint,
         );
         final isTvOrDesktop = shouldUseSidebar(deviceType);
+        final viewSettings = widget.appState?.viewSettingsService;
+        final optimizeFor =
+            viewSettings?.optimizeForSync ?? OptimizeFor.quality;
+        final fontSize = AppFontSize.resolveDefault(
+          stored: viewSettings?.fontSizeSyncOrNull,
+          isTv: deviceType == DeviceType.tv,
+        );
+        final routerChild = child ?? const SizedBox.shrink();
         return Dpad(
           theme: const DpadThemeData(
             effects: [
@@ -272,9 +453,23 @@ class _MyAppState extends State<MyApp> {
                   }
                 }
               : null,
-          child: _TvZoom(
-            deviceType: deviceType,
-            child: child ?? const SizedBox.shrink(),
+          child: ImageQualityScope(
+            optimizeFor: optimizeFor,
+            child: FontSizeScope(
+              fontSize: fontSize,
+              child: Builder(
+                builder: (context) {
+                  final scale = FontSizeScope.scaleOf(context);
+                  if (scale == 1) return routerChild;
+                  return MediaQuery(
+                    data: MediaQuery.of(
+                      context,
+                    ).copyWith(textScaler: TextScaler.linear(scale)),
+                    child: routerChild,
+                  );
+                },
+              ),
+            ),
           ),
         );
       },
@@ -327,85 +522,6 @@ class _MyAppState extends State<MyApp> {
         ),
       ),
       themeMode: ThemeMode.dark,
-    );
-  }
-}
-
-/// The extra scale factor [_TvZoom] applies on top of the real screen's
-/// devicePixelRatio. Image cache-dimension widgets (`CachedBackdropImage`,
-/// `CachedMediaThumbnail`, `ResilientMediaImage`) multiply
-/// `MediaQuery.devicePixelRatioOf(context)` by this when sizing their
-/// `ResizeImage`, since they compute cache dimensions from local widget
-/// size/constraints in the shrunk virtual canvas -- unlike code that reads
-/// devicePixelRatio together with `localToGlobal()`, which already lands in
-/// real-space coordinates via the FittedBox's paint transform and needs no
-/// correction. Defaults to 1 outside the TV zoom (non-TV devices, or any
-/// context above `_TvZoom` in the tree).
-class TvZoomScale extends InheritedWidget {
-  const TvZoomScale({required this.scale, required super.child, super.key});
-
-  final double scale;
-
-  static double of(BuildContext context) {
-    return context.dependOnInheritedWidgetOfExactType<TvZoomScale>()?.scale ??
-        1;
-  }
-
-  @override
-  bool updateShouldNotify(TvZoomScale oldWidget) => scale != oldWidget.scale;
-}
-
-/// Renders the app on a smaller virtual canvas and stretches it to fill the
-/// real screen, so text/icons/nav read clearly from a couch-length distance.
-/// TV-only: on the couch, physical viewing distance is far larger than a
-/// desktop/tablet/phone, so the same logical layout reads too small.
-class _TvZoom extends StatelessWidget {
-  const _TvZoom({required this.deviceType, required this.child});
-
-  static const double _scale = 1.4;
-
-  final DeviceType deviceType;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    if (deviceType != DeviceType.tv) return child;
-
-    final mediaQuery = MediaQuery.of(context);
-    final realSize = mediaQuery.size;
-    final virtualSize = realSize / _scale;
-
-    return SizedBox.fromSize(
-      size: realSize,
-      child: FittedBox(
-        fit: BoxFit.fill,
-        child: SizedBox.fromSize(
-          size: virtualSize,
-          child: MediaQuery(
-            // padding/viewPadding/viewInsets/systemGestureInsets are all
-            // calibrated for the real screen -- FittedBox stretches the
-            // virtual canvas back up by _scale, so anything computed from
-            // these in the virtual coordinate space (SafeArea, manual
-            // Positioned offsets) must divide by _scale too, or it consumes
-            // a _scale-times-too-large share of the smaller virtual canvas.
-            data: mediaQuery.copyWith(
-              size: virtualSize,
-              // devicePixelRatio is deliberately left as the real screen's
-              // value, not divided/multiplied by _scale: code that reads it
-              // together with localToGlobal() (e.g. native_video_surface.dart)
-              // already gets real-space coordinates for free, because
-              // localToGlobal composes the FittedBox's paint transform. Image
-              // cache-dimension widgets instead read TvZoomScale.of(context)
-              // (below) to correct for the extra stretch on top of this.
-              padding: mediaQuery.padding / _scale,
-              viewPadding: mediaQuery.viewPadding / _scale,
-              viewInsets: mediaQuery.viewInsets / _scale,
-              systemGestureInsets: mediaQuery.systemGestureInsets / _scale,
-            ),
-            child: TvZoomScale(scale: _scale, child: child),
-          ),
-        ),
-      ),
     );
   }
 }

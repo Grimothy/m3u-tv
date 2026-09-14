@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 /// Unlike Material's [TabBar], each tab uses [DpadFocusable] so:
 /// - Hover and D-pad focus show the same background tint (no border effect).
 /// - A mouse click transfers keyboard focus to the clicked tab.
-class DpadTabBar extends StatelessWidget {
+class DpadTabBar extends StatefulWidget {
   const DpadTabBar({
     super.key,
     required this.controller,
@@ -20,21 +20,76 @@ class DpadTabBar extends StatelessWidget {
   final List<String> tabs;
 
   @override
+  State<DpadTabBar> createState() => DpadTabBarState();
+}
+
+/// Public so callers holding a `GlobalKey<DpadTabBarState>` can pull d-pad
+/// focus onto the selected tab directly via [requestFocus].
+///
+/// Needed when content below the bar sits inside its own [FocusScope] (e.g.
+/// `MediaCategoryNav`'s sidebar strip). Plain directional traversal can
+/// never cross that boundary since `dpad`'s traversal policy bounds
+/// candidates to the current [FocusScopeNode]'s own descendants, so a
+/// screen combining both must reach up here with an explicit
+/// [FocusNode.requestFocus] instead of relying on Up-arrow traversal.
+class DpadTabBarState extends State<DpadTabBar> {
+  List<FocusNode> _focusNodes = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNodes = _createFocusNodes();
+  }
+
+  @override
+  void didUpdateWidget(DpadTabBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.tabs.length != oldWidget.tabs.length) {
+      for (final node in _focusNodes) {
+        node.dispose();
+      }
+      _focusNodes = _createFocusNodes();
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final node in _focusNodes) {
+      node.dispose();
+    }
+    super.dispose();
+  }
+
+  List<FocusNode> _createFocusNodes() => [
+    for (int i = 0; i < widget.tabs.length; i++)
+      FocusNode(debugLabel: 'DpadTabBar tab $i'),
+  ];
+
+  /// Focuses the currently selected tab.
+  void requestFocus() {
+    final index = widget.controller.index;
+    if (index >= 0 && index < _focusNodes.length) {
+      _focusNodes[index].requestFocus();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return AnimatedBuilder(
-      animation: controller,
+      animation: widget.controller,
       builder: (context, _) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              for (int i = 0; i < tabs.length; i++)
+              for (int i = 0; i < widget.tabs.length; i++)
                 Expanded(
                   child: _DpadTab(
-                    label: tabs[i],
-                    isSelected: controller.index == i,
-                    onTap: () => controller.animateTo(i),
+                    focusNode: _focusNodes[i],
+                    label: widget.tabs[i],
+                    isSelected: widget.controller.index == i,
+                    onTap: () => widget.controller.animateTo(i),
                   ),
                 ),
             ],
@@ -98,11 +153,13 @@ bool isDesktopPlatform(BuildContext context) {
 
 class _DpadTab extends StatefulWidget {
   const _DpadTab({
+    required this.focusNode,
     required this.label,
     required this.isSelected,
     required this.onTap,
   });
 
+  final FocusNode focusNode;
   final String label;
   final bool isSelected;
   final VoidCallback onTap;
@@ -112,17 +169,10 @@ class _DpadTab extends StatefulWidget {
 }
 
 class _DpadTabState extends State<_DpadTab> {
-  final _focusNode = FocusNode();
   bool _hovered = false;
 
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    super.dispose();
-  }
-
   void _onTap() {
-    _focusNode.requestFocus();
+    widget.focusNode.requestFocus();
     widget.onTap();
   }
 
@@ -138,7 +188,7 @@ class _DpadTabState extends State<_DpadTab> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: DpadFocusable(
-        focusNode: _focusNode,
+        focusNode: widget.focusNode,
         onSelect: _onTap,
         builder: (context, state, child) {
           final highlighted = state.focused || _hovered || state.pressed;

@@ -112,6 +112,8 @@ class TvNotificationItem {
     this.body,
     required this.status,
     this.adminOnly = false,
+    this.sticky = false,
+    this.progressValue,
   });
 
   final String id;
@@ -124,6 +126,18 @@ class TvNotificationItem {
   /// 'success' | 'warning' | 'danger' | 'info'
   final String status;
   final bool adminOnly;
+
+  /// When true, the in-app toast (`NotificationToastOverlay`) skips its
+  /// normal auto-dismiss countdown - the caller owns dismissal via
+  /// `NotificationToastOverlayState.dismissById`. Used for progress toasts
+  /// (e.g. the EPG sweep) whose lifetime is driven by real work completing,
+  /// not a fixed timer. Never set from server-pushed notifications.
+  final bool sticky;
+
+  /// 0.0-1.0 completion for a [sticky] progress toast's bar; null renders an
+  /// indeterminate bar. Ignored (the normal countdown bar is used instead)
+  /// unless [sticky] is true.
+  final double? progressValue;
 
   static TvNotificationItem? tryFromJson(Map<String, Object?> json) {
     final id = canonicalNotificationId(json['id']);

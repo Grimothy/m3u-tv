@@ -13,6 +13,7 @@ import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/dpad_tab_bar.dart';
 import 'package:m3u_tv/shared/dvr_action_dialogs.dart';
+import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/leading_tile.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/row_action_menu.dart';
@@ -61,8 +62,7 @@ class DvrRecordingsScreen extends StatefulWidget {
     this.onSidebarActivate,
     this.onSearchShows,
     this.onOpenShowDetail,
-    this.onEnterFullScreenDetail,
-    this.onExitFullScreenDetail,
+    this.onHandleTopLevelBack,
     this.useInlineRowActions,
   });
 
@@ -90,15 +90,16 @@ class DvrRecordingsScreen extends StatefulWidget {
   /// push as VOD/Series/AIOStreams detail. See [ShowsScreen.onShowSelect].
   final void Function(EpgShow show)? onOpenShowDetail;
 
-  /// Wired from AppShell to `AppShell._enterFullScreenDetail`/
-  /// `_exitFullScreenDetail`. The Series Rules tab opens the DVR Options
-  /// screen via a plain `Navigator.push`, not a go_router route, so it
-  /// doesn't get the immersive sidebar/bottom-nav-hiding treatment for
-  /// free the way `onOpenShowDetail`'s route push does — these let
-  /// `_openEdit` opt into the same state manually for the duration of
-  /// that push.
-  final VoidCallback? onEnterFullScreenDetail;
-  final VoidCallback? onExitFullScreenDetail;
+  /// Wired from AppShell to `AppShellState.handleBackFromTopLevelRoute`
+  /// (via `ContentActions.onHandleTopLevelBack`). The Series Rules tab
+  /// opens the DVR Options screen via `openDvrSeriesRuleOptions`, which
+  /// pushes onto the *root* Navigator (see that function's doc comment for
+  /// why) rather than a go_router route nested under AppShell - so it's
+  /// outside AppShell's own `Shortcuts`/`Actions` back handling the same
+  /// way the top-level VOD/Series/AIOStreams detail routes are, and needs
+  /// this passed through so Escape/GoBack still routes through AppShell's
+  /// back-echo dedup instead of popping independently.
+  final bool Function()? onHandleTopLevelBack;
 
   /// Whether row actions (Recordings/Series Rules) should render as
   /// expand-in-place D-pad-focusable buttons (desktop/TV) instead of a
@@ -255,8 +256,7 @@ class _DvrRecordingsScreenState extends State<DvrRecordingsScreen>
       onDelete: widget.onDeleteSeriesRule,
       onUpdate: widget.onUpdateSeriesRule,
       onSidebarActivate: widget.onSidebarActivate,
-      onEnterFullScreenDetail: widget.onEnterFullScreenDetail,
-      onExitFullScreenDetail: widget.onExitFullScreenDetail,
+      onHandleTopLevelBack: widget.onHandleTopLevelBack,
       inline: inline,
     );
   }
@@ -280,8 +280,7 @@ class _SeriesRulesList extends StatefulWidget {
     this.onDelete,
     this.onUpdate,
     this.onSidebarActivate,
-    this.onEnterFullScreenDetail,
-    this.onExitFullScreenDetail,
+    this.onHandleTopLevelBack,
   });
 
   final List<DvrSeriesRule> rules;
@@ -290,8 +289,7 @@ class _SeriesRulesList extends StatefulWidget {
   final Future<void> Function(DvrSeriesRule rule, DvrSeriesRuleOptions options)?
   onUpdate;
   final VoidCallback? onSidebarActivate;
-  final VoidCallback? onEnterFullScreenDetail;
-  final VoidCallback? onExitFullScreenDetail;
+  final bool Function()? onHandleTopLevelBack;
 
   @override
   State<_SeriesRulesList> createState() => _SeriesRulesListState();
@@ -330,17 +328,12 @@ class _SeriesRulesListState extends State<_SeriesRulesList> {
   Future<void> _openEdit(BuildContext context, DvrSeriesRule rule) async {
     final l10n = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
-    widget.onEnterFullScreenDetail?.call();
-    final DvrSeriesRuleOptions? options;
-    try {
-      options = await openDvrSeriesRuleOptions(
-        context,
-        show: _showForRule(rule),
-        initialRule: rule,
-      );
-    } finally {
-      widget.onExitFullScreenDetail?.call();
-    }
+    final options = await openDvrSeriesRuleOptions(
+      context,
+      show: _showForRule(rule),
+      initialRule: rule,
+      onBack: widget.onHandleTopLevelBack,
+    );
     if (options == null || !context.mounted) return;
     try {
       await widget.onUpdate!(rule, options);
@@ -985,8 +978,6 @@ class _RecordingCard extends StatelessWidget {
   final VoidCallback? onDelete;
   final VoidCallback? onSelect;
 
-  // NOTE(cj): row height is tuned for touch/desktop; scaling to 88 for TV
-  // is tracked as follow-up work, not done here.
   static const double _rowHeight = 72;
 
   @override
@@ -995,6 +986,7 @@ class _RecordingCard extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final statusColor = _statusColor(colorScheme);
     final canSelect = onSelect != null;
+    final scale = FontSizeScope.scaleOf(context);
     // Hidden while selecting: bulk actions live in the selection rail/bar
     // instead, freeing the row's right edge for d-pad traversal to reach it.
     final hasMenu =
@@ -1002,7 +994,7 @@ class _RecordingCard extends StatelessWidget {
         (onPlay != null || canSelect || onStop != null || onDelete != null);
 
     return SizedBox(
-      height: _rowHeight,
+      height: _rowHeight * scale,
       child: Material(
         color: colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(MediaBrowsingMetrics.cardRadius),
