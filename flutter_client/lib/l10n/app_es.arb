@@ -804,8 +804,6 @@
   "settingsLiveTvChannelColumnLogoOnly": "Solo logo",
   "settingsLiveTvChannelColumnTitleOnly": "Solo título",
   "settingsEpgStartView": "La guía empieza a las",
-"settingsEpgStartViewCurrentTime": "Hora actual",
-  "settingsEpgStartViewPrimeTime": "Prime time",
   "settingsFilterPersistence": "Persistencia del filtro",
   "settingsFilterPersistenceRemember": "Recordar",
   "settingsFilterPersistenceReset": "Restablecer cada vez",

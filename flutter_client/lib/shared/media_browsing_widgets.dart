@@ -789,7 +789,7 @@ class CategoryFilterChip extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onTap;
 
-  /// Optional long-press handler — mirrors `DpadInkWell.onLongTap` so TV
+  /// Optional long-press handler - mirrors `DpadInkWell.onLongTap` so TV
   /// d-pad hold and touch long-press both trigger it. Used by VOD's
   /// "press-and-hold to sort" affordance; null elsewhere (no behavior
   /// change).

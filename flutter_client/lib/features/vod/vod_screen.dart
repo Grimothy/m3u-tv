@@ -208,12 +208,11 @@ class _VodScreenState extends ConsumerState<VodScreen> {
   /// fully-materialized list, so sorting it client-side is simplest.
   List<VodItem> _sortedFavorites(List<VodItem> items) {
     if (_sortOption != VodSortOption.ratingDesc) return items;
-    final list = items.toList(growable: false);
     // Unrated items sink below every rated one - keeps the grid visually
     // anchored on the best-rated movies and treats missing data as "less
     // informative" rather than "zero stars".
-    list.sort((a, b) => (b.rating ?? -1).compareTo(a.rating ?? -1));
-    return list;
+    return items.toList(growable: false)
+      ..sort((a, b) => (b.rating ?? -1).compareTo(a.rating ?? -1));
   }
 
   /// Refreshes tab-count labels (total / favorites / per-category) when the
@@ -482,7 +481,7 @@ class _VodScreenState extends ConsumerState<VodScreen> {
   /// post-dialog persistence decision uses the latest setting, then applies
   /// the user's selection (or no-op on dismiss). On selecting a new
   /// option: always updates the local [_sortOption]; only writes back to
-  /// the service when persistence is currently on — exactly per the
+  /// the service when persistence is currently on - exactly per the
   /// plan's "read once at dialog open" discipline.
   Future<void> _showSortMenu(BuildContext context) async {
     final service = ref.read(viewSettingsServiceProvider);

@@ -342,7 +342,7 @@ class VerticalCategoryList extends StatelessWidget {
   final ValueChanged<String> onSelected;
 
   /// Forwarded to each [CategoryFilterChip] when set. Per CJ, this is a
-  /// global sort/filter affordance (VOD only for now) — the specific tab
+  /// global sort/filter affordance (VOD only for now) - the specific tab
   /// pressed is intentionally ignored at the call site.
   final VoidCallback? onCategoryLongPress;
 

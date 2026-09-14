@@ -252,7 +252,7 @@ class ViewSettingsService extends ChangeNotifier {
     return raw as bool? ?? false;
   }
 
-  /// Synchronous accessor — see [hdrEnabledSync].
+  /// Synchronous accessor - see [hdrEnabledSync].
   bool get rememberVodSortSync =>
       (_memory[rememberVodSortKey] as bool?) ?? false;
 
@@ -269,7 +269,7 @@ class ViewSettingsService extends ChangeNotifier {
     return VodSortOption.fromValue(raw as String?);
   }
 
-  /// Synchronous accessor — see [hdrEnabledSync].
+  /// Synchronous accessor - see [hdrEnabledSync].
   VodSortOption get vodSortOptionSync =>
       VodSortOption.fromValue(_memory[vodSortOptionKey] as String?);
 
