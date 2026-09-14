@@ -76,6 +76,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mediaCategoryFilterButton => 'Filter';
 
   @override
+  String get mediaCategorySortButton => '排序';
+
+  @override
   String get mediaCategoryFilterScreenTitle => 'Categories';
 
   @override
@@ -1385,10 +1388,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get vodSortDialogTitle => '电影排序';
 
   @override
-  String get vodSortDefault => '默认';
+  String get seriesSortDialogTitle => '剧集排序';
 
   @override
-  String get vodSortRating => '评分';
+  String get mediaSortDefault => '默认';
+
+  @override
+  String get mediaSortRating => '评分';
 
   @override
   String get settingsDefaultStartPage => '默认启动页面';

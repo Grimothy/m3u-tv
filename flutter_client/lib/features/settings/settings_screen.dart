@@ -2178,7 +2178,7 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
   LiveTvLayout _liveTvLayout = LiveTvLayout.list;
   EpgStartView _epgStartView = EpgStartView.currentTime;
   ChannelColumnLayout _channelColumnLayout = ChannelColumnLayout.logoOnly;
-  bool _rememberVodSort = false;
+  bool _rememberMediaSort = false;
   DefaultStartPage _defaultStartPage = DefaultStartPage.home;
   bool _hdrEnabled = true;
   bool _matchRefreshRate = false;
@@ -2207,7 +2207,7 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
     final layout = await widget.service.liveTvLayout();
     final startView = await widget.service.epgStartView();
     final channelColumnLayout = await widget.service.channelColumnLayout();
-    final rememberVodSort = await widget.service.rememberVodSort();
+    final rememberMediaSort = await widget.service.rememberMediaSort();
     final defaultStartPage = await widget.service.defaultStartPage();
     final hdrEnabled = await widget.service.hdrEnabled();
     final matchRefreshRate = await widget.service.matchRefreshRate();
@@ -2222,7 +2222,7 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
       _liveTvLayout = layout;
       _epgStartView = startView;
       _channelColumnLayout = channelColumnLayout;
-      _rememberVodSort = rememberVodSort;
+      _rememberMediaSort = rememberMediaSort;
       _defaultStartPage = defaultStartPage;
       _hdrEnabled = hdrEnabled;
       _matchRefreshRate = matchRefreshRate;
@@ -2431,13 +2431,13 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
               children: [
                 _IntervalChip(
                   label: l.settingsFilterPersistenceRemember,
-                  isSelected: _rememberVodSort,
-                  onTap: () => widget.service.setRememberVodSort(true),
+                  isSelected: _rememberMediaSort,
+                  onTap: () => widget.service.setRememberMediaSort(true),
                 ),
                 _IntervalChip(
                   label: l.settingsFilterPersistenceReset,
-                  isSelected: !_rememberVodSort,
-                  onTap: () => widget.service.setRememberVodSort(false),
+                  isSelected: !_rememberMediaSort,
+                  onTap: () => widget.service.setRememberMediaSort(false),
                 ),
               ],
             ),

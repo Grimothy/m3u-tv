@@ -77,6 +77,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get mediaCategoryFilterButton => 'Filter';
 
   @override
+  String get mediaCategorySortButton => 'Sortieren';
+
+  @override
   String get mediaCategoryFilterScreenTitle => 'Categories';
 
   @override
@@ -1434,10 +1437,13 @@ class AppLocalizationsDe extends AppLocalizations {
   String get vodSortDialogTitle => 'Filme sortieren nach';
 
   @override
-  String get vodSortDefault => 'Standard';
+  String get seriesSortDialogTitle => 'Serien sortieren nach';
 
   @override
-  String get vodSortRating => 'Bewertung';
+  String get mediaSortDefault => 'Standard';
+
+  @override
+  String get mediaSortRating => 'Bewertung';
 
   @override
   String get settingsDefaultStartPage => 'Standardstartseite';

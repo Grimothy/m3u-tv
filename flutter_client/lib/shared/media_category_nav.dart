@@ -46,7 +46,6 @@ class MediaCategoryNav extends StatefulWidget {
     this.memoryKeyPrefix = 'media-category-nav',
     this.searchAutofocus = false,
     this.onEntryFocusScopeReady,
-    this.onCategoryLongPress,
     this.onTopEdge,
   });
 
@@ -99,12 +98,6 @@ class MediaCategoryNav extends StatefulWidget {
   /// by Flutter's own sibling-scope memory. See
   /// `AppShell._deactivateSidebar` for why that matters.
   final ValueChanged<FocusScopeNode>? onEntryFocusScopeReady;
-
-  /// TV/desktop only: forwarded to each chip in the sidebar's
-  /// [VerticalCategoryList]. Ignored on the stacked/mobile layout - its
-  /// pushed [MediaCategoryFilterScreen] is out of scope for the VOD sort
-  /// affordance in #235.
-  final VoidCallback? onCategoryLongPress;
 
   /// TV/desktop only: called when d-pad Up is pressed at the strip's top
   /// edge. The strip runs inside its own [FocusScope] (so `requestFocus`
@@ -210,7 +203,6 @@ class MediaCategoryNavState extends State<MediaCategoryNav> {
                       tabs: widget.tabs,
                       selectedId: widget.selectedId,
                       onSelected: widget.onSelected,
-                      onCategoryLongPress: widget.onCategoryLongPress,
                     ),
                   ),
                 ],
@@ -333,18 +325,12 @@ class VerticalCategoryList extends StatelessWidget {
     required this.tabs,
     required this.selectedId,
     required this.onSelected,
-    this.onCategoryLongPress,
     super.key,
   });
 
   final List<CategoryTabData> tabs;
   final String selectedId;
   final ValueChanged<String> onSelected;
-
-  /// Forwarded to each [CategoryFilterChip] when set. Per CJ, this is a
-  /// global sort/filter affordance (VOD only for now) - the specific tab
-  /// pressed is intentionally ignored at the call site.
-  final VoidCallback? onCategoryLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -362,7 +348,6 @@ class VerticalCategoryList extends StatelessWidget {
               label: tab.name,
               isSelected: selectedId == tab.id,
               onTap: () => onSelected(tab.id),
-              onLongPress: onCategoryLongPress,
             ),
           );
         },

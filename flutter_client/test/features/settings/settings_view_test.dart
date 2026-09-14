@@ -121,9 +121,9 @@ void main() {
         await pumpSettingsScreen(tester);
         final l = await AppLocalizations.delegate.load(const Locale('en'));
 
-        // Default state: rememberVodSort is false → "Reset Each Time" is
+        // Default state: rememberMediaSort is false → "Reset Each Time" is
         // the active chip, "Remember" is not.
-        expect(await viewSettingsService.rememberVodSort(), isFalse);
+        expect(await viewSettingsService.rememberMediaSort(), isFalse);
 
         final rememberChip = find.widgetWithText(
           DpadInkWell,
@@ -134,7 +134,7 @@ void main() {
         await tester.tap(rememberChip);
         await tester.pumpAndSettle();
 
-        expect(await viewSettingsService.rememberVodSort(), isTrue);
+        expect(await viewSettingsService.rememberMediaSort(), isTrue);
 
         final resetChip = find.widgetWithText(
           DpadInkWell,
@@ -145,7 +145,7 @@ void main() {
         await tester.tap(resetChip);
         await tester.pumpAndSettle();
 
-        expect(await viewSettingsService.rememberVodSort(), isFalse);
+        expect(await viewSettingsService.rememberMediaSort(), isFalse);
       },
     );
 

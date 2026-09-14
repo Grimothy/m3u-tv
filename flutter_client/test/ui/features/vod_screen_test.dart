@@ -396,14 +396,14 @@ void main() {
   });
 
   // ---------------------------------------------------------------------
-  // #235 VOD category sort (long-press affordance + persistence behavior)
+  // #235 VOD sort (dedicated "Sort" button next to search, both layouts)
   //
   // All four items are in the same category so the category filter is a
   // no-op and any reorder is purely the sort step. The default (server)
   // order is AAAA → BBBB → CCCC → DDDD; ratingDesc produces
   // AAAA → DDDD → BBBB → CCCC (unrated sinks last).
   // ---------------------------------------------------------------------
-  group('VodScreen VOD sort by long-press', () {
+  group('VodScreen sort', () {
     late List<VodItem> sortItems;
     late List<Category> sortCategories;
 
@@ -465,7 +465,7 @@ void main() {
     }
 
     testWidgets(
-      'long-press on a category chip opens the sort menu with Default, Rating, Cancel',
+      'tapping Sort opens the sort menu with Default, Rating, Cancel',
       (tester) async {
         final repo = await _buildRepo(tester, sortItems);
         await tester.pumpWidget(
@@ -476,8 +476,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Trigger the long-press via the chip's underlying InkWell long-press.
-        await tester.longPress(find.text('All Movies'));
+        await tester.tap(find.text('Sort'));
         await tester.pumpAndSettle();
 
         expect(find.text('Sort Movies By'), findsOneWidget);
@@ -507,7 +506,7 @@ void main() {
           'DDDD Third',
         ]);
 
-        await tester.longPress(find.text('All Movies'));
+        await tester.tap(find.text('Sort'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Rating'));
         await tester.pumpAndSettle();
@@ -536,13 +535,13 @@ void main() {
         await tester.pumpAndSettle();
 
         // Apply Rating first so we have something to revert.
-        await tester.longPress(find.text('All Movies'));
+        await tester.tap(find.text('Sort'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Rating'));
         await tester.pumpAndSettle();
 
         // Now switch back to Default.
-        await tester.longPress(find.text('All Movies'));
+        await tester.tap(find.text('Sort'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Default'));
         await tester.pumpAndSettle();
@@ -569,13 +568,13 @@ void main() {
         await tester.pumpAndSettle();
 
         // Switch to Rating first so Default is NOT active.
-        await tester.longPress(find.text('All Movies'));
+        await tester.tap(find.text('Sort'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Rating'));
         await tester.pumpAndSettle();
 
-        // Re-open the dialog — Rating should now be the active row.
-        await tester.longPress(find.text('All Movies'));
+        // Re-open the dialog - Rating should now be the active row.
+        await tester.tap(find.text('Sort'));
         await tester.pumpAndSettle();
 
         // The check icon is the active-row indicator. It must sit next to
@@ -601,7 +600,7 @@ void main() {
     );
 
     testWidgets(
-      'with rememberVodSort false (default), restart does not restore Rating sort',
+      'with rememberMediaSort false (default), restart does not restore Rating sort',
       (tester) async {
         final service = ViewSettingsService();
         // Distinct Keys between pumps force Flutter to recreate the
@@ -622,16 +621,16 @@ void main() {
         await tester.pumpAndSettle();
 
         // Apply Rating once.
-        await tester.longPress(find.text('All Movies'));
+        await tester.tap(find.text('Sort'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Rating'));
         await tester.pumpAndSettle();
 
         // Per the plan, the service is only written when
-        // `rememberVodSort` is true — session-only choices deliberately
+        // `rememberMediaSort` is true - session-only choices deliberately
         // leave the on-disk value at the conservative default.
-        expect(await service.vodSortOption(), VodSortOption.defaultOrder);
-        expect(await service.rememberVodSort(), isFalse);
+        expect(await service.vodSortOption(), MediaSortOption.defaultOrder);
+        expect(await service.rememberMediaSort(), isFalse);
 
         // Re-mount from scratch with the same persistent service. The new
         // _VodScreenState starts with `_sortOption = defaultOrder` and the
@@ -656,11 +655,11 @@ void main() {
     );
 
     testWidgets(
-      'with rememberVodSort true, the persisted Rating sort is restored on restart',
+      'with rememberMediaSort true, the persisted Rating sort is restored on restart',
       (tester) async {
         final service = ViewSettingsService();
-        await service.setRememberVodSort(true);
-        await service.setVodSortOption(VodSortOption.ratingDesc);
+        await service.setRememberMediaSort(true);
+        await service.setVodSortOption(MediaSortOption.ratingDesc);
 
         final repo = await _buildRepo(tester, sortItems);
         await tester.pumpWidget(
@@ -685,7 +684,7 @@ void main() {
     );
 
     testWidgets(
-      'mobile (stacked) layout does not expose the long-press sort affordance',
+      'mobile (stacked) layout renders the same Sort button next to Filter',
       (tester) async {
         final repo = await _buildRepo(tester, sortItems);
         await tester.pumpWidget(
@@ -697,13 +696,22 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Mobile has a "Filter" button rather than chips in the strip.
-        // Long-pressing it should not open the sort dialog — the only
-        // existing behavior is the Filter screen push.
-        await tester.longPress(find.text('Filter'));
+        expect(find.text('Filter'), findsOneWidget);
+        expect(find.text('Sort'), findsOneWidget);
+
+        await tester.tap(find.text('Sort'));
         await tester.pumpAndSettle();
 
-        expect(find.text('Sort Movies By'), findsNothing);
+        expect(find.text('Sort Movies By'), findsOneWidget);
+        await tester.tap(find.text('Rating'));
+        await tester.pumpAndSettle();
+
+        expect(gridTitles(tester), [
+          'AAAA Highest',
+          'DDDD Third',
+          'BBBB Mid',
+          'CCCC Unrated',
+        ]);
       },
     );
   });

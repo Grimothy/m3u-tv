@@ -11,12 +11,13 @@ import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/services/view_settings_service.dart';
+import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/catalog_window.dart';
 import 'package:m3u_tv/shared/catalog_window_grid.dart';
-import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/media_category_nav.dart';
+import 'package:m3u_tv/shared/media_sort_dialog.dart';
 
 /// VOD (Movies) screen with category filtering and poster grid.
 ///
@@ -71,13 +72,7 @@ class _VodScreenState extends ConsumerState<VodScreen> {
   Timer? _debounce;
 
   Set<int> _favoriteIds = {};
-  VodSortOption _sortOption = VodSortOption.defaultOrder;
-
-  /// Cached copy of [ViewSettingsService.rememberVodSort] so we only read it
-  /// when opening the sort dialog (not per sort change). Refreshed every
-  /// time the dialog opens so flipping the Settings toggle in another tab
-  /// is honored on next open.
-  bool _rememberVodSort = false;
+  MediaSortOption _sortOption = MediaSortOption.defaultOrder;
   List<VodItem> _favoriteItems = const [];
   bool _favoritesLoadedOnce = false;
 
@@ -99,8 +94,24 @@ class _VodScreenState extends ConsumerState<VodScreen> {
   void initState() {
     super.initState();
     unawaited(_loadFavorites());
-    unawaited(_loadSortPreference());
+    _sortOption = _initialSortOption();
     _reconfigureWindow();
+  }
+
+  /// The sort to open with: the persisted VOD sort when the user has opted
+  /// in via Settings -> View -> Filter Persistence, otherwise
+  /// [MediaSortOption.defaultOrder]. Reads the sync getters rather than
+  /// awaiting the async ones so the very first [_reconfigureWindow] call
+  /// already uses the right sort - main.dart preloads both keys into the
+  /// service's in-memory cache during bootstrap, so by the time any screen
+  /// mounts these are warm. Awaiting here instead would mean the window
+  /// reconfigures twice on every cold start (once at the default order,
+  /// again once the persisted value resolved) with a visible reorder in
+  /// between.
+  MediaSortOption _initialSortOption() {
+    final service = ref.read(viewSettingsServiceProvider);
+    if (!service.rememberMediaSortSync) return MediaSortOption.defaultOrder;
+    return service.vodSortOptionSync;
   }
 
   @override
@@ -121,7 +132,7 @@ class _VodScreenState extends ConsumerState<VodScreen> {
           kind: kCatalogKindVod,
           categoryId: categoryId,
           search: search,
-          sortByRatingDesc: _sortOption == VodSortOption.ratingDesc,
+          sortByRatingDesc: _sortOption == MediaSortOption.ratingDesc,
           offset: offset,
           limit: limit,
         ),
@@ -184,30 +195,12 @@ class _VodScreenState extends ConsumerState<VodScreen> {
     }
   }
 
-  /// Restores the persisted VOD sort only when the user has opted in via
-  /// Settings -> View -> Filter Persistence. Otherwise we leave
-  /// [VodSortOption.defaultOrder] in place - matching the no-key-set case
-  /// for users who have never opened the dialog or don't want their choice
-  /// to survive a relaunch. Reconfigures the window when a non-default sort
-  /// is restored so the already-in-flight default-order load gets replaced.
-  Future<void> _loadSortPreference() async {
-    final service = ref.read(viewSettingsServiceProvider);
-    final remember = await service.rememberVodSort();
-    if (!mounted) return;
-    setState(() => _rememberVodSort = remember);
-    if (!remember) return;
-    final option = await service.vodSortOption();
-    if (!mounted) return;
-    setState(() => _sortOption = option);
-    _reconfigureWindow();
-  }
-
   /// Applies [_sortOption] to the (already category/query-filtered)
   /// favorites list. The windowed catalog tabs sort in SQL via
   /// [CatalogRepository.pageActiveItems]; favorites is a small,
   /// fully-materialized list, so sorting it client-side is simplest.
   List<VodItem> _sortedFavorites(List<VodItem> items) {
-    if (_sortOption != VodSortOption.ratingDesc) return items;
+    if (_sortOption != MediaSortOption.ratingDesc) return items;
     // Unrated items sink below every rated one - keeps the grid visually
     // anchored on the best-rated movies and treats missing data as "less
     // informative" rather than "zero stars".
@@ -299,7 +292,7 @@ class _VodScreenState extends ConsumerState<VodScreen> {
       gridFocusScopeNode: _gridFocusNode,
       memoryKeyPrefix: 'vod',
       onEntryFocusScopeReady: widget.onEntryFocusScopeReady,
-      onCategoryLongPress: () => _showSortMenu(context),
+      leading: _buildSortButton(context),
     );
     final content = Expanded(
       child: isFavoritesTab
@@ -476,121 +469,43 @@ class _VodScreenState extends ConsumerState<VodScreen> {
     return minimumColumns.clamp(1, maximumColumns.clamp(1, 100));
   }
 
-  /// Opens the "Sort Movies By" modal. Refreshes the cached
-  /// [ViewSettingsService.rememberVodSort] value up front so the
-  /// post-dialog persistence decision uses the latest setting, then applies
-  /// the user's selection (or no-op on dismiss). On selecting a new
-  /// option: always updates the local [_sortOption]; only writes back to
-  /// the service when persistence is currently on - exactly per the
-  /// plan's "read once at dialog open" discipline.
+  /// Rendered as [MediaCategoryNav.leading] in both layouts - alongside the
+  /// vertical category list on TV/desktop, next to the "Filter" button on
+  /// mobile - so sorting is discoverable and one press away regardless of
+  /// layout, instead of hidden behind a press-and-hold on a category chip
+  /// that visually suggested a per-category action it wasn't.
+  Widget _buildSortButton(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    return AppButton(
+      icon: Icons.sort,
+      label: l.mediaCategorySortButton,
+      onPressed: () => _showSortMenu(context),
+    );
+  }
+
+  /// Opens the shared "Sort By" modal. Reads [ViewSettingsService
+  /// .rememberMediaSort] fresh on each open so a change to the Settings
+  /// toggle in another tab is honored on next open, then applies the user's
+  /// selection (or no-op on dismiss): always updates the local
+  /// [_sortOption]; only writes back to the service when persistence is
+  /// currently on.
   Future<void> _showSortMenu(BuildContext context) async {
     final service = ref.read(viewSettingsServiceProvider);
-    final remember = await service.rememberVodSort();
-    if (!mounted) return;
-    setState(() => _rememberVodSort = remember);
-    if (!context.mounted) return;
+    final remember = await service.rememberMediaSort();
+    if (!mounted || !context.mounted) return;
 
-    final selected = await showDialog<VodSortOption>(
-      context: context,
-      builder: (dialogContext) {
-        final l = AppLocalizations.of(dialogContext);
-        return SimpleDialog(
-          title: Row(
-            children: [
-              const Icon(Icons.sort, size: 18),
-              const SizedBox(width: 8),
-              Expanded(child: Text(l.vodSortDialogTitle)),
-            ],
-          ),
-          children: [
-            DpadRegion(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _VodSortOption(
-                    icon: Icons.list_alt,
-                    label: l.vodSortDefault,
-                    isActive: _sortOption == VodSortOption.defaultOrder,
-                    autofocus: _sortOption == VodSortOption.defaultOrder,
-                    onTap: () => Navigator.of(
-                      dialogContext,
-                    ).pop(VodSortOption.defaultOrder),
-                  ),
-                  _VodSortOption(
-                    icon: Icons.star_rate,
-                    label: l.vodSortRating,
-                    isActive: _sortOption == VodSortOption.ratingDesc,
-                    autofocus: _sortOption == VodSortOption.ratingDesc,
-                    onTap: () => Navigator.of(
-                      dialogContext,
-                    ).pop(VodSortOption.ratingDesc),
-                  ),
-                  _VodSortOption(
-                    icon: Icons.close,
-                    label: l.cancel,
-                    onTap: () => Navigator.of(dialogContext).pop(),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
+    final selected = await showMediaSortDialog(
+      context,
+      title: AppLocalizations.of(context).vodSortDialogTitle,
+      current: _sortOption,
     );
 
     if (selected == null || !mounted) return;
     setState(() => _sortOption = selected);
     _reconfigureWindow();
-    if (!_rememberVodSort) return;
+    if (!remember) return;
     unawaited(
       ref.read(viewSettingsServiceProvider).setVodSortOption(selected),
-    );
-  }
-}
-
-class _VodSortOption extends StatelessWidget {
-  const _VodSortOption({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.isActive = false,
-    this.autofocus = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final bool isActive;
-
-  /// First option in the dialog gets autofocus; subsequent ones don't, so
-  /// d-pad down naturally walks through the list.
-  final bool autofocus;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return DpadInkWell(
-      autofocus: autofocus,
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 24),
-        child: Row(
-          children: [
-            Icon(icon, size: 20),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontWeight: isActive ? FontWeight.w700 : FontWeight.normal,
-                  color: isActive ? colorScheme.primary : colorScheme.onSurface,
-                ),
-              ),
-            ),
-            if (isActive) Icon(Icons.check, color: colorScheme.primary),
-          ],
-        ),
-      ),
     );
   }
 }

@@ -230,6 +230,12 @@ abstract class AppLocalizations {
   /// **'Filter'**
   String get mediaCategoryFilterButton;
 
+  /// No description provided for @mediaCategorySortButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort'**
+  String get mediaCategorySortButton;
+
   /// No description provided for @mediaCategoryFilterScreenTitle.
   ///
   /// In en, this message translates to:
@@ -2552,17 +2558,23 @@ abstract class AppLocalizations {
   /// **'Sort Movies By'**
   String get vodSortDialogTitle;
 
-  /// No description provided for @vodSortDefault.
+  /// No description provided for @seriesSortDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort Series By'**
+  String get seriesSortDialogTitle;
+
+  /// No description provided for @mediaSortDefault.
   ///
   /// In en, this message translates to:
   /// **'Default'**
-  String get vodSortDefault;
+  String get mediaSortDefault;
 
-  /// No description provided for @vodSortRating.
+  /// No description provided for @mediaSortRating.
   ///
   /// In en, this message translates to:
   /// **'Rating'**
-  String get vodSortRating;
+  String get mediaSortRating;
 
   /// No description provided for @settingsDefaultStartPage.
   ///
