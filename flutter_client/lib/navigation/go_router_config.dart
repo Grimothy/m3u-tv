@@ -1,5 +1,7 @@
 import 'dart:async' show unawaited;
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:go_router/go_router.dart';
@@ -31,11 +33,37 @@ Widget _withGradient(Widget screen) => DecoratedBox(
   child: SafeArea(bottom: false, child: screen),
 );
 
+/// tvOS reports its overscan-safe area as real [MediaQuery] padding on every
+/// edge, same as a phone's notch/status-bar insets. Screens still nested
+/// inside `AppShell`'s own subtree never see that padding - its TV/sidebar
+/// layout already strips it via `MediaQuery.removePadding` (`_buildTvLayout`
+/// in app_shell.dart) - but the top-level immersive routes below (VOD,
+/// Series, AIOStreams/Shows detail) live as siblings of AppShell in the root
+/// Navigator, outside that treatment, so `SafeArea` there was honoring the
+/// real overscan inset and shrinking the whole screen inward on tvOS only
+/// (other platforms report ~0 padding in a sidebar layout, so `SafeArea` was
+/// effectively a no-op there). Mirrors the same "strip it on tvOS" rule
+/// AppShell applies to its own content.
+bool get _isTvOS => !kIsWeb && Platform.operatingSystem == 'tvos';
+
+Widget _topLevelSafeArea(Widget screen) => Builder(
+  builder: (context) => _isTvOS
+      ? MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          removeBottom: true,
+          removeLeft: true,
+          removeRight: true,
+          child: screen,
+        )
+      : SafeArea(bottom: false, child: screen),
+);
+
 CustomTransitionPage<void> _slidePage(Widget screen) =>
     CustomTransitionPage<void>(
       child: ColoredBox(
         color: const Color(0xFF09090b),
-        child: SafeArea(bottom: false, child: screen),
+        child: _topLevelSafeArea(screen),
       ),
       transitionsBuilder: (context, animation, _, child) => SlideTransition(
         position: Tween<Offset>(
