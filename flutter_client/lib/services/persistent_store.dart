@@ -2,9 +2,16 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:m3u_tv/services/async_lifecycle.dart';
+import 'package:m3u_tv/services/json_isolate.dart';
 
 class PersistentJsonStore {
-  PersistentJsonStore({File? file}) : this._(file ?? File(_defaultPath()));
+  /// [fileName] picks the basename inside the platform app-data directory
+  /// (default `app_state.json`). Pass a distinct name (e.g. `cache.json`) to
+  /// keep a large, frequently-rewritten section in its own file so an
+  /// unrelated single-key write does not re-serialize it. Ignored when an
+  /// explicit [file] is given (tests).
+  PersistentJsonStore({File? file, String fileName = 'app_state.json'})
+    : this._(file ?? File(_defaultPath(fileName)));
 
   PersistentJsonStore._(File file)
     : _file = file,
@@ -49,7 +56,18 @@ class PersistentJsonStore {
     final hadPreviousValue = previous.containsKey(key);
     final previousValue = previous[key];
     final data = Map<String, Object?>.from(previous)..[key] = value;
-    final candidateBytes = utf8.encode(jsonEncode(data));
+    // Encode off the calling isolate for large maps, same as [_writeAll]. This
+    // store is shared with the content cache, so a single-key write (e.g. the
+    // resume tracker every ~10s during playback) would otherwise re-serialize
+    // the entire channel/VOD/series catalog on the UI isolate and drop frames.
+    // The catalog lives in a handful of huge keys, so force the offload off
+    // the file size rather than the (low) top-level key count.
+    final candidateBytes = utf8.encode(
+      await encodeJsonOffMainIsolate(
+        data,
+        forceOffload: (previousBytes?.length ?? 0) >= 32 * 1024,
+      ),
+    );
     await _writeStaging(candidateBytes);
     try {
       if (!shouldCommit()) return false;
@@ -75,7 +93,8 @@ class PersistentJsonStore {
 
         final current = currentBytes == null || currentBytes.isEmpty
             ? <String, Object?>{}
-            : (jsonDecode(utf8.decode(currentBytes)) as Map)
+            : ((await decodeJsonOffMainIsolate(utf8.decode(currentBytes)))!
+                      as Map)
                   .cast<String, Object?>();
         if (hadPreviousValue) {
           current[key] = previousValue;
@@ -124,6 +143,44 @@ class PersistentJsonStore {
     return Map<String, Object?>.from(await _readAllUnlocked());
   }
 
+  /// One-time move of keys matching [test] out of [source] and into this
+  /// store, run on boot. Writes here first, then clears [source]. It is
+  /// idempotent: once this store holds the keys, later calls only sweep any
+  /// copy still left in [source] - e.g. from a crash between the two writes,
+  /// or from [source] being reseeded - so the large payload can never linger
+  /// there (which would defeat the point of the split).
+  Future<void> adoptKeysFrom(
+    PersistentJsonStore source,
+    bool Function(String key) test,
+  ) async {
+    // Distinct instances can share one file, and its cache + write queue, via
+    // the static _states map; a shared state means there is nothing to move.
+    if (identical(_state, source._state)) return;
+    await _writeQueue.drained;
+    final existing = await _readAllUnlocked();
+    if (existing.keys.any(test)) {
+      // Destination already migrated. Only rewrite the source if an earlier
+      // run left matching keys behind - otherwise every boot would rewrite
+      // app_state.json for nothing.
+      if ((await source.snapshot()).keys.any(test)) {
+        await source.removeWhere(test);
+      }
+      return;
+    }
+    final sourceData = await source.snapshot();
+    final migrated = <String, Object?>{
+      for (final entry in sourceData.entries)
+        if (test(entry.key)) entry.key: entry.value,
+    };
+    if (migrated.isEmpty) return;
+    await _queueWrite(() async {
+      final data = await _readAllUnlocked();
+      data.addAll(migrated);
+      await _writeAll(data);
+    });
+    await source.removeWhere(test);
+  }
+
   Future<void> removeWhere(bool Function(String key) test) async {
     await _queueWrite(() async {
       final data = await _readAllUnlocked();
@@ -160,7 +217,7 @@ class PersistentJsonStore {
       _cache = <String, Object?>{};
       return _cache!;
     }
-    final decoded = jsonDecode(text);
+    final decoded = await decodeJsonOffMainIsolate(text);
     _cache = decoded is Map
         ? decoded.cast<String, Object?>()
         : <String, Object?>{};
@@ -168,7 +225,7 @@ class PersistentJsonStore {
   }
 
   Future<void> _writeAll(Map<String, Object?> data) async {
-    await _writeStaging(utf8.encode(jsonEncode(data)));
+    await _writeStaging(utf8.encode(await encodeJsonOffMainIsolate(data)));
     try {
       await _commitStaging(data);
     } finally {
@@ -204,7 +261,14 @@ class PersistentJsonStore {
     return true;
   }
 
-  static String _defaultPath() {
+  static String _defaultPath(String fileName) =>
+      '${defaultDirectoryPath()}/$fileName';
+
+  /// The directory the default-constructed store writes into. Exposed so
+  /// siblings that must live next to `app_state.json` / `cache.json` on the
+  /// desktop path (e.g. the SQLite catalog database) can resolve the same
+  /// location without duplicating the per-OS rules.
+  static String defaultDirectoryPath() {
     final env = Platform.environment;
     final base = switch (Platform.operatingSystem) {
       'windows' =>
@@ -216,7 +280,7 @@ class PersistentJsonStore {
             '${env['HOME'] ?? Directory.systemTemp.path}/.local/share',
       _ => '${env['HOME'] ?? Directory.systemTemp.path}/.m3u_tv',
     };
-    return '$base/m3u_tv/app_state.json';
+    return '$base/m3u_tv';
   }
 }
 

@@ -132,8 +132,8 @@ void main() {
       expect(
         PlaybackCapabilities.forPlatform(PlaybackPlatform.android),
         <PlaybackCapabilities>[
-          PlaybackCapabilities.androidMpv,
           PlaybackCapabilities.androidExoPlayer,
+          PlaybackCapabilities.androidMpv,
           PlaybackCapabilities.serverTranscode,
         ],
       );
@@ -162,7 +162,7 @@ void main() {
       );
       expect(
         PlaybackCapabilities.androidExoPlayer.supportsExternalSubtitles,
-        isFalse,
+        isTrue,
       );
       expect(
         PlaybackCapabilities.appleAvKit.supportsAdvancedSubtitleFormats,

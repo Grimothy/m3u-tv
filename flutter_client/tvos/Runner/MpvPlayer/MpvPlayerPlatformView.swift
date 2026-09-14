@@ -24,7 +24,7 @@ final class MpvPlayerPlatformView: NSObject, FlutterPlatformView {
     self.uiView.backgroundColor = .black
     self.uiView.displayLayer.videoGravity = .resizeAspect
     super.init()
-    plugin.attachCore(viewId: viewId, to: uiView.displayLayer)
+    plugin.attachCore(viewId: viewId, to: uiView.displayLayer, hostView: uiView)
   }
 
   func view() -> UIView { uiView }

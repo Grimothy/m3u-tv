@@ -375,7 +375,7 @@ void main() {
       'physical Android phone/tablet QA',
       'physical Android TV hardware QA',
       'Emulator logs are supplemental only',
-      'Android now uses native mpv',
+      'Media3/ExoPlayer is primary again',
       'the final fallback',
       'Authenticode/MSIX',
       'Apple Developer ID',
@@ -528,7 +528,14 @@ void main() {
       );
       expect(releaseSummary, contains('Android + Android TV'));
       expect(releaseSummary, contains('| Linux |'));
-      expect(releaseSummary, contains('| Windows |'));
+      expect(
+        releaseSummary,
+        contains('| Windows (portable, unsigned) |'),
+      );
+      expect(
+        releaseSummary,
+        contains('| Windows (installer, unsigned) |'),
+      );
     },
   );
 

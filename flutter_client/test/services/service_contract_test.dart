@@ -4,6 +4,8 @@ import 'dart:io' as io;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/services/cache_service.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/services/persistent_store.dart';
@@ -56,6 +58,106 @@ void main() {
         expect(requests.first.queryParameters['username'], 'demo');
         expect(requests.first.queryParameters['password'], 'secret');
         expect(requests.last.queryParameters['action'], 'get_live_categories');
+      },
+    );
+
+    test(
+      'default transport parses bulk list endpoints off the calling isolate',
+      () async {
+        final server = await io.HttpServer.bind(
+          io.InternetAddress.loopbackIPv4,
+          0,
+        );
+        unawaited(
+          server.listen((request) {
+            request.response.headers.contentType = io.ContentType.json;
+            final body = switch (request.uri.queryParameters['action']) {
+              null => xtreamAuth(auth: 1),
+              'get_live_streams' => [
+                liveStream(101, 'BBC One', '10', 'bbc.one'),
+              ],
+              'get_vod_streams' => [vodItem(201, 'Big Buck Bunny', '20')],
+              'get_series' => [seriesItem(301, 'Fixture Show', '30')],
+              _ => <String, Object?>{'error': 'unexpected'},
+            };
+            request.response.write(jsonEncode(body));
+            unawaited(request.response.close());
+          }).asFuture<void>(),
+        );
+        addTearDown(() => server.close(force: true));
+
+        final service = XtreamService();
+        await service.authenticate(
+          UserCredentials(
+            server: 'http://${server.address.host}:${server.port}',
+            username: 'demo',
+            password: 'secret',
+          ),
+        );
+
+        final channels = await service.getLiveStreams();
+        final vod = await service.getVodStreams();
+        final series = await service.getSeries();
+
+        expect(channels.single.name, 'BBC One');
+        expect(
+          channels.single.streamUrl,
+          'http://${server.address.host}:${server.port}'
+          '/live/demo/secret/101.m3u8',
+        );
+        expect(vod.single.name, 'Big Buck Bunny');
+        expect(
+          vod.single.streamUrl,
+          'http://${server.address.host}:${server.port}'
+          '/movie/demo/secret/201.mp4',
+        );
+        expect(series.single.id, 301);
+      },
+    );
+
+    test(
+      'a large VOD list crosses the isolate-offload threshold and still maps',
+      () async {
+        // >32KB of JSON forces _parseVodStreams onto a background isolate
+        // rather than the inline fast path.
+        final items = [
+          for (var i = 0; i < 600; i++)
+            vodItem(1000 + i, 'Movie number $i with a padded title', '20'),
+        ];
+        final server = await io.HttpServer.bind(
+          io.InternetAddress.loopbackIPv4,
+          0,
+        );
+        unawaited(
+          server.listen((request) {
+            request.response.headers.contentType = io.ContentType.json;
+            final body = request.uri.queryParameters['action'] == null
+                ? xtreamAuth(auth: 1)
+                : items;
+            request.response.write(jsonEncode(body));
+            unawaited(request.response.close());
+          }).asFuture<void>(),
+        );
+        addTearDown(() => server.close(force: true));
+
+        final service = XtreamService();
+        await service.authenticate(
+          UserCredentials(
+            server: 'http://${server.address.host}:${server.port}',
+            username: 'demo',
+            password: 'secret',
+          ),
+        );
+
+        final vod = await service.getVodStreams();
+
+        expect(vod, hasLength(600));
+        expect(vod.first.id, 1000);
+        expect(
+          vod.last.streamUrl,
+          'http://${server.address.host}:${server.port}'
+          '/movie/demo/secret/1599.mp4',
+        );
       },
     );
 
@@ -204,6 +306,37 @@ void main() {
       expect((await service.getSeries()).single.id, 301);
       expect(transport.lastHeaders['X-M3UE-Client'], 'm3u-tv');
     });
+
+    test(
+      'a transport returning XtreamRawResponse is decoded and mapped',
+      () async {
+        final transport = FakeXtreamTransport({'auth': xtreamAuth(auth: 1)})
+          ..onRequest = (request) {
+            if (request.action == null) return xtreamAuth(auth: 1);
+            expect(request.action, 'get_vod_streams');
+            expect(request.wantsRawText, isTrue);
+            return XtreamRawResponse(
+              jsonEncode([vodItem(201, 'Big Buck Bunny', '20')]),
+            );
+          };
+        final service = XtreamService(transport: transport.call);
+
+        await service.authenticate(
+          const UserCredentials(
+            server: 'https://xtream.example',
+            username: 'demo',
+            password: 'secret',
+          ),
+        );
+        final vod = await service.getVodStreams();
+
+        expect(vod.single.name, 'Big Buck Bunny');
+        expect(
+          vod.single.streamUrl,
+          'https://xtream.example/movie/demo/secret/201.mp4',
+        );
+      },
+    );
 
     test('live streams parse Xtream catchup metadata', () async {
       final service = XtreamService(
@@ -1289,7 +1422,12 @@ void main() {
         if (await file.exists()) await file.delete();
       });
       final store = PersistentJsonStore(file: file);
-      final cache = CacheService(store: store);
+      // Catalog keys live in SQLite now, so a cold-hydrate check has to share
+      // the repository across the two CacheService instances the way it shares
+      // the JSON file for scalar keys.
+      final repo = CatalogRepository(CatalogDatabase.memory());
+      addTearDown(repo.close);
+      final cache = CacheService(store: store, catalogRepository: repo);
       await cache.set('liveStreams', const <Channel>[
         Channel(
           id: 101,
@@ -1303,6 +1441,7 @@ void main() {
 
       final restored = await CacheService(
         store: PersistentJsonStore(file: file),
+        catalogRepository: repo,
       ).get<List<Channel>>('liveStreams');
 
       expect(restored?.data.single.catchupSupported, isTrue);

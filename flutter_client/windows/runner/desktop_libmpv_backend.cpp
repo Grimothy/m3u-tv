@@ -703,6 +703,11 @@ struct PlayerInstance {
   // controls the OS-level display switch, which is the one HDR decision mpv
   // cannot make for itself.
   bool hdr_user_enabled = true;
+  // User-facing override, set once from the `matchRefreshRate` load arg (the
+  // Dart-side `ViewSettingsService.matchRefreshRate` setting). Gates whether
+  // MaybeMatchRefreshRate may switch the monitor to the source's frame rate;
+  // defaults off because that mode switch briefly blanks the whole display.
+  bool refresh_rate_match_user_enabled = false;
 };
 
 LibmpvApi g_api;
@@ -1048,6 +1053,10 @@ void AddExternalSubtitles(LibmpvApi& api, mpv_handle* handle, const flutter::Enc
 void MaybeMatchRefreshRate(PlayerInstance* player) {
   // See the comment on the equivalent gate in ApplyHdrForVideoParams above.
   if (player == nullptr || player->display_mode_manager == nullptr) return;
+  // Opt-in only: the display-mode change blanks the whole monitor for a
+  // second or two, which is jarring on a desktop and was reported as "my
+  // whole screen goes blank before playback starts" for ~30fps sources.
+  if (!player->refresh_rate_match_user_enabled) return;
   if (player->refresh_rate_matched) return;
   player->refresh_rate_matched = true;
   double fps = 0.0;
@@ -1112,6 +1121,20 @@ bool TryLoadGpuTexture(LibmpvApi& api, HWND hwnd,
   api.set_option_string(gpu_handle, "sub-auto", "fuzzy");
   // See the matching comment on the SW-path handle below.
   api.set_option_string(gpu_handle, "ytdl", "no");
+  // Live sources get a larger demuxer probe budget -- ffmpeg's default
+  // analyzeduration/probesize can be too tight for a live MPEG-TS/HLS
+  // stream under network jitter (VPN hops, slow first-byte), especially at
+  // higher (UHD) bitrates: "No format found, try lowering probescore or
+  // forcing the format" is ffmpeg giving up before enough consistent data
+  // arrived, not a real format mismatch. Deliberately not forcing
+  // demuxer-lavf-format -- live sources vary (raw MPEG-TS vs real HLS
+  // depending on the server/proxy setup), so this only widens ffmpeg's own
+  // auto-probe window rather than assuming a container. VOD is unaffected
+  // (local/well-formed files don't hit this race).
+  if (BoolArg(args, "isLive", false)) {
+    api.set_option_string(gpu_handle, "demuxer-lavf-analyzeduration", "10");
+    api.set_option_string(gpu_handle, "demuxer-lavf-probesize", "10000000");
+  }
   if (!start_value.empty()) api.set_option_string(gpu_handle, "start", start_value.c_str());
   // mpv's own render-API output negotiates the swap chain's color space and
   // HDR metadata itself once the OS display is actually in HDR mode;
@@ -1157,6 +1180,10 @@ bool TryLoadGpuTexture(LibmpvApi& api, HWND hwnd,
   const int64_t id = g_next_handle++;
   auto player = std::make_unique<PlayerInstance>(&api, g_texture_registrar, dispatcher, event_sink_state,
                                                  gpu_handle, render_context, hwnd, surface_manager, id);
+  // Mirrored from the Dart-side view settings; both must be in place before
+  // StartEventThread below wires up the video-params/container-fps observers.
+  player->hdr_user_enabled = BoolArg(args, "hdrEnabled", true);
+  player->refresh_rate_match_user_enabled = BoolArg(args, "matchRefreshRate", false);
 
   auto ctx = player->copy_context;
   ctx->gpu_descriptor.struct_size = sizeof(FlutterDesktopGpuSurfaceDescriptor);
@@ -1310,6 +1337,8 @@ ProbeMap Load(const flutter::EncodableMap* args, HWND hwnd,
           const int64_t id = g_next_handle++;
           auto player =
               std::make_unique<PlayerInstance>(&api, dispatcher, event_sink_state, gpu_handle, video_hwnd, hwnd, id);
+          player->hdr_user_enabled = BoolArg(args, "hdrEnabled", true);
+          player->refresh_rate_match_user_enabled = BoolArg(args, "matchRefreshRate", false);
           player->StartEventThread();
           AddExternalSubtitles(api, gpu_handle, args);
           if (api.command(gpu_handle, load_args) >= 0) {
@@ -1345,6 +1374,11 @@ ProbeMap Load(const flutter::EncodableMap* args, HWND hwnd,
   api.set_option_string(handle, "sub-auto", "fuzzy");
   // See the matching comment on the GPU-path handle above.
   api.set_option_string(handle, "ytdl", "no");
+  // See the matching comment on the GPU-path handle above.
+  if (BoolArg(args, "isLive", false)) {
+    api.set_option_string(handle, "demuxer-lavf-analyzeduration", "10");
+    api.set_option_string(handle, "demuxer-lavf-probesize", "10000000");
+  }
   if (!start_value.empty()) api.set_option_string(handle, "start", start_value.c_str());
   if (!user_agent.empty()) api.set_option_string(handle, "user-agent", user_agent.c_str());
   if (!headers.empty()) api.set_option_string(handle, "http-header-fields", headers.c_str());

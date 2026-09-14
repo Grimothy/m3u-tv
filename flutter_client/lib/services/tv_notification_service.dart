@@ -1,8 +1,9 @@
-// ignore_for_file: sort_constructors_first
+// ignore_for_file: sort_constructors_first, prefer_initializing_formals
 
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:m3u_tv/services/device_identity_service.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 
 enum TvNotificationDestination { notifications, dvr, requests }
@@ -79,6 +80,7 @@ class TvPlaylistSession {
     required this.channelName,
     required this.reverb,
     this.availableChannels = const [],
+    this.deviceRevoked = false,
   });
 
   final int notifiableId;
@@ -95,6 +97,10 @@ class TvPlaylistSession {
   /// Notification channels configured in the editor (Settings → TV App).
   /// Empty when the server hasn't configured any, or is an older version.
   final List<TvNotificationChannel> availableChannels;
+
+  /// True when an admin has revoked this device in the editor. The app should
+  /// sign out and return to the pairing screen. Always false on older servers.
+  final bool deviceRevoked;
 }
 
 /// A single TV notification (from REST or WebSocket push).
@@ -106,6 +112,8 @@ class TvNotificationItem {
     this.body,
     required this.status,
     this.adminOnly = false,
+    this.sticky = false,
+    this.progressValue,
   });
 
   final String id;
@@ -118,6 +126,18 @@ class TvNotificationItem {
   /// 'success' | 'warning' | 'danger' | 'info'
   final String status;
   final bool adminOnly;
+
+  /// When true, the in-app toast (`NotificationToastOverlay`) skips its
+  /// normal auto-dismiss countdown - the caller owns dismissal via
+  /// `NotificationToastOverlayState.dismissById`. Used for progress toasts
+  /// (e.g. the EPG sweep) whose lifetime is driven by real work completing,
+  /// not a fixed timer. Never set from server-pushed notifications.
+  final bool sticky;
+
+  /// 0.0-1.0 completion for a [sticky] progress toast's bar; null renders an
+  /// indeterminate bar. Ignored (the normal countdown bar is used instead)
+  /// unless [sticky] is true.
+  final double? progressValue;
 
   static TvNotificationItem? tryFromJson(Map<String, Object?> json) {
     final id = canonicalNotificationId(json['id']);
@@ -148,10 +168,28 @@ final RegExp _uuidPattern = RegExp(
 ///
 /// All methods accept [UserCredentials] directly — no session or token needed.
 class TvNotificationService {
-  TvNotificationService({HttpClient? httpClient})
-    : _client = httpClient ?? HttpClient();
+  TvNotificationService({
+    HttpClient? httpClient,
+    DeviceIdentityService? deviceIdentity,
+  }) : _client = httpClient ?? HttpClient(),
+       _deviceIdentity = deviceIdentity;
 
   final HttpClient _client;
+
+  /// Supplied on the production path so [fetchUnread] can attach this install's
+  /// identity to the boot/resume call. Null in tests, where the extra query
+  /// params are irrelevant.
+  final DeviceIdentityService? _deviceIdentity;
+
+  Future<DeviceIdentity?> _resolveIdentity() async {
+    final service = _deviceIdentity;
+    if (service == null) return null;
+    try {
+      return await service.resolve();
+    } on Object catch (_) {
+      return null;
+    }
+  }
 
   /// Fetches unread notifications and the Reverb session config.
   ///
@@ -167,6 +205,12 @@ class TvNotificationService {
     final queryParams = <String, dynamic>{};
     if (channels != null && channels.isNotEmpty) {
       queryParams['channels'] = channels;
+    }
+    // The server upserts this device's registry row from these params, so a
+    // dedicated heartbeat isn't needed — this call already runs on boot/resume.
+    final identity = await _resolveIdentity();
+    if (identity != null) {
+      queryParams.addAll(identity.toQueryParams());
     }
     final uri = base.replace(
       path: '${base.path}/api/tv/$u/$p/notifications',
@@ -193,6 +237,7 @@ class TvNotificationService {
       channelName: '${reverbJson['channel'] ?? ''}',
       reverb: ReverbConfig.fromJson(reverbJson),
       availableChannels: availableChannels,
+      deviceRevoked: json['device_revoked'] == true,
     );
 
     final rawList = json['notifications'] as List? ?? const [];
@@ -239,7 +284,9 @@ class TvNotificationService {
   // ---- helpers ----
 
   Uri _baseUri(String server) {
-    final uri = Uri.parse(server.replaceAll(RegExp(r'/+$'), ''));
+    // Mirror XtreamService: a bare host like "m3ueditor.test" (scheme loosened
+    // on the connect form) parses as a path with no host, so prefix http://.
+    final uri = Uri.parse(normalizeServerUrl(server));
     // Strip /player_api.php if the server URL includes it.
     final path = uri.path.endsWith('/player_api.php')
         ? uri.path.substring(0, uri.path.length - '/player_api.php'.length)

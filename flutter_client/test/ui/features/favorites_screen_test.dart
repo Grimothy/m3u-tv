@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/features/favorites/favorites_screen.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 
@@ -9,8 +12,12 @@ void main() {
     late List<Channel> testChannels;
     late List<VodItem> testVodItems;
     late List<Series> testSeriesList;
+    late CatalogDatabase db;
+    late CatalogRepository repo;
 
-    setUp(() {
+    setUp(() async {
+      db = CatalogDatabase.memory();
+      repo = CatalogRepository(db);
       testChannels = [
         const Channel(
           id: 1,
@@ -34,7 +41,19 @@ void main() {
       testSeriesList = [
         const Series(id: 20, name: 'Breaking Bad'),
       ];
+      await repo.replaceItems(
+        sourceKey: CatalogRepository.activeSource,
+        kind: kCatalogKindVod,
+        items: testVodItems,
+      );
+      await repo.replaceItems(
+        sourceKey: CatalogRepository.activeSource,
+        kind: kCatalogKindSeries,
+        items: testSeriesList,
+      );
     });
+
+    tearDown(() => db.close());
 
     testWidgets('renders favorites screen with tabs', (tester) async {
       final channelService = FavoritesService();
@@ -43,8 +62,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: repo,
           channelFavoritesService: channelService,
         ),
       );
@@ -62,8 +80,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: repo,
           channelFavoritesService: channelService,
         ),
       );
@@ -79,8 +96,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: repo,
           vodFavoritesService: vodService,
         ),
       );
@@ -99,8 +115,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: repo,
           seriesFavoritesService: seriesService,
         ),
       );
@@ -116,8 +131,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: repo,
         ),
       );
       await tester.pumpAndSettle();
@@ -131,8 +145,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: repo,
           isConfigured: false,
         ),
       );
@@ -149,8 +162,7 @@ void main() {
 class _TestApp extends StatelessWidget {
   const _TestApp({
     required this.channels,
-    required this.vodItems,
-    required this.seriesList,
+    required this.catalogRepository,
     this.channelFavoritesService,
     this.vodFavoritesService,
     this.seriesFavoritesService,
@@ -158,8 +170,7 @@ class _TestApp extends StatelessWidget {
   });
 
   final List<Channel> channels;
-  final List<VodItem> vodItems;
-  final List<Series> seriesList;
+  final CatalogRepository catalogRepository;
   final FavoritesService? channelFavoritesService;
   final FavoritesService? vodFavoritesService;
   final FavoritesService? seriesFavoritesService;
@@ -171,8 +182,7 @@ class _TestApp extends StatelessWidget {
       theme: ThemeData.dark(useMaterial3: true),
       home: FavoritesScreen(
         channels: channels,
-        vodItems: vodItems,
-        seriesList: seriesList,
+        catalogRepository: catalogRepository,
         isConfigured: isConfigured,
         channelFavoritesService: channelFavoritesService ?? FavoritesService(),
         vodFavoritesService:

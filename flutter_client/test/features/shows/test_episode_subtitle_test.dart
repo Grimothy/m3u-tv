@@ -30,7 +30,10 @@ void main() {
   Future<void> pumpScreen(WidgetTester tester, EpgShow show) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [dvrSeriesRulesProvider.overrideWith((_) => const [])],
+        overrides: [
+          dvrSeriesRulesProvider.overrideWith((_) => const []),
+          dvrRecordingsProvider.overrideWith((_) => const []),
+        ],
         child: MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,

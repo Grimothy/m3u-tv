@@ -24,11 +24,15 @@ class UserCredentials {
   final String username;
   final String password;
 
-  UserCredentials normalized() => UserCredentials(
-    server: normalizeServerUrl(server),
-    username: username,
-    password: password,
-  );
+  UserCredentials normalized() {
+    final normalizedServer = normalizeServerUrl(server);
+    if (normalizedServer == server) return this;
+    return UserCredentials(
+      server: normalizedServer,
+      username: username,
+      password: password,
+    );
+  }
 }
 
 class Category {
@@ -121,7 +125,9 @@ class VodItem {
     required this.containerExtension,
     this.logoUrl,
     this.categoryId,
+    this.categoryIds = const [],
     this.rating,
+    this.year,
   });
 
   final int id;
@@ -130,7 +136,18 @@ class VodItem {
   final String containerExtension;
   final String? logoUrl;
   final String? categoryId;
+
+  /// Extra category memberships from the Xtream `category_ids` array.
+  /// m3u-editor's dynamic TMDB categories (Trending, Top Genre, …) overlap
+  /// the regular group, so an item can belong to several categories at once
+  /// while [categoryId] stays the primary group.
+  final List<String> categoryIds;
+
   final double? rating;
+
+  /// Four-digit release year from m3u-editor's `get_vod_streams` `year` field
+  /// (emitted as an int by `VodFileNameService::resolveMovieYearAsInt`).
+  final String? year;
 
   factory VodItem.fromXtream(Map<String, Object?> json, String streamUrl) =>
       VodItem(
@@ -140,7 +157,9 @@ class VodItem {
         containerExtension: '${json['container_extension'] ?? 'mp4'}',
         logoUrl: _asNullableString(json['stream_icon']),
         categoryId: _asNullableString(json['category_id']),
+        categoryIds: _asStringList(json['category_ids']),
         rating: _asDoubleOrNull(json['rating']),
+        year: _yearString(json['year']),
       );
 }
 
@@ -152,15 +171,18 @@ class VodInfo {
     this.genre,
     this.director,
     this.cast,
+    this.richCast,
     this.releaseDate,
     this.year,
     this.duration,
     this.rating,
     this.coverUrl,
     this.backdropUrl,
+    this.clearLogoUrl,
     this.containerExtension,
     this.tmdbId,
     this.edlUrl,
+    this.related,
   });
 
   final int id;
@@ -169,12 +191,21 @@ class VodInfo {
   final String? genre;
   final String? director;
   final String? cast;
+  final List<CastMember>? richCast;
   final String? releaseDate;
   final String? year;
   final String? duration;
   final double? rating;
   final String? coverUrl;
   final String? backdropUrl;
+
+  /// TMDB recommendations already in the user's library. Rendered as the
+  /// "Related" row below the cast row.
+  final List<RelatedItem>? related;
+
+  /// Transparent title logo (clearlogo). m3u-editor emits this as a `clearlogo`
+  /// wire key in `get_vod_info`, distinct from the poster `cover_big`.
+  final String? clearLogoUrl;
   final String? containerExtension;
   final int? tmdbId;
   final String? edlUrl;
@@ -205,6 +236,7 @@ class VodInfo {
       genre: _asNullableString(pick(['genre'])),
       director: _asNullableString(pick(['director'])),
       cast: _asNullableString(pick(['cast', 'actors'])),
+      richCast: _parseCastList(pick(['cast_list'])),
       releaseDate: releaseDate,
       year: year,
       duration: _durationText(
@@ -220,13 +252,150 @@ class VodInfo {
         pick(['cover_big', 'movie_image', 'stream_icon', 'cover']),
       ),
       backdropUrl: _asNullableString(_firstListItem(info['backdrop_path'])),
+      clearLogoUrl: _asNullableString(pick(['clearlogo'])),
       containerExtension: _asNullableString(
         pick(['container_extension', 'containerExtension']),
       ),
       tmdbId: _asIntOrNull(pick(['tmdb_id', 'tmdb'])),
       edlUrl: _asNullableString(pick(['edl_url'])),
+      related: _parseRelatedList(pick(['related'])),
     );
   }
+}
+
+/// A single cast member on a VOD movie or series.
+///
+/// Mirrors m3u-editor's `cast_list` payload emitted by `get_vod_info` /
+/// `get_series_info` when the server can resolve a TMDB id for the title.
+/// Shape: `{id?: int, name: String, character?: String, photo?: String}`.
+///
+/// `cast_list` is a separate wire key from the existing string `cast`
+/// (comma-joined names). Keeping the keys distinct preserves backward
+/// compatibility for old m3u-tv clients that read `cast` via
+/// `_asNullableString(...)` - see plan `.omo/plans/cast-rich.md`.
+class CastMember {
+  const CastMember({
+    required this.name,
+    this.id,
+    this.character,
+    this.photo,
+  });
+
+  final String name;
+  final int? id;
+  final String? character;
+  final String? photo;
+
+  /// A static method rather than a `factory` because it returns null for
+  /// a malformed or nameless entry instead of throwing - callers filter
+  /// those out with `whereType<CastMember>()`.
+  static CastMember? fromXtream(Object? json) {
+    if (json is! Map) return null;
+    final map = json.cast<String, Object?>();
+    final rawName = _asNullableString(map['name']);
+    final trimmedName = rawName?.trim();
+    if (trimmedName == null || trimmedName.isEmpty) return null;
+    return CastMember(
+      id: _asIntOrNull(map['id']),
+      name: trimmedName,
+      character: _asNullableString(map['character']),
+      photo: _asNullableString(map['photo']),
+    );
+  }
+}
+
+List<CastMember>? _parseCastList(Object? raw) {
+  if (raw is! List) return null;
+  final parsed = raw
+      .whereType<Map<Object?, Object?>>()
+      .map(CastMember.fromXtream)
+      .whereType<CastMember>()
+      .toList(growable: false);
+  return parsed.isEmpty ? null : parsed;
+}
+
+/// A recommended title shown in the "Related" row below the cast row on a
+/// VOD/series detail screen.
+///
+/// Two wire shapes carry this, both keyed on m3u-editor's TMDB
+/// recommendations filtered down to titles already in the user's library:
+///  * Xtream `get_vod_info` / `get_series_info` `related`: `{type, id, name,
+///    cover, tmdb_id?}`, where `id` is the library's own Channel/Series id -
+///    exactly what VodDetailsScreen/SeriesDetailsScreen already navigate
+///    with. See [fromXtream].
+///  * AIOStreams meta `related`: `{id, type, name, poster}`, where `id` is a
+///    Stremio-style `tmdb:{id}` string - exactly what AIOStreamsDetailScreen
+///    already navigates with. See [fromAiostreams].
+///
+/// [id] is kept opaque here; the caller (not this class) knows which
+/// navigation scheme applies to it.
+class RelatedItem {
+  const RelatedItem({
+    required this.id,
+    required this.type,
+    required this.title,
+    this.posterUrl,
+  });
+
+  final String id;
+
+  /// `"movie"` or `"series"`.
+  final String type;
+  final String title;
+  final String? posterUrl;
+
+  bool get isSeries => type == 'series';
+
+  /// Xtream `related` entry: `{type, id, name, cover}`.
+  static RelatedItem? fromXtream(Object? json) {
+    if (json is! Map) return null;
+    final map = json.cast<String, Object?>();
+    final id = _asIntOrNull(map['id']);
+    final type = _asNullableString(map['type']);
+    final title = _asNullableString(map['name'])?.trim();
+    if (id == null || type == null || title == null || title.isEmpty) {
+      return null;
+    }
+    return RelatedItem(
+      id: '$id',
+      type: type,
+      title: title,
+      posterUrl: _asNullableString(map['cover']),
+    );
+  }
+
+  /// AIOStreams `related` entry: `{id, type, name, poster}`. `id` is already
+  /// the Stremio-style `tmdb:{id}` string other AIOStreams items use.
+  static RelatedItem? fromAiostreams(Object? json) {
+    if (json is! Map) return null;
+    final map = json.cast<String, Object?>();
+    final id = _asNullableString(map['id']);
+    final type = _asNullableString(map['type']);
+    final title = _asNullableString(map['name'])?.trim();
+    if (id == null ||
+        id.isEmpty ||
+        title == null ||
+        title.isEmpty ||
+        (type != 'movie' && type != 'series')) {
+      return null;
+    }
+    return RelatedItem(
+      id: id,
+      type: type!,
+      title: title,
+      posterUrl: _asNullableString(map['poster']),
+    );
+  }
+}
+
+List<RelatedItem>? _parseRelatedList(Object? raw) {
+  if (raw is! List) return null;
+  final parsed = raw
+      .whereType<Map<Object?, Object?>>()
+      .map(RelatedItem.fromXtream)
+      .whereType<RelatedItem>()
+      .toList(growable: false);
+  return parsed.isEmpty ? null : parsed;
 }
 
 class Series {
@@ -235,30 +404,61 @@ class Series {
     required this.name,
     this.coverUrl,
     this.backdropUrl,
+    this.clearLogoUrl,
     this.categoryId,
+    this.categoryIds = const [],
     this.plot,
     this.rating,
     this.tmdbId,
+    this.richCast,
+    this.year,
+    this.related,
   });
 
   final int id;
   final String name;
   final String? coverUrl;
   final String? backdropUrl;
+
+  /// Transparent title logo (clearlogo). m3u-editor emits this as a `clearlogo`
+  /// wire key on `get_series` rows and in `get_series_info`, distinct from the
+  /// poster `cover`.
+  final String? clearLogoUrl;
   final String? categoryId;
+
+  /// Extra category memberships from the Xtream `category_ids` array - see
+  /// [VodItem.categoryIds].
+  final List<String> categoryIds;
+
   final String? plot;
   final double? rating;
   final int? tmdbId;
+  final List<CastMember>? richCast;
+
+  /// Four-digit release year, derived from m3u-editor's `get_series`
+  /// `releaseDate` field (a date string) or a bare `year` when present.
+  final String? year;
+
+  /// TMDB recommendations already in the user's library. Rendered as the
+  /// "Related" row below the cast row.
+  final List<RelatedItem>? related;
 
   factory Series.fromXtream(Map<String, Object?> json) => Series(
     id: _asInt(json['series_id']),
     name: '${json['name'] ?? ''}',
     coverUrl: _asNullableString(json['cover']),
     backdropUrl: _asNullableString(_firstListItem(json['backdrop_path'])),
+    clearLogoUrl: _asNullableString(json['clearlogo']),
     categoryId: _asNullableString(json['category_id']),
+    categoryIds: _asStringList(json['category_ids']),
     plot: _asNullableString(json['plot']),
-    rating: _asDoubleOrNull(json['rating']),
+    rating: _asDoubleOrNull(json['rating'] ?? json['rating_5based']),
     tmdbId: _asIntOrNull(json['tmdb_id'] ?? json['tmdb']),
+    richCast: _parseCastList(json['cast_list']),
+    year: _yearString(
+      json['releaseDate'] ?? json['release_date'] ?? json['year'],
+    ),
+    related: _parseRelatedList(json['related']),
   );
 }
 
@@ -267,11 +467,22 @@ class Season {
     required this.number,
     required this.name,
     this.episodeCount = 0,
+    this.coverUrl,
+    this.overview,
+    this.releaseDate,
   });
 
   final int number;
   final String name;
   final int episodeCount;
+
+  /// Season-specific poster, when the provider supplies one. Falls back to the
+  /// series cover at the call site.
+  final String? coverUrl;
+
+  /// Season-specific synopsis; falls back to the series plot at the call site.
+  final String? overview;
+  final String? releaseDate;
 
   factory Season.fromXtream(Map<String, Object?> json) {
     final number = _asInt(json['season_number']);
@@ -279,6 +490,13 @@ class Season {
       number: number,
       name: '${json['name'] ?? 'Season $number'}',
       episodeCount: _asInt(json['episode_count']),
+      coverUrl: _asNullableString(
+        json['cover_big'] ?? json['cover'] ?? json['cover_tmdb'],
+      ),
+      overview: _asNullableString(json['overview']),
+      releaseDate: _asNullableString(
+        json['releaseDate'] ?? json['air_date'],
+      ),
     );
   }
 }
@@ -792,9 +1010,18 @@ class EpgProgram {
   /// absent so display sites can fall back to [title].
   final String? subtitle;
 
-  /// The episode name when available, otherwise the show title. Prefer this
+  /// The show title, kept intact, with the episode / segment [subtitle]
+  /// appended as "Title - Subtitle" when the source exposes a distinct one
+  /// (see m3u-tv #263 - the sub-title must never replace the show title).
+  /// Falls back to [subtitle] alone only when [title] is blank. Prefer this
   /// over reading [title] directly at any display or persistence site.
-  String get displayTitle => subtitle ?? title;
+  String get displayTitle {
+    final show = title.trim();
+    final segment = subtitle?.trim() ?? '';
+    if (segment.isEmpty || segment == show) return show;
+    if (show.isEmpty) return segment;
+    return '$show - $segment';
+  }
 }
 
 class EpgCurrentNext {
@@ -873,6 +1100,7 @@ class Progress {
     this.year,
     this.aioItemId,
     this.aioIntegrationId,
+    this.upNext = false,
   });
 
   final String viewerId;
@@ -881,6 +1109,11 @@ class Progress {
   final int positionSeconds;
   final int? durationSeconds;
   final bool completed;
+
+  /// Synthetic entry from the editor (`get_recently_watched&include_up_next=1`):
+  /// the next unwatched episode of a series whose last-watched episode is
+  /// finished. Has `positionSeconds == 0` and no progress row of its own.
+  final bool upNext;
   final int? seriesId;
   final int? seasonNumber;
   final int? episodeNumber;
@@ -933,6 +1166,7 @@ class Progress {
     aioIntegrationId: json.containsKey('aio_integration_id')
         ? _asIntOrNull(json['aio_integration_id'])
         : null,
+    upNext: json['up_next'] == true || json['up_next'] == 1,
   );
 
   Map<String, Object?> toJson() => {
@@ -1373,6 +1607,10 @@ String? _asNullableString(Object? value) {
   return null;
 }
 
+List<String> _asStringList(Object? value) => _asList(
+  value,
+).map(_asNullableString).whereType<String>().toList(growable: false);
+
 Map<String, Object?> _asMap(Object? value) {
   if (value is Map<String, Object?>) return value;
   if (value is Map) return value.cast<String, Object?>();
@@ -1426,8 +1664,33 @@ String? _yearFromDate(String? value) {
   return match?.group(0);
 }
 
+/// Normalizes the assorted "release year" shapes list endpoints emit - an int
+/// year from `get_vod_streams`, a `releaseDate` string from `get_series` - to a
+/// bare four-digit string, or null when the value is absent/zero/unparseable.
+String? _yearString(Object? value) {
+  if (value == null) return null;
+  if (value is num) return value > 0 ? '${value.toInt()}' : null;
+  final text = value.toString().trim();
+  if (text.isEmpty || text == '0') return null;
+  return _yearFromDate(text) ??
+      (RegExp(r'^\d{4}$').hasMatch(text) ? text : null);
+}
+
 /// Treats `null` and blank/whitespace-only strings as "absent" so optional
 /// fields fall back cleanly at the display site without leaking the upstream
 /// `''` placeholder.
 String? nullIfBlank(String? value) =>
     (value == null || value.trim().isEmpty) ? null : value;
+
+/// A tick of `AppStateController`'s background EPG sweep
+/// (`epgSweepProgress`), for driving an in-app "loading guide" indicator.
+/// Carries only numbers, not display text, so the UI layer (which has a
+/// `BuildContext` for localization) owns the copy.
+class EpgSweepProgress {
+  const EpgSweepProgress({required this.loaded, required this.total});
+
+  final int loaded;
+  final int total;
+
+  double get fraction => total <= 0 ? 1.0 : (loaded / total).clamp(0.0, 1.0);
+}

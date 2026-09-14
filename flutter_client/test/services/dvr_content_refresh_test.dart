@@ -4,6 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/services/app_state_controller.dart';
 import 'package:m3u_tv/services/auth_notifier.dart';
 import 'package:m3u_tv/services/cache_service.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/services/push_notification_service.dart';
@@ -105,9 +108,9 @@ void main() {
         expect(counts['get_vod_streams'], 1);
         expect(counts['get_series'], 2);
         // Series was refreshed — controller picked up the post-push fixture.
-        expect(fixture.controller.seriesList.single.name, 'New Episode Show');
+        expect((await fixture.seriesList).single.name, 'New Episode Show');
         // VOD was not re-fetched — still the initial fixture data.
-        expect(fixture.controller.vodItems.single.name, 'Initial Movie');
+        expect((await fixture.vodItems).single.name, 'Initial Movie');
         // VOD cache was not re-written after the initial connect write.
         final vodCache = await fixture.cacheService.get<List<VodItem>>(
           'vodStreams',
@@ -149,10 +152,10 @@ void main() {
         // refresh actually fired (the initial data was Initial Movie /
         // Initial Show).
         expect(
-          fixture.controller.vodItems.single.name,
+          (await fixture.vodItems).single.name,
           'New Recording Movie',
         );
-        expect(fixture.controller.seriesList.single.name, 'New Episode Show');
+        expect((await fixture.seriesList).single.name, 'New Episode Show');
       },
     );
 
@@ -357,10 +360,10 @@ void main() {
         expect(counts['get_vod_streams'], 2);
         expect(counts['get_series'], 2);
         expect(
-          fixture.controller.vodItems.single.name,
+          (await fixture.vodItems).single.name,
           'New Recording Movie',
         );
-        expect(fixture.controller.seriesList.single.name, 'New Episode Show');
+        expect((await fixture.seriesList).single.name, 'New Episode Show');
       },
     );
 
@@ -494,10 +497,10 @@ void main() {
         // VOD transport was attempted (and threw); Series succeeded.
         expect(counts['get_vod_streams'], 2);
         expect(counts['get_series'], 2);
-        expect(fixture.controller.seriesList.single.name, 'New Episode Show');
+        expect((await fixture.seriesList).single.name, 'New Episode Show');
         // VOD list stays at its initial value — the helper returned false
         // before assigning, so _vodItems was never overwritten.
-        expect(fixture.controller.vodItems.single.name, 'Initial Movie');
+        expect((await fixture.vodItems).single.name, 'Initial Movie');
       },
     );
 
@@ -529,10 +532,10 @@ void main() {
         expect(counts['get_vod_streams'], 2);
         expect(counts['get_series'], 2);
         expect(
-          fixture.controller.vodItems.single.name,
+          (await fixture.vodItems).single.name,
           'New Recording Movie',
         );
-        expect(fixture.controller.seriesList.single.name, 'Initial Show');
+        expect((await fixture.seriesList).single.name, 'Initial Show');
       },
     );
 
@@ -573,41 +576,44 @@ void main() {
   });
 
   group('cache and dispose', () {
-    test('Successful refresh does NOT write new data to cache', () async {
-      final fixture = _Fixture();
-      addTearDown(fixture.dispose);
-      expect(
-        await fixture.controller.connectXtream(_testCredentials),
-        isTrue,
-      );
-      await fixture.reverb.connected.future;
+    test(
+      'Successful refresh writes directly to the catalog repository',
+      () async {
+        final fixture = _Fixture();
+        addTearDown(fixture.dispose);
+        expect(
+          await fixture.controller.connectXtream(_testCredentials),
+          isTrue,
+        );
+        await fixture.reverb.connected.future;
 
-      // Default detail (completed series-episode) → Series-only refresh.
-      fixture.transport.setSeries(<Series>[_postPushSeries]);
+        // Default detail (completed series-episode) → Series-only refresh.
+        fixture.transport.setSeries(<Series>[_postPushSeries]);
 
-      fixture.reverb.simulateDvrStatus(
-        _recording(
-          uuid: 'rec-cache',
-          status: 'completed',
-          season: 2,
-          episode: 5,
-        ),
-      );
-      await _waitForDebounce();
+        fixture.reverb.simulateDvrStatus(
+          _recording(
+            uuid: 'rec-cache',
+            status: 'completed',
+            season: 2,
+            episode: 5,
+          ),
+        );
+        await _waitForDebounce();
 
-      // In-memory state IS updated — the refresh actually fetched new data.
-      expect(fixture.controller.seriesList.single.name, 'New Episode Show');
-      // Cache is NOT rewritten: it stays at the connect-time whole-bundle
-      // replace value. Rewriting per-key here would risk persisting
-      // another account's library if the ownership predicate goes stale
-      // mid-fetch — the same bug class that #160 exists to prevent.
-      final seriesCache = await fixture.cacheService.get<List<Series>>(
-        'seriesStreams',
-      );
-      expect(seriesCache, isNotNull);
-      expect(seriesCache!.data, hasLength(1));
-      expect(seriesCache.data.single.name, 'Initial Show');
-    });
+        // The refresh writes straight to the shared catalog repository (a
+        // single-kind partial write, re-checking ownership immediately before
+        // the write) so the windowed grids actually see the post-DVR content -
+        // unlike the whole-bundle connect-time replace, this is not routed
+        // through CacheService, but both land in the same repository.
+        expect((await fixture.seriesList).single.name, 'New Episode Show');
+        final seriesCache = await fixture.cacheService.get<List<Series>>(
+          'seriesStreams',
+        );
+        expect(seriesCache, isNotNull);
+        expect(seriesCache!.data, hasLength(1));
+        expect(seriesCache.data.single.name, 'New Episode Show');
+      },
+    );
 
     test('dispose() cancels pending debounce timer', () async {
       final fixture = _Fixture();
@@ -690,7 +696,7 @@ void main() {
         // _flushDvrContentRefresh's getSeries/getVodStreams fetches. If
         // account/source ownership flips during that window (account switch,
         // logout, source swap), the in-flight refresh must NOT overwrite
-        // _vodItems / _seriesList — that would write another account's
+        // the catalog repository — that would write another account's
         // library into current state.
         final fixture = _Fixture();
         addTearDown(fixture.dispose);
@@ -737,7 +743,7 @@ void main() {
         // circuiting earlier), but in-memory state was NOT overwritten —
         // the controller still holds its initial value.
         expect(fixture.transport.actionCounts['get_series'], 2);
-        expect(fixture.controller.seriesList.single.name, 'Initial Show');
+        expect((await fixture.seriesList).single.name, 'Initial Show');
       },
     );
   });
@@ -942,7 +948,18 @@ void main() {
 
 class _Fixture {
   _Fixture() {
-    cacheService = CacheService(memory: <String, Object?>{});
+    // CacheService and AppStateController must share one CatalogRepository -
+    // each self-defaults its own private in-memory one otherwise, so a
+    // connectXtream() commit and a DVR post-processing refresh (which now
+    // writes straight to AppStateController.catalogRepository) would land in
+    // two disconnected databases. Production wires this the same way in
+    // main._buildAppState.
+    catalogDb = CatalogDatabase.memory();
+    catalogRepository = CatalogRepository(catalogDb);
+    cacheService = CacheService(
+      memory: <String, Object?>{},
+      catalogRepository: catalogRepository,
+    );
     transport = _RecordingXtreamTransport();
     xtream = XtreamService(
       transport: transport.call,
@@ -958,6 +975,7 @@ class _Fixture {
       xtreamService: xtream,
       secureStorage: auth.secureStorage,
       cacheService: cacheService,
+      catalogRepository: catalogRepository,
       favoritesService: FavoritesService(memory: <String, Object?>{}),
       vodFavoritesService: FavoritesService(
         memory: <String, Object?>{},
@@ -977,6 +995,8 @@ class _Fixture {
     );
   }
 
+  late final CatalogDatabase catalogDb;
+  late final CatalogRepository catalogRepository;
   late final _RecordingXtreamTransport transport;
   late final XtreamService xtream;
   late final AuthNotifier auth;
@@ -988,6 +1008,19 @@ class _Fixture {
   /// have to reach through `fixture.transport` for detail shaping.
   void enqueueNextDetail(Map<String, Object?> detail) =>
       transport.enqueueNextDetail(detail);
+
+  /// VOD/series content now lives in the shared catalog repository, not on
+  /// the controller - these read it back the same way `cacheService.get`
+  /// already does for the cache-key assertions below.
+  Future<List<VodItem>> get vodItems => catalogRepository.allItems<VodItem>(
+    CatalogRepository.activeSource,
+    kCatalogKindVod,
+  );
+
+  Future<List<Series>> get seriesList => catalogRepository.allItems<Series>(
+    CatalogRepository.activeSource,
+    kCatalogKindSeries,
+  );
 
   bool _disposed = false;
 
@@ -1230,6 +1263,7 @@ class _RecordingReverbService extends ReverbService {
     void Function(DvrRecording)? onDvrStatus,
     void Function(MediaRequestSummary)? onRequestStatus,
     void Function(FavoriteToggleEvent)? onFavoriteToggled,
+    void Function(String)? onDeviceDeregister,
     void Function()? onConnected,
   }) async {
     _onDvrStatus = onDvrStatus;

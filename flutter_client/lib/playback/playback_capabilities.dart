@@ -64,7 +64,7 @@ class PlaybackCapabilities {
     supportsAudioTrackSelection: true,
     supportsSubtitleTrackSelection: true,
     supportsEmbeddedSubtitles: true,
-    supportsExternalSubtitles: false,
+    supportsExternalSubtitles: true,
     supportsAdvancedSubtitleFormats: false,
     supportsPlaybackSpeed: true,
     supportsSeek: true,
@@ -213,8 +213,8 @@ class PlaybackCapabilities {
   static List<PlaybackCapabilities> forPlatform(PlaybackPlatform platform) {
     return switch (platform) {
       PlaybackPlatform.android => const <PlaybackCapabilities>[
-        androidMpv,
         androidExoPlayer,
+        androidMpv,
         serverTranscode,
       ],
       PlaybackPlatform.apple => const <PlaybackCapabilities>[

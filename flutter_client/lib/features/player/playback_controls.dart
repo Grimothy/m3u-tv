@@ -10,13 +10,33 @@ import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/playback/player_adapter.dart';
 import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
+import 'package:m3u_tv/shared/image_quality_scope.dart';
 
 /// Edge padding for [PlaybackControls]' back-button corner. tvOS gets a
 /// much smaller value since `SafeArea` already insets for its focus-safe
-/// zone; stacking the full padding on top of that would double up. Shared
-/// with `PlayerScreen`'s diagnostics overlay, which must position itself
-/// against this same value to line up with the back button.
-final double overlayEdgePadding = Platform.operatingSystem == 'tvos' ? 8 : 40;
+/// zone; stacking the full padding on top of that would double up. Phones/
+/// tablets (in either orientation) also get a smaller value than TV/desktop
+/// -- their shortest side is much smaller, so the same 40px inset used to
+/// eat a disproportionate share of the available height, especially in the
+/// short landscape orientation the player now locks to on handheld devices.
+/// Shared with `PlayerScreen`'s diagnostics overlay, which must position
+/// itself against this same value to line up with the back button.
+double overlayEdgePaddingFor(BuildContext context) {
+  if (Platform.operatingSystem == 'tvos') return 8;
+  if (isHandheldLayout(context)) return 16;
+  return 40;
+}
+
+/// True for phones/tablets in either orientation -- judged by the shortest
+/// side of the viewport so a phone rotated into landscape (wide but short)
+/// is still recognized as compact, instead of only narrow *portrait* widths
+/// getting the compact treatment. That width-only check used to flip on and
+/// off depending on orientation and made the controls/overlays behave
+/// inconsistently between portrait and landscape on the same device.
+bool isHandheldLayout(BuildContext context) {
+  if (Platform.operatingSystem == 'tvos') return false;
+  return MediaQuery.sizeOf(context).shortestSide < 600;
+}
 
 /// Playback controls overlay for the player screen.
 ///
@@ -51,6 +71,8 @@ class PlaybackControls extends StatelessWidget {
     this.onPreviousChannel,
     this.onRecordNow,
     this.isRecording = false,
+    this.skipPrompt,
+    this.upNextPrompt,
     super.key,
   });
 
@@ -81,11 +103,26 @@ class PlaybackControls extends StatelessWidget {
   final VoidCallback? onRecordNow;
   final bool isRecording;
 
+  /// A comskip/TheIntroDB skip prompt (see `_SkipSegmentPrompt` in
+  /// `player_screen.dart`), rendered above the controls bar, left-aligned.
+  /// Placed inside this widget's own [DpadRegion] (rather than as a
+  /// separate overlay in the parent's Stack) so D-pad up/down can actually
+  /// reach it — the region's `stop` edge behavior otherwise keeps focus
+  /// confined to this subtree and would skip right over an external sibling
+  /// widget entirely.
+  final Widget? skipPrompt;
+
+  /// The "up next" card (see `UpNextOverlay`), rendered above the controls
+  /// bar, right-aligned. Inside this widget's [DpadRegion] for the same
+  /// reason as [skipPrompt] - so the remote can actually move onto it.
+  final Widget? upNextPrompt;
+
   static const Duration seekStep = Duration(seconds: 10);
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final compact = isHandheldLayout(context);
 
     return DpadRegion(
       horizontalEdge: DpadEdgeBehavior.stop,
@@ -94,23 +131,56 @@ class PlaybackControls extends StatelessWidget {
         color: Colors.black26,
         child: SafeArea(
           // SafeArea above already insets for the platform's real safe zone
-          // (notably tvOS's ~80px focus-safe-zone margin, which on TV also
-          // passes through _TvZoom's 1.6x scale-up). Stacking the full 40px
+          // (notably tvOS's ~80px focus-safe-zone margin). Stacking the full 40px
           // app padding on top of that compounds into an excessive, "boxed
           // in" inset on tvOS specifically. tvOS gets a much smaller value,
           // pure app-level breathing room rather than a safe-zone duplicate;
           // other platforms (no SafeArea contribution) keep the original 40
           // so macOS/iOS spacing -- already confirmed working -- doesn't
-          // change. PlayerScreen's diagnostics overlay positions itself
-          // against this same value -- see [overlayEdgePadding].
+          // change. Phones/tablets get a smaller value too, freeing up
+          // vertical room in the short landscape orientation the player
+          // locks to. PlayerScreen's diagnostics overlay positions itself
+          // against this same value -- see [overlayEdgePaddingFor].
           child: Padding(
-            padding: EdgeInsets.all(overlayEdgePadding),
+            padding: EdgeInsets.all(overlayEdgePaddingFor(context)),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                _buildHeader(colorScheme),
+                _buildHeader(context, colorScheme),
                 const Spacer(),
-                _buildControlsBar(context, colorScheme),
+                // The "up next" card eases in from the right + fades rather
+                // than snapping into place, and slides back out the same way
+                // when it is dismissed or the episode ends.
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 320),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0.18, 0),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: child,
+                    ),
+                  ),
+                  child: upNextPrompt != null
+                      ? Padding(
+                          key: const ValueKey('up-next'),
+                          padding: EdgeInsets.only(bottom: compact ? 8 : 14),
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: upNextPrompt,
+                          ),
+                        )
+                      : const SizedBox.shrink(key: ValueKey('no-up-next')),
+                ),
+                if (skipPrompt != null) ...[
+                  Align(alignment: Alignment.centerLeft, child: skipPrompt),
+                  SizedBox(height: compact ? 8 : 14),
+                ],
+                _buildControlsBar(context, colorScheme, compact: compact),
               ],
             ),
           ),
@@ -119,7 +189,8 @@ class PlaybackControls extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(ColorScheme colorScheme) {
+  Widget _buildHeader(BuildContext context, ColorScheme colorScheme) {
+    final scale = FontSizeScope.scaleOf(context);
     return Row(
       children: [
         DpadFocusable(
@@ -132,7 +203,7 @@ class PlaybackControls extends StatelessWidget {
           child: GestureDetector(
             onTap: onBack,
             child: Container(
-              padding: const EdgeInsets.all(10),
+              padding: EdgeInsets.all(10 * scale),
               decoration: const BoxDecoration(
                 color: Colors.black54,
                 shape: BoxShape.circle,
@@ -140,12 +211,12 @@ class PlaybackControls extends StatelessWidget {
               child: Icon(
                 Icons.arrow_back,
                 color: colorScheme.onSurface,
-                size: 24,
+                size: 24 * scale,
               ),
             ),
           ),
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: 12 * scale),
         if (fallbackReason != null)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -166,20 +237,27 @@ class PlaybackControls extends StatelessWidget {
     );
   }
 
-  Widget _buildControlsBar(BuildContext context, ColorScheme colorScheme) {
+  Widget _buildControlsBar(
+    BuildContext context,
+    ColorScheme colorScheme, {
+    required bool compact,
+  }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 14 : 24,
+        vertical: compact ? 8 : 16,
+      ),
       decoration: BoxDecoration(
         color: Colors.black87,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(compact ? 12 : 16),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (canSeek) _buildProgressBar(colorScheme),
-          if (canSeek) const SizedBox(height: 12),
-          _buildControlRow(context, colorScheme),
+          if (canSeek) SizedBox(height: compact ? 6 : 12),
+          _buildControlRow(context, colorScheme, compact: compact),
         ],
       ),
     );
@@ -225,8 +303,85 @@ class PlaybackControls extends StatelessWidget {
       (onNextChannel != null ? 1 : 0) +
       (onRecordNow != null ? 1 : 0);
 
-  Widget _buildControlRow(BuildContext context, ColorScheme colorScheme) {
-    final transportControls = Row(
+  Widget _buildControlRow(
+    BuildContext context,
+    ColorScheme colorScheme, {
+    required bool compact,
+  }) {
+    final transportControls = _buildTransportControls(context);
+
+    // Handheld (phone/tablet) layout: a Wrap naturally keeps the transport
+    // buttons and Audio/Subtitles on one line whenever they fit, and drops
+    // to a second line only when they genuinely don't -- based on the
+    // actual measured content, not a magic width threshold. The old
+    // threshold compared against TrackSelector.controlsWidth regardless of
+    // whether both Audio *and* Subtitles buttons were actually present,
+    // so which layout you got depended on incidental per-video metadata
+    // (e.g. whether a title had subtitle tracks) rather than on the real
+    // available space -- the root cause of controls "working" for some
+    // videos and not others. The FittedBox is the last-resort fallback for
+    // a viewport too short/narrow to fit even the wrapped layout.
+    if (compact) {
+      return FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 16,
+          runSpacing: 8,
+          children: [
+            transportControls,
+            if (_hasTrackControls) _buildTrackControls(),
+          ],
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final scale = FontSizeScope.scaleOf(context);
+        final trackControlsWidth = _hasTrackControls
+            ? TrackSelector.controlsWidth * scale
+            : 0.0;
+        final transportWidth =
+            (isLive
+                ? (_hasChannelControls ? _liveButtonCount * 56.0 : 56.0)
+                : 168.0) *
+            scale;
+        final hasRoomForCenteredTransport =
+            constraints.maxWidth >= transportWidth + (trackControlsWidth * 2);
+
+        if (_hasTrackControls && !hasRoomForCenteredTransport) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(child: transportControls),
+              const SizedBox(height: 12),
+              Center(child: _buildTrackControls()),
+            ],
+          );
+        }
+
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            Center(child: transportControls),
+            if (_hasTrackControls)
+              Align(
+                alignment: Alignment.centerRight,
+                child: SizedBox(
+                  width: trackControlsWidth,
+                  child: _buildTrackControls(),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTransportControls(BuildContext context) {
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (!isLive)
@@ -303,45 +458,6 @@ class PlaybackControls extends StatelessWidget {
             ),
           ),
       ],
-    );
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final trackControlsWidth = _hasTrackControls
-            ? TrackSelector.controlsWidth
-            : 0.0;
-        final transportWidth = isLive
-            ? (_hasChannelControls ? _liveButtonCount * 56.0 : 56.0)
-            : 168.0;
-        final hasRoomForCenteredTransport =
-            constraints.maxWidth >= transportWidth + (trackControlsWidth * 2);
-
-        if (_hasTrackControls && !hasRoomForCenteredTransport) {
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Center(child: transportControls),
-              const SizedBox(height: 12),
-              Center(child: _buildTrackControls()),
-            ],
-          );
-        }
-
-        return Stack(
-          alignment: Alignment.center,
-          children: [
-            Center(child: transportControls),
-            if (_hasTrackControls)
-              Align(
-                alignment: Alignment.centerRight,
-                child: SizedBox(
-                  width: TrackSelector.controlsWidth,
-                  child: _buildTrackControls(),
-                ),
-              ),
-          ],
-        );
-      },
     );
   }
 }

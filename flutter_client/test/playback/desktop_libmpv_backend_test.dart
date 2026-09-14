@@ -257,6 +257,8 @@ void main() {
           'isLive': false,
           'userAgent': 'm3u-tv/windows-test',
           'headers': <String, String>{'Referer': 'https://provider.test'},
+          'hdrEnabled': true,
+          'matchRefreshRate': false,
           'externalSubtitles': <Map<String, Object?>>[],
         });
         expect(backend.textureId, isNull);
@@ -265,6 +267,39 @@ void main() {
         await events.close();
       },
     );
+
+    test('load forwards the HDR and refresh-rate view settings', () async {
+      final events = setupMockEvents();
+      MethodCall? loadCall;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(methodChannel, (call) async {
+            loadCall = call;
+            return <String, Object?>{
+              'ok': false,
+              'code': BackendUnavailableException.unavailableCode,
+              'error': 'no libmpv',
+            };
+          });
+
+      final backend = DesktopLibmpvBackend();
+      await expectLater(
+        backend.load(
+          const PlaybackSource(
+            uri: 'https://example.test/movie.mp4',
+            hdrEnabled: false,
+            matchDisplayRefreshRate: true,
+          ),
+        ),
+        throwsA(isA<BackendUnavailableException>()),
+      );
+
+      final args = loadCall!.arguments as Map<Object?, Object?>;
+      expect(args['hdrEnabled'], isFalse);
+      expect(args['matchRefreshRate'], isTrue);
+
+      await backend.dispose();
+      await events.close();
+    });
 
     test('windows texture controls stay on method channel commands', () async {
       final events = setupMockEvents();

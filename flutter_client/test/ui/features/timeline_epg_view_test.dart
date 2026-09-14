@@ -399,6 +399,63 @@ void main() {
     });
 
     testWidgets(
+      'requests EPG for a look-ahead window past the visible rows',
+      (tester) async {
+        final now = DateTime(2026, 7, 31, 12);
+        final channels = <Channel>[
+          for (var i = 1; i <= 40; i += 1)
+            Channel(
+              id: i,
+              name: 'Channel $i',
+              streamUrl: 'https://streams.example/live/$i.m3u8',
+              epgChannelId: 'chan.$i',
+            ),
+        ];
+        final requestedIndexes = <int>{};
+        var sawMultiChannelBatch = false;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData.dark(useMaterial3: true),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: Scaffold(
+              body: SizedBox(
+                width: 800,
+                height: 300, // ~5 rows visible at _kRowH = 60
+                child: TimelineEpgView(
+                  channelColumnFocusNode: FocusScopeNode(),
+                  onChannelColumnEdge: (_) {},
+                  dayControlsFocusNode: FocusScopeNode(),
+                  onDayControlsEdge: (_) {},
+                  channels: channels,
+                  epgService: EpgService(clock: () => now),
+                  onChannelSelect: (_) {},
+                  onEnsureEpg: (batch, {startDate, endDate}) {
+                    if (batch.length > 1) sawMultiChannelBatch = true;
+                    for (final channel in batch) {
+                      requestedIndexes.add(channel.id - 1);
+                    }
+                  },
+                  clock: () => now,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Each built row also queues a forward slice, so the guide asks for
+        // channels well beyond the handful that fit on screen.
+        expect(sawMultiChannelBatch, isTrue);
+        expect(
+          requestedIndexes.reduce((a, b) => a > b ? a : b),
+          greaterThanOrEqualTo(20),
+        );
+      },
+    );
+
+    testWidgets(
       'null catchup metadata uses a finite seven-day retention',
       (tester) async {
         final now = DateTime(2026, 7, 31, 12);

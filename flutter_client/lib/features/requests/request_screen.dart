@@ -67,6 +67,7 @@ class _RequestScreenState extends ConsumerState<RequestScreen>
   final FocusScopeNode _gridFocusNode = FocusScopeNode();
   final GlobalKey<MediaCategoryNavState> _navKey =
       GlobalKey<MediaCategoryNavState>();
+  final GlobalKey<DpadTabBarState> _tabBarKey = GlobalKey<DpadTabBarState>();
 
   String _query = '';
   String _typeFilter = '';
@@ -197,6 +198,7 @@ class _RequestScreenState extends ConsumerState<RequestScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             DpadTabBar(
+              key: _tabBarKey,
               controller: _tabController,
               tabs: [l.requestsTabSearch, l.requestsTabMyRequests],
             ),
@@ -246,6 +248,7 @@ class _RequestScreenState extends ConsumerState<RequestScreen>
       gridFocusScopeNode: _gridFocusNode,
       memoryKeyPrefix: 'requests',
       onEntryFocusScopeReady: widget.onEntryFocusScopeReady,
+      onTopEdge: () => _tabBarKey.currentState?.requestFocus(),
     );
     final content = Expanded(child: _buildSearchResults(l, myRequests));
 

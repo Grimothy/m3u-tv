@@ -90,7 +90,7 @@ void main() {
         expect(find.text('Live News'), findsOneWidget);
         // The in-progress status word leads the meta line and carries a
         // filled dot glyph prefix. The exact "● Recording" string uniquely
-        // identifies the meta line (the DVR Recordings tab label also
+        // identifies the meta line (the Recordings tab label also
         // contains "Recording", so plain find.textContaining('Recording')
         // would match both — see #177's tabbed layout).
         expect(find.textContaining('● Recording'), findsOneWidget);
@@ -729,14 +729,14 @@ void main() {
       expect(find.text('Evening Movie'), findsOneWidget);
       expect(find.text('Test Series Alpha'), findsNothing);
 
-      await tester.tap(find.text('Series Rules'));
+      await tester.tap(find.text('Rules'));
       await tester.pumpAndSettle();
 
       expect(find.text('Test Series Alpha'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
       // Back to the Recordings tab keeps the recordings list intact.
-      await tester.tap(find.text('DVR Recordings'));
+      await tester.tap(find.text('Recordings'));
       await tester.pumpAndSettle();
       expect(find.text('Evening Movie'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -755,7 +755,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Series Rules'));
+        await tester.tap(find.text('Rules'));
         await tester.pumpAndSettle();
 
         await tester.tap(find.byIcon(Icons.more_vert).first);
@@ -780,7 +780,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Series Rules'));
+        await tester.tap(find.text('Rules'));
         await tester.pumpAndSettle();
         expect(find.text('Test Series Alpha'), findsOneWidget);
 
@@ -809,7 +809,7 @@ void main() {
 
       expect(find.text('Evening Movie'), findsOneWidget);
 
-      await tester.tap(find.text('Series Rules'));
+      await tester.tap(find.text('Rules'));
       await tester.pumpAndSettle();
 
       expect(find.text('No series rules'), findsOneWidget);
@@ -835,7 +835,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Series Rules'));
+        await tester.tap(find.text('Rules'));
         await tester.pumpAndSettle();
         expect(find.text('Test Series Alpha'), findsOneWidget);
 
@@ -885,7 +885,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Series Rules'));
+        await tester.tap(find.text('Rules'));
         await tester.pumpAndSettle();
         await tester.tap(find.byIcon(Icons.more_vert).first);
         await tester.pumpAndSettle();
@@ -922,7 +922,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Series Rules'));
+        await tester.tap(find.text('Rules'));
         await tester.pumpAndSettle();
 
         await tester.longPress(find.text('Test Series Alpha'));
@@ -945,7 +945,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Series Rules'));
+        await tester.tap(find.text('Rules'));
         await tester.pumpAndSettle();
 
         await tester.tap(find.byIcon(Icons.more_vert).first);
@@ -972,7 +972,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Series Rules'));
+        await tester.tap(find.text('Rules'));
         await tester.pumpAndSettle();
 
         await tester.tap(find.byIcon(Icons.more_vert).first);
@@ -1003,8 +1003,8 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(find.text('DVR Recordings'), findsOneWidget);
-        expect(find.text('Series Rules'), findsOneWidget);
+        expect(find.text('Recordings'), findsOneWidget);
+        expect(find.text('Rules'), findsOneWidget);
         expect(find.text('Shows'), findsOneWidget);
         expect(tester.takeException(), isNull);
       },
@@ -1058,7 +1058,7 @@ void main() {
 
         // Switch back to Recordings. Focus must NOT remain stolen on the
         // shows search field — that's the regression we're guarding.
-        await tester.tap(find.text('DVR Recordings'));
+        await tester.tap(find.text('Recordings'));
         await tester.pumpAndSettle();
         expect(
           FocusManager.instance.primaryFocus?.debugLabel,

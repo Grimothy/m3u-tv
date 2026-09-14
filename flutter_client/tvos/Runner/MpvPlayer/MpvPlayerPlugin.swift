@@ -11,6 +11,7 @@
 
 import AVFoundation
 import Flutter
+import UIKit
 
 final class MpvPlayerPlugin: NSObject, FlutterStreamHandler, MpvPlayerCoreDelegate {
   static let methodChannelName = "m3u_tv/apple_mpv"
@@ -20,7 +21,7 @@ final class MpvPlayerPlugin: NSObject, FlutterStreamHandler, MpvPlayerCoreDelega
   private var eventSink: FlutterEventSink?
   private let lock = NSLock()
 
-  func attachCore(viewId: Int, to displayLayer: AVSampleBufferDisplayLayer) {
+  func attachCore(viewId: Int, to displayLayer: AVSampleBufferDisplayLayer, hostView: UIView) {
     lock.lock()
     let staleCore = cores[viewId]
     lock.unlock()
@@ -37,7 +38,7 @@ final class MpvPlayerPlugin: NSObject, FlutterStreamHandler, MpvPlayerCoreDelega
     lock.lock()
     cores[viewId] = core
     lock.unlock()
-    core.attach(to: displayLayer)
+    core.attach(to: displayLayer, hostView: hostView)
   }
 
   func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {

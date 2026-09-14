@@ -206,6 +206,8 @@ class PlaybackSource {
     this.headers = const <String, String>{},
     this.metadata = const <String, Object?>{},
     this.externalSubtitles = const <ExternalSubtitle>[],
+    this.hdrEnabled = true,
+    this.matchDisplayRefreshRate = false,
   });
 
   final String uri;
@@ -223,7 +225,49 @@ class PlaybackSource {
   /// mpv backend adds each of these via mpv's `sub-add` command on load.
   final List<ExternalSubtitle> externalSubtitles;
 
+  /// Whether the native mpv desktop backends (Linux/Windows) may switch the
+  /// OS display into HDR mode for HDR content. Mirrors the persisted
+  /// `ViewSettingsService.hdrEnabled` setting; every other backend ignores it.
+  final bool hdrEnabled;
+
+  /// Whether the Windows desktop backend may switch the monitor to a refresh
+  /// rate matching the source frame rate on load. Off by default because the
+  /// mode switch briefly blanks the whole display; every other backend
+  /// ignores it. Mirrors `ViewSettingsService.matchRefreshRate`.
+  final bool matchDisplayRefreshRate;
+
   double? get videoAspectRatio => playbackAspectRatioFromMetadata(metadata);
+
+  PlaybackSource copyWith({
+    String? uri,
+    String? title,
+    Duration? startPosition,
+    bool? isLive,
+    String? videoCodec,
+    String? audioCodec,
+    String? userAgent,
+    Map<String, String>? headers,
+    Map<String, Object?>? metadata,
+    List<ExternalSubtitle>? externalSubtitles,
+    bool? hdrEnabled,
+    bool? matchDisplayRefreshRate,
+  }) {
+    return PlaybackSource(
+      uri: uri ?? this.uri,
+      title: title ?? this.title,
+      startPosition: startPosition ?? this.startPosition,
+      isLive: isLive ?? this.isLive,
+      videoCodec: videoCodec ?? this.videoCodec,
+      audioCodec: audioCodec ?? this.audioCodec,
+      userAgent: userAgent ?? this.userAgent,
+      headers: headers ?? this.headers,
+      metadata: metadata ?? this.metadata,
+      externalSubtitles: externalSubtitles ?? this.externalSubtitles,
+      hdrEnabled: hdrEnabled ?? this.hdrEnabled,
+      matchDisplayRefreshRate:
+          matchDisplayRefreshRate ?? this.matchDisplayRefreshRate,
+    );
+  }
 }
 
 double? playbackAspectRatioFromMetadata(Map<String, Object?> metadata) {

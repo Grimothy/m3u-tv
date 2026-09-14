@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:intl/intl.dart';
 
 import 'package:m3u_tv/features/epg/epg_recording_state.dart';
@@ -10,10 +11,12 @@ import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/epg_service.dart';
 import 'package:m3u_tv/services/view_settings_service.dart'
-    show ChannelColumnLayout, EpgStartView;
+    show ChannelColumnLayout, EpgStartView, OptimizeFor;
+import 'package:m3u_tv/shared/cached_media_thumbnail.dart';
 import 'package:m3u_tv/shared/catchup_badge.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/epg_icon_pill.dart';
+import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/recording_dot.dart';
 
@@ -30,6 +33,47 @@ const double _kChannelColW = 128;
 const double _kTimeHeaderH = 28;
 const double _kRowH = 60;
 const double _kPxPerMin = 5; // 300 px per hour
+
+/// Scaled row height that grows with the user's font-size preference.
+double _scaledRowH(BuildContext context) =>
+    _kRowH * FontSizeScope.scaleOf(context);
+
+/// Scaled width of the fixed left channel column.
+double _scaledChannelColW(BuildContext context) =>
+    _kChannelColW * FontSizeScope.scaleOf(context);
+
+/// Scaled height of the corner cell / time-axis header row.
+double _scaledTimeHeaderH(BuildContext context) =>
+    _kTimeHeaderH * FontSizeScope.scaleOf(context);
+
+/// EPG text gets an extra boost on top of the base font-size scale because
+/// labelSmall/labelMedium are very small by default and unreadable from couch
+/// distance even at 1.2×.
+TextStyle _epgStyle(
+  BuildContext context,
+  TextStyle? base, {
+  Color? color,
+  FontWeight? fontWeight,
+}) {
+  final extra = FontSizeScope.isLargeOf(context) ? 1.4 : 1.0;
+  return (base ?? const TextStyle()).copyWith(
+    fontSize: (base?.fontSize ?? 12) * extra,
+    color: color,
+    fontWeight: fontWeight,
+  );
+}
+
+// When a row builds, also request EPG for this many channels past it so a
+// downward scroll lands on already-loaded data instead of waiting on a lazy
+// fetch. [onEnsureEpg] is debounced and de-duped, so the widened slice just
+// coalesces into one batched request. Reduced in speed mode to cut bandwidth.
+const int _kEpgPrefetchAheadQuality = 12;
+const int _kEpgPrefetchAheadSpeed = 6;
+
+// Build (and therefore prefetch) roughly this many rows beyond the viewport in
+// each direction. Scaled at point of use to match the font-size setting.
+ScrollCacheExtent _scaledCacheExtent(BuildContext context) =>
+    ScrollCacheExtent.pixels(_scaledRowH(context) * 10);
 
 /// Horizontal TV-guide style EPG with channels on Y and time on X.
 ///
@@ -318,28 +362,70 @@ class TimelineEpgViewState extends State<TimelineEpgView> {
     WidgetsBinding.instance.addPostFrameCallback(_scrollToStart);
   }
 
+  // Both sync paths below defer their actual jumpTo() calls to a
+  // post-frame callback instead of firing them synchronously from within
+  // the triggering ScrollController listener/notification. jumpTo()
+  // internally calls goIdle()/beginActivity(), which toggles
+  // RenderIgnorePointer.ignoring and calls markNeedsSemanticsUpdate() on
+  // the *other* scrollable. During a fast fling, ListView.builder is
+  // itself mid-way through attaching/detaching rows and running its own
+  // semantics pass; a reentrant jumpTo() fired from inside that pass hits
+  // Flutter's `!attached || !owner!._debugDoingSemantics` assertion and
+  // throws, aborting the sync call and leaving the two scrollables
+  // permanently desynced. Deferring to addPostFrameCallback runs the jump
+  // after the current frame's build/layout/semantics have fully settled,
+  // which is always safe. The `_vSyncScheduled`/`_hSyncScheduled` flags
+  // coalesce a burst of notifications (many pixels-per-frame during a
+  // fling) into a single deferred jump using the latest offset.
+  bool _vSyncScheduled = false;
+  bool _pendingSyncFromLeft = false;
+
   void _onLeftV() {
-    if (_vSyncing || !_rightVCtrl.hasClients) return;
-    _vSyncing = true;
-    _rightVCtrl.jumpTo(_leftVCtrl.offset);
-    _vSyncing = false;
+    if (_vSyncing) return;
+    _pendingSyncFromLeft = true;
+    _scheduleVSync();
   }
 
   void _onRightV() {
-    if (_vSyncing || !_leftVCtrl.hasClients) return;
-    _vSyncing = true;
-    _leftVCtrl.jumpTo(_rightVCtrl.offset);
-    _vSyncing = false;
+    if (_vSyncing) return;
+    _pendingSyncFromLeft = false;
+    _scheduleVSync();
   }
+
+  void _scheduleVSync() {
+    if (_vSyncScheduled) return;
+    _vSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _vSyncScheduled = false;
+      if (!mounted) return;
+      _vSyncing = true;
+      if (_pendingSyncFromLeft) {
+        _jump(_rightVCtrl, _leftVCtrl.hasClients ? _leftVCtrl.offset : 0);
+      } else {
+        _jump(_leftVCtrl, _rightVCtrl.hasClients ? _rightVCtrl.offset : 0);
+      }
+      _vSyncing = false;
+    });
+  }
+
+  bool _hSyncScheduled = false;
+  double _pendingHOffset = 0;
 
   void _syncH(double offset) {
     if (_hSyncing) return;
-    _hSyncing = true;
-    _jump(_headerHCtrl, offset);
-    for (final c in _rowHCtrls) {
-      _jump(c, offset);
-    }
-    _hSyncing = false;
+    _pendingHOffset = offset;
+    if (_hSyncScheduled) return;
+    _hSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hSyncScheduled = false;
+      if (!mounted) return;
+      _hSyncing = true;
+      _jump(_headerHCtrl, _pendingHOffset);
+      for (final c in _rowHCtrls) {
+        _jump(c, _pendingHOffset);
+      }
+      _hSyncing = false;
+    });
   }
 
   void _jump(ScrollController ctrl, double offset) {
@@ -438,12 +524,12 @@ class TimelineEpgViewState extends State<TimelineEpgView> {
             children: [
               // ── Fixed left channel column ──────────────────────────────────────
               SizedBox(
-                width: _kChannelColW,
+                width: _scaledChannelColW(context),
                 child: Column(
                   children: [
                     // Corner cell
                     Container(
-                      height: _kTimeHeaderH,
+                      height: _scaledTimeHeaderH(context),
                       decoration: BoxDecoration(
                         color: colorScheme.surfaceContainerHighest,
                         borderRadius: widget.useSidebarLayout
@@ -458,10 +544,11 @@ class TimelineEpgViewState extends State<TimelineEpgView> {
                       alignment: Alignment.centerLeft,
                       child: Text(
                         AppLocalizations.of(context).epgChannels,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        style: _epgStyle(
+                          context,
+                          Theme.of(context).textTheme.labelSmall,
                           color: colorScheme.onSurfaceVariant,
-                          letterSpacing: 1.2,
-                        ),
+                        ).copyWith(letterSpacing: 1.2),
                       ),
                     ),
                     // Channel name/logo list (synced vertically with program rows)
@@ -490,7 +577,7 @@ class TimelineEpgViewState extends State<TimelineEpgView> {
                           child: ListView.builder(
                             controller: _leftVCtrl,
                             itemCount: widget.channels.length,
-                            itemExtent: _kRowH,
+                            itemExtent: _scaledRowH(context),
                             itemBuilder: (_, i) => _ChannelCell(
                               channel: widget.channels[i],
                               columnLayout: widget.channelColumnLayout,
@@ -533,7 +620,7 @@ class TimelineEpgViewState extends State<TimelineEpgView> {
                   children: [
                     // Time axis header
                     SizedBox(
-                      height: _kTimeHeaderH,
+                      height: _scaledTimeHeaderH(context),
                       child: AnimatedBuilder(
                         animation: _headerHCtrl,
                         builder: (context, _) {
@@ -555,7 +642,7 @@ class TimelineEpgViewState extends State<TimelineEpgView> {
                                   windowStart: _windowStart,
                                   windowEnd: _windowEnd,
                                   pixelsPerMinute: _kPxPerMin,
-                                  height: _kTimeHeaderH,
+                                  height: _scaledTimeHeaderH(context),
                                 ),
                               ),
                               if (nowX >= 0 && nowX <= _totalW)
@@ -583,7 +670,8 @@ class TimelineEpgViewState extends State<TimelineEpgView> {
                           ListView.builder(
                             controller: _rightVCtrl,
                             itemCount: widget.channels.length,
-                            itemExtent: _kRowH,
+                            itemExtent: _scaledRowH(context),
+                            scrollCacheExtent: _scaledCacheExtent(context),
                             itemBuilder: (_, i) {
                               final channel = widget.channels[i];
                               final catchupRetentionDays =
@@ -591,8 +679,24 @@ class TimelineEpgViewState extends State<TimelineEpgView> {
                                     channel.catchupSupported,
                                     channel.catchupDays,
                                   );
+                              // Request this row plus a look-ahead window so a
+                              // downward scroll hits loaded EPG. The call is
+                              // debounced and de-duped downstream.
+                              final isSpeed =
+                                  ImageQualityScope.of(
+                                    context,
+                                  )?.optimizeFor ==
+                                  OptimizeFor.speed;
+                              final prefetchEnd = math.min(
+                                widget.channels.length,
+                                i +
+                                    1 +
+                                    (isSpeed
+                                        ? _kEpgPrefetchAheadSpeed
+                                        : _kEpgPrefetchAheadQuality),
+                              );
                               widget.onEnsureEpg?.call(
-                                [channel],
+                                widget.channels.sublist(i, prefetchEnd),
                                 startDate: _selectedDate,
                                 endDate: _selectedDate,
                               );
@@ -621,7 +725,7 @@ class TimelineEpgViewState extends State<TimelineEpgView> {
                                     windowEnd: _windowEnd,
                                     pixelsPerMinute: _kPxPerMin,
                                     totalWidth: _totalW,
-                                    rowHeight: _kRowH,
+                                    rowHeight: _scaledRowH(context),
                                     catchupRetentionDays: catchupRetentionDays,
                                     now: now,
                                     nowFocusNode: i < _nowFocusNodes.length
@@ -750,9 +854,10 @@ class _DayControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context);
+    final scale = FontSizeScope.scaleOf(context);
     return Container(
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      height: 42 * scale,
+      padding: EdgeInsets.symmetric(horizontal: 8 * scale, vertical: 4 * scale),
       // Left-aligned (Row's default) so this cluster sits directly above
       // the Channels column (matching its horizontal position) instead of
       // floating centered across the whole EPG width.
@@ -782,11 +887,11 @@ class _DayControls extends StatelessWidget {
             enabled: canGoPrevious,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 5),
+              padding: EdgeInsets.symmetric(horizontal: 5 * scale),
               child: Center(
                 child: Icon(
                   Icons.chevron_left,
-                  size: 20,
+                  size: 20 * scale,
                   color: canGoPrevious
                       ? colorScheme.onSurface
                       : colorScheme.onSurface.withValues(alpha: 0.35),
@@ -795,20 +900,23 @@ class _DayControls extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 6),
+          SizedBox(width: 6 * scale),
           SizedBox(
-            width: 116,
+            width: 116 * scale,
             child: Center(
               child: Text(
                 DateFormat.yMMMd(
                   Localizations.localeOf(context).toLanguageTag(),
                 ).format(selectedDate),
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.labelMedium,
+                style: _epgStyle(
+                  context,
+                  Theme.of(context).textTheme.labelMedium,
+                ),
               ),
             ),
           ),
-          const SizedBox(width: 6),
+          SizedBox(width: 6 * scale),
           DpadInkWell(
             key: const ValueKey('timeline-now'),
             onTap: onNow,
@@ -816,11 +924,13 @@ class _DayControls extends StatelessWidget {
             borderRadius: BorderRadius.circular(50),
             color: colorScheme.primaryContainer,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: EdgeInsets.symmetric(horizontal: 12 * scale),
               child: Center(
                 child: Text(
                   l10n.epgNow,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  style: _epgStyle(
+                    context,
+                    Theme.of(context).textTheme.labelMedium,
                     color: colorScheme.onPrimaryContainer,
                     fontWeight: FontWeight.w600,
                   ),
@@ -828,18 +938,18 @@ class _DayControls extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 6),
+          SizedBox(width: 6 * scale),
           DpadInkWell(
             key: const ValueKey('timeline-next-day'),
             onTap: canGoNext ? onNext : null,
             enabled: canGoNext,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 5),
+              padding: EdgeInsets.symmetric(horizontal: 5 * scale),
               child: Center(
                 child: Icon(
                   Icons.chevron_right,
-                  size: 20,
+                  size: 20 * scale,
                   color: canGoNext
                       ? colorScheme.onSurface
                       : colorScheme.onSurface.withValues(alpha: 0.35),
@@ -876,12 +986,13 @@ class _ChannelCell extends StatelessWidget {
 
   Widget _logo({required double size}) {
     if (channel.logoUrl != null && channel.logoUrl!.isNotEmpty) {
-      return Image.network(
-        channel.logoUrl!,
+      return CachedMediaThumbnail(
+        url: channel.logoUrl!,
         width: size,
         height: size,
         fit: BoxFit.contain,
-        errorBuilder: (_, _, _) => Icon(Icons.tv, size: size - 4),
+        oversample: 2,
+        fallback: Icon(Icons.tv, size: size - 4),
       );
     }
     return Icon(Icons.tv, size: size - 4);
@@ -923,7 +1034,7 @@ class _ChannelCell extends StatelessWidget {
       onFocusChange: onFocusChange,
       borderRadius: BorderRadius.zero,
       child: Container(
-        height: _kRowH,
+        height: _scaledRowH(context),
         decoration: BoxDecoration(
           color: colorScheme.surface,
           border: Border(
@@ -951,7 +1062,10 @@ class _ChannelCell extends StatelessWidget {
                     colorScheme,
                   ),
                   ChannelColumnLayout.logoOnly => Center(
-                    child: _logoWithRecordingBadge(colorScheme, size: 44),
+                    child: _logoWithRecordingBadge(
+                      colorScheme,
+                      size: 44 * FontSizeScope.scaleOf(context),
+                    ),
                   ),
                   ChannelColumnLayout.titleOnly => _buildTitleOnly(
                     context,
@@ -976,7 +1090,10 @@ class _ChannelCell extends StatelessWidget {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _logoWithRecordingBadge(colorScheme, size: 26),
+        _logoWithRecordingBadge(
+          colorScheme,
+          size: 26 * FontSizeScope.scaleOf(context),
+        ),
         const SizedBox(height: 3),
         Text(
           channel.name,

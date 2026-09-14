@@ -176,6 +176,12 @@ abstract class AppLocalizations {
   /// **'Press back again to exit'**
   String get appBackToExit;
 
+  /// No description provided for @appRecordingScheduling.
+  ///
+  /// In en, this message translates to:
+  /// **'Recording is being scheduled…'**
+  String get appRecordingScheduling;
+
   /// No description provided for @appRecordingScheduled.
   ///
   /// In en, this message translates to:
@@ -362,6 +368,12 @@ abstract class AppLocalizations {
   /// **'No catchup shows available'**
   String get catchupShowsEmpty;
 
+  /// No description provided for @catchupShowsLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading catchup shows…'**
+  String get catchupShowsLoading;
+
   /// No description provided for @liveTvAddMultiview.
   ///
   /// In en, this message translates to:
@@ -434,6 +446,30 @@ abstract class AppLocalizations {
   /// **'Couldn\'t play - select to retry'**
   String get multiviewRetry;
 
+  /// No description provided for @multiviewManageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage Multiview'**
+  String get multiviewManageTitle;
+
+  /// No description provided for @multiviewClearAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear All'**
+  String get multiviewClearAll;
+
+  /// No description provided for @multiviewRemoveChannel.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove {channel}'**
+  String multiviewRemoveChannel(String channel);
+
+  /// No description provided for @close.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get close;
+
   /// No description provided for @catchupBadgeAvailable.
   ///
   /// In en, this message translates to:
@@ -494,6 +530,18 @@ abstract class AppLocalizations {
   /// **'Currently recording'**
   String get epgProgramCurrentlyRecording;
 
+  /// No description provided for @epgSweepLoadingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading program guide'**
+  String get epgSweepLoadingTitle;
+
+  /// Body text on the in-app toast shown while the EPG background sweep fetches program guide data for the remaining channels after app start, so the user understands the app is not frozen. Non-blocking - dismisses automatically when the sweep finishes.
+  ///
+  /// In en, this message translates to:
+  /// **'{loaded} of {total} channels'**
+  String epgSweepLoadingBody(int loaded, int total);
+
   /// No description provided for @playerGoBack.
   ///
   /// In en, this message translates to:
@@ -529,6 +577,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Resume'**
   String get playerResume;
+
+  /// No description provided for @playerClearProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear progress'**
+  String get playerClearProgress;
+
+  /// No description provided for @playerProgressCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'Progress cleared'**
+  String get playerProgressCleared;
 
   /// No description provided for @playerSkipPreviousTooltip.
   ///
@@ -571,6 +631,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Skip commercial'**
   String get playerSkipCommercial;
+
+  /// No description provided for @playerSkipCredits.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip Credits'**
+  String get playerSkipCredits;
+
+  /// No description provided for @playerSkipIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip Intro'**
+  String get playerSkipIntro;
+
+  /// No description provided for @playerUpNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Up next'**
+  String get playerUpNext;
+
+  /// No description provided for @playerUpNextPlay.
+  ///
+  /// In en, this message translates to:
+  /// **'Play next'**
+  String get playerUpNextPlay;
+
+  /// No description provided for @playerUpNextDismiss.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get playerUpNextDismiss;
+
+  /// No description provided for @playerLiveStreamEnded.
+  ///
+  /// In en, this message translates to:
+  /// **'Stream ended'**
+  String get playerLiveStreamEnded;
+
+  /// No description provided for @playerReturningToMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'Returning to the menu…'**
+  String get playerReturningToMenu;
 
   /// No description provided for @searchHint.
   ///
@@ -974,6 +1076,84 @@ abstract class AppLocalizations {
   /// **'Scan to open on your phone'**
   String get settingsAppScanQr;
 
+  /// No description provided for @settingsReleaseNotesTab.
+  ///
+  /// In en, this message translates to:
+  /// **'What\'s New'**
+  String get settingsReleaseNotesTab;
+
+  /// No description provided for @settingsReleaseNotesLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading release notes…'**
+  String get settingsReleaseNotesLoading;
+
+  /// No description provided for @settingsReleaseNotesError.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load release notes. Check your connection and try again.'**
+  String get settingsReleaseNotesError;
+
+  /// No description provided for @settingsReleaseNotesRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get settingsReleaseNotesRetry;
+
+  /// No description provided for @settingsReleaseNotesCurrentBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Current'**
+  String get settingsReleaseNotesCurrentBadge;
+
+  /// No description provided for @settingsReleaseNotesNewBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'New'**
+  String get settingsReleaseNotesNewBadge;
+
+  /// No description provided for @settingsReleaseNotesYouAreOn.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re on {version}'**
+  String settingsReleaseNotesYouAreOn(String version);
+
+  /// No description provided for @settingsReleaseNotesLatestIs.
+  ///
+  /// In en, this message translates to:
+  /// **'Latest: {version}'**
+  String settingsReleaseNotesLatestIs(String version);
+
+  /// No description provided for @settingsReleaseNotesNewerCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} newer'**
+  String settingsReleaseNotesNewerCount(int count);
+
+  /// No description provided for @settingsReleaseNotesUpToDate.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re on the latest version'**
+  String get settingsReleaseNotesUpToDate;
+
+  /// No description provided for @settingsReleaseNotesViewOnGithub.
+  ///
+  /// In en, this message translates to:
+  /// **'View all on GitHub'**
+  String get settingsReleaseNotesViewOnGithub;
+
+  /// No description provided for @settingsReleaseNotesNoneForVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'No notes for this release.'**
+  String get settingsReleaseNotesNoneForVersion;
+
+  /// No description provided for @settingsReleaseNotesSelectVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Select a version'**
+  String get settingsReleaseNotesSelectVersion;
+
   /// No description provided for @settingsFillAllFields.
   ///
   /// In en, this message translates to:
@@ -1079,7 +1259,7 @@ abstract class AppLocalizations {
   /// No description provided for @pairingPendingEnterCode.
   ///
   /// In en, this message translates to:
-  /// **'Then enter this code:'**
+  /// **'Pairing code:'**
   String get pairingPendingEnterCode;
 
   /// No description provided for @pairingPendingWaiting.
@@ -1099,6 +1279,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No Continue Watching available'**
   String get homeNoContinueWatching;
+
+  /// No description provided for @homeContinueWatchingSeeAll.
+  ///
+  /// In en, this message translates to:
+  /// **'See All'**
+  String get homeContinueWatchingSeeAll;
+
+  /// Subtitle on the Continue Watching row's overflow tile, showing how many additional resumable titles exist beyond the ones shown directly in the row.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{+1 more} other{+{count} more}}'**
+  String homeContinueWatchingMoreCount(int count);
+
+  /// No description provided for @homeUpNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Up next'**
+  String get homeUpNext;
 
   /// No description provided for @homeNoLiveTv.
   ///
@@ -1244,6 +1442,78 @@ abstract class AppLocalizations {
   /// **'Season {number}'**
   String homeSeason(int number);
 
+  /// No description provided for @seriesSeasons.
+  ///
+  /// In en, this message translates to:
+  /// **'Seasons'**
+  String get seriesSeasons;
+
+  /// No description provided for @seriesCast.
+  ///
+  /// In en, this message translates to:
+  /// **'Cast'**
+  String get seriesCast;
+
+  /// No description provided for @relatedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Related'**
+  String get relatedTitle;
+
+  /// No description provided for @seriesEpisodeCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 episode} other{{count} episodes}}'**
+  String seriesEpisodeCount(int count);
+
+  /// No description provided for @seriesPlayEpisode.
+  ///
+  /// In en, this message translates to:
+  /// **'Play S{season}E{episode}'**
+  String seriesPlayEpisode(int season, int episode);
+
+  /// No description provided for @seriesResumeEpisode.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume S{season}E{episode}'**
+  String seriesResumeEpisode(int season, int episode);
+
+  /// No description provided for @seriesMarkWatched.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark watched'**
+  String get seriesMarkWatched;
+
+  /// No description provided for @seriesMarkUnwatched.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark unwatched'**
+  String get seriesMarkUnwatched;
+
+  /// No description provided for @seriesMarkedWatched.
+  ///
+  /// In en, this message translates to:
+  /// **'Marked as watched'**
+  String get seriesMarkedWatched;
+
+  /// No description provided for @seriesMarkedUnwatched.
+  ///
+  /// In en, this message translates to:
+  /// **'Marked as unwatched'**
+  String get seriesMarkedUnwatched;
+
+  /// No description provided for @seriesMarkSyncFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t sync watched status'**
+  String get seriesMarkSyncFailed;
+
+  /// No description provided for @seriesMarkSeasonPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Update the watched status for every episode in Season {number}?'**
+  String seriesMarkSeasonPrompt(int number);
+
   /// No description provided for @traktWatchHistory.
   ///
   /// In en, this message translates to:
@@ -1357,6 +1627,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Continue movie'**
   String get vodContinueMovie;
+
+  /// No description provided for @vodCast.
+  ///
+  /// In en, this message translates to:
+  /// **'Cast'**
+  String get vodCast;
+
+  /// No description provided for @castShowAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Show all cast'**
+  String get castShowAll;
+
+  /// Trailing label inside the resume button on a VOD detail screen, showing time remaining under an hour.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes, plural, =1{1 min left} other{{minutes} min left}}'**
+  String vodTimeLeftMinutes(int minutes);
+
+  /// Trailing label inside the resume button on a VOD detail screen, showing time remaining of an hour or more.
+  ///
+  /// In en, this message translates to:
+  /// **'{hours}h {minutes}m left'**
+  String vodTimeLeftHoursMinutes(int hours, int minutes);
 
   /// No description provided for @navAioStreams.
   ///
@@ -1589,7 +1883,7 @@ abstract class AppLocalizations {
   /// No description provided for @dvrRecordingsTitle.
   ///
   /// In en, this message translates to:
-  /// **'DVR Recordings'**
+  /// **'Recordings'**
   String get dvrRecordingsTitle;
 
   /// No description provided for @dvrRecordingsSubtitle.
@@ -1901,7 +2195,7 @@ abstract class AppLocalizations {
   /// No description provided for @dvrSeriesRulesTitle.
   ///
   /// In en, this message translates to:
-  /// **'Series Rules'**
+  /// **'Rules'**
   String get dvrSeriesRulesTitle;
 
   /// No description provided for @dvrSeriesMatchModeContains.
@@ -2059,6 +2353,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Series rule active'**
   String get showSeriesRuleActive;
+
+  /// No description provided for @showScheduled.
+  ///
+  /// In en, this message translates to:
+  /// **'Scheduled'**
+  String get showScheduled;
+
+  /// No description provided for @showBatchRecord.
+  ///
+  /// In en, this message translates to:
+  /// **'Record ({count})'**
+  String showBatchRecord(int count);
+
+  /// No description provided for @showBatchScheduleSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{scheduled, plural, =1{Recorded 1 episode} other{Recorded {scheduled} episodes}}. {failed, plural, =0{All succeeded.} =1{1 failed.} other{{failed} failed.}}'**
+  String showBatchScheduleSummary(int scheduled, int failed);
+
+  /// No description provided for @showBatchScheduleFailures.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed: {titles}'**
+  String showBatchScheduleFailures(String titles);
 
   /// No description provided for @showDetailTitle.
   ///
@@ -2245,6 +2563,102 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Rating'**
   String get vodSortRating;
+
+  /// No description provided for @settingsDefaultStartPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Default start page'**
+  String get settingsDefaultStartPage;
+
+  /// No description provided for @settingsHdrMode.
+  ///
+  /// In en, this message translates to:
+  /// **'HDR mode'**
+  String get settingsHdrMode;
+
+  /// No description provided for @settingsHdrModeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Let HDR videos switch the display into HDR mode. Windows and Linux only.'**
+  String get settingsHdrModeHint;
+
+  /// No description provided for @settingsMatchRefreshRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Match display refresh rate'**
+  String get settingsMatchRefreshRate;
+
+  /// No description provided for @settingsMatchRefreshRateHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch the monitor to the video\'s frame rate when playback starts. Can briefly blank the screen. Windows only.'**
+  String get settingsMatchRefreshRateHint;
+
+  /// No description provided for @settingsToggleOn.
+  ///
+  /// In en, this message translates to:
+  /// **'On'**
+  String get settingsToggleOn;
+
+  /// No description provided for @settingsToggleOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get settingsToggleOff;
+
+  /// No description provided for @settingsOptimizeFor.
+  ///
+  /// In en, this message translates to:
+  /// **'Optimize for'**
+  String get settingsOptimizeFor;
+
+  /// No description provided for @settingsOptimizeForQuality.
+  ///
+  /// In en, this message translates to:
+  /// **'Quality'**
+  String get settingsOptimizeForQuality;
+
+  /// No description provided for @settingsOptimizeForQualityHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Sharper images, higher memory usage.'**
+  String get settingsOptimizeForQualityHint;
+
+  /// No description provided for @settingsOptimizeForSpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'Speed'**
+  String get settingsOptimizeForSpeed;
+
+  /// No description provided for @settingsOptimizeForSpeedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Faster loading, lower image quality.'**
+  String get settingsOptimizeForSpeedHint;
+
+  /// No description provided for @settingsFontSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Display size'**
+  String get settingsFontSize;
+
+  /// No description provided for @settingsFontSizeNormal.
+  ///
+  /// In en, this message translates to:
+  /// **'Normal'**
+  String get settingsFontSizeNormal;
+
+  /// No description provided for @settingsFontSizeLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'Large'**
+  String get settingsFontSizeLarge;
+
+  /// No description provided for @settingsFontSizeVeryLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'Very Large'**
+  String get settingsFontSizeVeryLarge;
 }
 
 class _AppLocalizationsDelegate

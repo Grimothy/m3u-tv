@@ -5,10 +5,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart'
+    show kCatalogKindVod;
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
 import 'package:m3u_tv/services/view_settings_service.dart';
+import 'package:m3u_tv/shared/catalog_window.dart';
+import 'package:m3u_tv/shared/catalog_window_grid.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
+import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/media_category_nav.dart';
 
@@ -18,6 +24,11 @@ import 'package:m3u_tv/shared/media_category_nav.dart';
 /// - All Movies + category tabs
 /// - Grid layout with poster thumbnails and ratings
 /// - Category filtering
+///
+/// Every tab except Favorites is a [CatalogWindowGrid] paged straight from
+/// the SQLite catalog (`CatalogRepository`) - the screen never holds the
+/// full VOD catalog in memory. Favorites is a bounded id-list lookup instead
+/// (typically a handful of items), not worth a windowed query.
 class VodScreen extends ConsumerStatefulWidget {
   const VodScreen({
     super.key,
@@ -50,8 +61,15 @@ class _VodScreenState extends ConsumerState<VodScreen> {
   static const double _maxPosterCardWidth = 220;
   static const _kFavoritesCategoryId = '__FAVORITES__';
 
+  static const _searchDebounce = Duration(milliseconds: 200);
+
   String? _selectedCategory;
   String _query = '';
+  // Lags [_query] by up to one debounce; drives the actual filtering so fast
+  // typing over a large catalog does not re-scan it on every keystroke.
+  String _appliedQuery = '';
+  Timer? _debounce;
+
   Set<int> _favoriteIds = {};
   VodSortOption _sortOption = VodSortOption.defaultOrder;
 
@@ -60,35 +78,118 @@ class _VodScreenState extends ConsumerState<VodScreen> {
   /// time the dialog opens so flipping the Settings toggle in another tab
   /// is honored on next open.
   bool _rememberVodSort = false;
+  List<VodItem> _favoriteItems = const [];
+  bool _favoritesLoadedOnce = false;
+
+  Map<String, int> _categoryCounts = const {};
+  List<Category>? _countsFetchedForCategories;
+  int _countsFetchedForFavoritesCount = -1;
+
   final FocusScopeNode _gridFocusNode = FocusScopeNode();
   final GlobalKey<MediaCategoryNavState> _navKey =
       GlobalKey<MediaCategoryNavState>();
+
+  late final CatalogRepository _repo = ref.read(catalogRepositoryProvider);
+  late final CatalogWindow<VodItem> _window = CatalogWindow<VodItem>(
+    fetchPage: (offset, limit) async => const <VodItem>[],
+    fetchCount: () async => 0,
+  );
 
   @override
   void initState() {
     super.initState();
     unawaited(_loadFavorites());
     unawaited(_loadSortPreference());
+    _reconfigureWindow();
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _gridFocusNode.dispose();
+    _window.dispose();
     super.dispose();
+  }
+
+  void _reconfigureWindow() {
+    final category = _selectedCategory;
+    final categoryId = (category == null || category.isEmpty) ? null : category;
+    final search = _appliedQuery.trim().isEmpty ? null : _appliedQuery.trim();
+    unawaited(
+      _window.configure(
+        fetchPage: (offset, limit) => _repo.pageActiveItems<VodItem>(
+          kind: kCatalogKindVod,
+          categoryId: categoryId,
+          search: search,
+          sortByRatingDesc: _sortOption == VodSortOption.ratingDesc,
+          offset: offset,
+          limit: limit,
+        ),
+        fetchCount: () => _repo.countActiveItems(
+          kind: kCatalogKindVod,
+          categoryId: categoryId,
+          search: search,
+        ),
+      ),
+    );
+  }
+
+  void _onQueryChanged(String value) {
+    setState(() => _query = value);
+    _debounce?.cancel();
+    if (value.trim().isEmpty) {
+      _appliedQuery = '';
+      _reconfigureWindow();
+      return;
+    }
+    // Apply the first character of a fresh query immediately; only throttle
+    // subsequent keystrokes while a filtered result is already on screen.
+    if (_appliedQuery.isEmpty) {
+      _appliedQuery = value;
+      _reconfigureWindow();
+      return;
+    }
+    _debounce = Timer(_searchDebounce, () {
+      if (mounted && value != _appliedQuery) {
+        setState(() => _appliedQuery = value);
+        _reconfigureWindow();
+      }
+    });
+  }
+
+  void _onCategorySelected(String id) {
+    setState(() => _selectedCategory = id);
+    if (id != _kFavoritesCategoryId) _reconfigureWindow();
   }
 
   Future<void> _loadFavorites() async {
     final service = widget.favoritesService;
-    if (service == null) return;
+    if (service == null) {
+      if (mounted) setState(() => _favoritesLoadedOnce = true);
+      return;
+    }
     final ids = await service.all();
-    if (mounted) setState(() => _favoriteIds = ids);
+    final items = ids.isEmpty
+        ? const <VodItem>[]
+        : await _repo.activeItemsByIds<VodItem>(
+            kind: kCatalogKindVod,
+            ids: ids,
+          );
+    if (mounted) {
+      setState(() {
+        _favoriteIds = ids;
+        _favoriteItems = items;
+        _favoritesLoadedOnce = true;
+      });
+    }
   }
 
   /// Restores the persisted VOD sort only when the user has opted in via
-  /// Settings → View → Filter Persistence. Otherwise we leave
-  /// [VodSortOption.defaultOrder] in place — matching the no-key-set case
+  /// Settings -> View -> Filter Persistence. Otherwise we leave
+  /// [VodSortOption.defaultOrder] in place - matching the no-key-set case
   /// for users who have never opened the dialog or don't want their choice
-  /// to survive a relaunch.
+  /// to survive a relaunch. Reconfigures the window when a non-default sort
+  /// is restored so the already-in-flight default-order load gets replaced.
   Future<void> _loadSortPreference() async {
     final service = ref.read(viewSettingsServiceProvider);
     final remember = await service.rememberVodSort();
@@ -98,48 +199,55 @@ class _VodScreenState extends ConsumerState<VodScreen> {
     final option = await service.vodSortOption();
     if (!mounted) return;
     setState(() => _sortOption = option);
+    _reconfigureWindow();
   }
 
-  List<VodItem> _filteredItems(List<VodItem> vodItems) {
-    final selectedCategory = _selectedCategory;
-    final Iterable<VodItem> categoryFiltered;
-    if (selectedCategory == _kFavoritesCategoryId) {
-      categoryFiltered = vodItems.where(
-        (item) => _favoriteIds.contains(item.id),
-      );
-    } else if (selectedCategory == null || selectedCategory.isEmpty) {
-      categoryFiltered = vodItems;
-    } else {
-      categoryFiltered = vodItems.where(
-        (item) => item.categoryId == selectedCategory,
-      );
+  /// Applies [_sortOption] to the (already category/query-filtered)
+  /// favorites list. The windowed catalog tabs sort in SQL via
+  /// [CatalogRepository.pageActiveItems]; favorites is a small,
+  /// fully-materialized list, so sorting it client-side is simplest.
+  List<VodItem> _sortedFavorites(List<VodItem> items) {
+    if (_sortOption != VodSortOption.ratingDesc) return items;
+    final list = items.toList(growable: false);
+    // Unrated items sink below every rated one - keeps the grid visually
+    // anchored on the best-rated movies and treats missing data as "less
+    // informative" rather than "zero stars".
+    list.sort((a, b) => (b.rating ?? -1).compareTo(a.rating ?? -1));
+    return list;
+  }
+
+  /// Refreshes tab-count labels (total / favorites / per-category) when the
+  /// category list changes (a fresh catalog load) or the favorites count
+  /// changes. Cheap: one unfiltered count plus one query per category,
+  /// versus scanning the whole catalog in Dart.
+  void _ensureCounts(List<Category> categories) {
+    if (identical(categories, _countsFetchedForCategories) &&
+        _favoriteIds.length == _countsFetchedForFavoritesCount) {
+      return;
     }
-    final normalizedQuery = _query.trim().toLowerCase();
-    final Iterable<VodItem> queryFiltered;
-    if (normalizedQuery.isEmpty) {
-      queryFiltered = categoryFiltered;
-    } else {
-      queryFiltered = categoryFiltered.where(
-        (item) => item.name.toLowerCase().contains(normalizedQuery),
-      );
-    }
-    // Append the sort step rather than mutating the existing
-    // category/query branches - keeps those regression-tested paths byte
-    // identical to pre-#235 and makes a future sort dimension purely
-    // additive.
-    final list = queryFiltered.toList(growable: false);
-    switch (_sortOption) {
-      case VodSortOption.defaultOrder:
-        return list;
-      case VodSortOption.ratingDesc:
-        // Unrated items sink below every rated one - keeps the grid
-        // visually anchored on the best-rated movies and treats missing
-        // data as "less informative" rather than "zero stars".
-        list.sort(
-          (a, b) => (b.rating ?? -1).compareTo(a.rating ?? -1),
-        );
-        return list;
-    }
+    _countsFetchedForCategories = categories;
+    _countsFetchedForFavoritesCount = _favoriteIds.length;
+    final favoritesSnapshotCount = _favoriteIds.length;
+    unawaited(_computeCounts(categories, favoritesSnapshotCount));
+  }
+
+  Future<void> _computeCounts(
+    List<Category> categories,
+    int favoritesCount,
+  ) async {
+    final total = await _repo.countActiveItems(kind: kCatalogKindVod);
+    final perCategory = await _repo.activeCategoryCounts(
+      kind: kCatalogKindVod,
+      categoryIds: categories.map((c) => c.id).toList(growable: false),
+    );
+    if (!mounted) return;
+    setState(() {
+      _categoryCounts = {
+        '': total,
+        if (favoritesCount > 0) _kFavoritesCategoryId: favoritesCount,
+        ...perCategory,
+      };
+    });
   }
 
   List<CategoryTabData> _tabs(List<Category> categories) {
@@ -152,25 +260,10 @@ class _VodScreenState extends ConsumerState<VodScreen> {
     ];
   }
 
-  Map<String, int> _categoryCounts(List<VodItem> vodItems) {
-    final counts = <String, int>{'': vodItems.length};
-    if (_favoriteIds.isNotEmpty) {
-      counts[_kFavoritesCategoryId] = _favoriteIds.length;
-    }
-    for (final item in vodItems) {
-      final categoryId = item.categoryId;
-      if (categoryId == null) continue;
-      counts[categoryId] = (counts[categoryId] ?? 0) + 1;
-    }
-    return counts;
-  }
-
   @override
   Widget build(BuildContext context) {
     final isBootstrapping = ref.watch(isBootstrappingProvider);
     final isConfigured = ref.watch(isConfiguredProvider);
-    final isLoading = ref.watch(isLoadingContentProvider);
-    final vodItems = ref.watch(vodItemsProvider);
     final categories = ref.watch(vodCategoriesProvider);
 
     if (isBootstrapping) {
@@ -188,20 +281,21 @@ class _VodScreenState extends ConsumerState<VodScreen> {
       );
     }
 
-    final filtered = _filteredItems(vodItems);
+    _ensureCounts(categories);
+    final isFavoritesTab = _selectedCategory == _kFavoritesCategoryId;
     final l = AppLocalizations.of(context);
     final nav = MediaCategoryNav(
       key: _navKey,
       useSidebarLayout: widget.useSidebarLayout,
       query: _query,
-      onQueryChanged: (value) => setState(() => _query = value),
+      onQueryChanged: _onQueryChanged,
       searchHint: l.vodSearchHint,
       tabs: _tabs(categories),
       selectedId: _selectedCategory ?? '',
-      onSelected: (id) => setState(() => _selectedCategory = id),
+      onSelected: _onCategorySelected,
       filterButtonLabel: l.mediaCategoryFilterButton,
       filterScreenTitle: l.mediaCategoryFilterScreenTitle,
-      categoryCounts: _categoryCounts(vodItems),
+      categoryCounts: _categoryCounts,
       onSidebarActivate: widget.onSidebarActivate,
       gridFocusScopeNode: _gridFocusNode,
       memoryKeyPrefix: 'vod',
@@ -209,16 +303,9 @@ class _VodScreenState extends ConsumerState<VodScreen> {
       onCategoryLongPress: () => _showSortMenu(context),
     );
     final content = Expanded(
-      child: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : filtered.isEmpty
-          ? Center(
-              child: Text(
-                'No movies available',
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-            )
-          : _buildGrid(filtered),
+      child: isFavoritesTab
+          ? _buildFavoritesContent()
+          : _buildWindowedContent(_window),
     );
 
     return Scaffold(
@@ -228,12 +315,30 @@ class _VodScreenState extends ConsumerState<VodScreen> {
     );
   }
 
+  Widget _buildFavoritesContent() {
+    if (!_favoritesLoadedOnce) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_favoriteItems.isEmpty) {
+      return Center(
+        child: Text(
+          'No movies available',
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+      );
+    }
+    return _buildGrid(_sortedFavorites(_favoriteItems));
+  }
+
   Widget _buildGrid(List<VodItem> items) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final availableWidth =
             constraints.maxWidth - MediaBrowsingMetrics.contentPadding * 2;
-        final columnCount = _posterColumnCount(availableWidth);
+        final columnCount = _posterColumnCount(
+          availableWidth,
+          FontSizeScope.scaleOf(context),
+        );
 
         return FocusScope(
           node: _gridFocusNode,
@@ -256,21 +361,8 @@ class _VodScreenState extends ConsumerState<VodScreen> {
                 crossAxisSpacing: MediaBrowsingMetrics.itemGap,
               ),
               itemCount: items.length,
-              itemBuilder: (context, index) {
-                final item = items[index];
-                return _VodCard(
-                  item: item,
-                  autofocus: index == 0,
-                  isFavorite: _favoriteIds.contains(item.id),
-                  onTap: () => widget.onVodSelect(item),
-                  onLongTap: widget.favoritesService == null
-                      ? null
-                      : () async {
-                          await widget.favoritesService!.toggle(item.id);
-                          await _loadFavorites();
-                        },
-                );
-              },
+              itemBuilder: (context, index) =>
+                  _vodCard(items[index], autofocus: index == 0),
             ),
           ),
         );
@@ -278,14 +370,109 @@ class _VodScreenState extends ConsumerState<VodScreen> {
     );
   }
 
-  int _posterColumnCount(double availableWidth) {
+  Widget _vodCard(VodItem item, {required bool autofocus}) => MediaPreviewCard(
+    posterStyle: true,
+    keepAlive: false,
+    autofocus: autofocus,
+    item: MediaPreviewItem(
+      title: item.name,
+      imageUrl: item.logoUrl,
+      subtitle: item.year,
+      ratingLabel: item.rating == null ? null : '★ ${item.rating}',
+      fallbackIcon: Icons.movie,
+      isFavorite: _favoriteIds.contains(item.id),
+      onTap: () => widget.onVodSelect(item),
+      onLongTap: widget.favoritesService == null
+          ? null
+          : () async {
+              await widget.favoritesService!.toggle(item.id);
+              await _loadFavorites();
+            },
+    ),
+  );
+
+  /// Windowed grid: same layout/focus wiring as [_buildGrid], but driven by
+  /// [window] (paged from SQLite) instead of an in-memory list, and only
+  /// [CatalogWindowGrid.lookAheadRows] worth of items are ever materialized
+  /// into [VodItem]s/widgets at once, regardless of catalog size.
+  Widget _buildWindowedContent(CatalogWindow<VodItem> window) {
+    return AnimatedBuilder(
+      animation: window,
+      builder: (context, _) {
+        if (!window.hasLoadedOnce && window.error == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        // A database that never opens must not strand the user on a spinner
+        // forever.
+        if (window.error != null && !window.hasLoadedOnce) {
+          return Center(
+            child: Text(
+              'Unable to load movies',
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+          );
+        }
+        if (window.totalCount == 0) {
+          return Center(
+            child: Text(
+              'No movies available',
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+          );
+        }
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final availableWidth =
+                constraints.maxWidth - MediaBrowsingMetrics.contentPadding * 2;
+            final columnCount = _posterColumnCount(
+              availableWidth,
+              FontSizeScope.scaleOf(context),
+            );
+            return FocusScope(
+              node: _gridFocusNode,
+              child: DpadRegion(
+                memoryKey: 'vod/grid',
+                horizontalEdge: DpadEdgeBehavior.stop,
+                onEdge: (direction) {
+                  if (direction != TraversalDirection.left) return;
+                  if (widget.useSidebarLayout) {
+                    _navKey.currentState?.requestFocus();
+                  } else {
+                    widget.onSidebarActivate?.call();
+                  }
+                },
+                child: CatalogWindowGrid<VodItem>(
+                  window: window,
+                  crossAxisCount: columnCount,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columnCount,
+                    childAspectRatio: 0.6,
+                    mainAxisSpacing: MediaBrowsingMetrics.itemGap,
+                    crossAxisSpacing: MediaBrowsingMetrics.itemGap,
+                  ),
+                  itemBuilder: (context, index, item) =>
+                      _vodCard(item, autofocus: index == 0),
+                  placeholderBuilder: (context, index) =>
+                      const CatalogGridPlaceholder(),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  int _posterColumnCount(double availableWidth, double scale) {
+    final maxCardWidth = _maxPosterCardWidth * scale;
+    final minCardWidth = _minPosterCardWidth * scale;
     final minimumColumns =
         ((availableWidth + MediaBrowsingMetrics.itemGap) /
-                (_maxPosterCardWidth + MediaBrowsingMetrics.itemGap))
+                (maxCardWidth + MediaBrowsingMetrics.itemGap))
             .ceil();
     final maximumColumns =
         ((availableWidth + MediaBrowsingMetrics.itemGap) /
-                (_minPosterCardWidth + MediaBrowsingMetrics.itemGap))
+                (minCardWidth + MediaBrowsingMetrics.itemGap))
             .floor();
     return minimumColumns.clamp(1, maximumColumns.clamp(1, 100));
   }
@@ -354,6 +541,7 @@ class _VodScreenState extends ConsumerState<VodScreen> {
 
     if (selected == null || !mounted) return;
     setState(() => _sortOption = selected);
+    _reconfigureWindow();
     if (!_rememberVodSort) return;
     unawaited(
       ref.read(viewSettingsServiceProvider).setVodSortOption(selected),
@@ -403,90 +591,6 @@ class _VodSortOption extends StatelessWidget {
             if (isActive) Icon(Icons.check, color: colorScheme.primary),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _VodCard extends StatelessWidget {
-  const _VodCard({
-    required this.item,
-    required this.onTap,
-    this.onLongTap,
-    this.isFavorite = false,
-    this.autofocus = false,
-  });
-
-  final VodItem item;
-  final VoidCallback onTap;
-  final VoidCallback? onLongTap;
-  final bool isFavorite;
-  final bool autofocus;
-
-  @override
-  Widget build(BuildContext context) {
-    return DpadInkWell(
-      autofocus: autofocus,
-      onTap: onTap,
-      onLongTap: onLongTap,
-      borderRadius: BorderRadius.circular(8),
-      clipBehavior: Clip.antiAlias,
-      color: Theme.of(context).colorScheme.surfaceContainerHigh,
-      child: Stack(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: ResilientMediaImage(
-                  imageUrl: item.logoUrl,
-                  fallbackIcon: Icons.movie,
-                  borderRadius: 0,
-                ),
-              ),
-              // Title + rating
-              Padding(
-                padding: const EdgeInsets.all(6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.name,
-                      style: Theme.of(context).textTheme.bodySmall,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (item.rating != null)
-                      Text(
-                        '★ ${item.rating}',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: const Color(0xFFFFCC00),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (isFavorite)
-            Positioned(
-              top: 4,
-              left: 4,
-              child: Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.star,
-                  color: Colors.white,
-                  size: 14,
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }

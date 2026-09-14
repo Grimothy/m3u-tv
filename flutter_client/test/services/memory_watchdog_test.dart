@@ -1,0 +1,182 @@
+// ignore_for_file: cascade_invocations
+
+import 'package:flutter/painting.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:m3u_tv/services/memory_watchdog.dart';
+
+/// Minimal [ImageCache] stand-in: the watchdog only touches [currentSizeBytes],
+/// [currentSize], [clear] and [clearLiveImages].
+class _FakeImageCache implements ImageCache {
+  _FakeImageCache({this.sizeBytes = 64 << 20});
+
+  int sizeBytes;
+  int clears = 0;
+  int liveClears = 0;
+
+  @override
+  int get currentSizeBytes => sizeBytes;
+
+  @override
+  int get currentSize => 100;
+
+  @override
+  void clear() {
+    clears += 1;
+    sizeBytes = 0;
+  }
+
+  @override
+  void clearLiveImages() => liveClears += 1;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+void main() {
+  test('evicts when RSS is over threshold and cache is above the floor', () {
+    final cache = _FakeImageCache();
+    var now = DateTime(2026);
+    final watchdog = MemoryWatchdog(
+      imageCache: cache,
+      currentRss: () => 900 << 20,
+      clock: () => now,
+    );
+
+    watchdog.sampleForTest(800 << 20);
+
+    expect(cache.clears, 1);
+    expect(cache.liveClears, 1);
+
+    cache.sizeBytes = 64 << 20;
+    now = now.add(const Duration(seconds: 61));
+    watchdog.sampleForTest(800 << 20);
+    expect(cache.clears, 2);
+  });
+
+  test('does not evict below threshold', () {
+    final cache = _FakeImageCache();
+    final watchdog = MemoryWatchdog(
+      imageCache: cache,
+      currentRss: () => 100 << 20,
+      clock: () => DateTime(2026),
+    );
+
+    watchdog.sampleForTest(800 << 20);
+
+    expect(cache.clears, 0);
+  });
+
+  test('does not evict an already-small cache', () {
+    final cache = _FakeImageCache(sizeBytes: 4 << 20);
+    final watchdog = MemoryWatchdog(
+      imageCache: cache,
+      currentRss: () => 900 << 20,
+      clock: () => DateTime(2026),
+    );
+
+    watchdog.sampleForTest(800 << 20);
+
+    expect(cache.clears, 0);
+  });
+
+  test('holds off inside the cooldown unless RSS keeps climbing', () {
+    final cache = _FakeImageCache();
+    var now = DateTime(2026);
+    var rss = 900 << 20;
+    final watchdog = MemoryWatchdog(
+      imageCache: cache,
+      currentRss: () => rss,
+      clock: () => now,
+    );
+
+    watchdog.sampleForTest(800 << 20);
+    expect(cache.clears, 1);
+
+    cache.sizeBytes = 64 << 20;
+    now = now.add(const Duration(seconds: 10));
+    rss = 850 << 20;
+    watchdog.sampleForTest(800 << 20);
+    expect(cache.clears, 1);
+
+    rss = 950 << 20;
+    watchdog.sampleForTest(800 << 20);
+    expect(cache.clears, 2);
+  });
+
+  test('notifyMemoryPressure evicts a cache above the floor', () {
+    final cache = _FakeImageCache();
+    final watchdog = MemoryWatchdog(
+      imageCache: cache,
+      currentRss: () => 0,
+      clock: () => DateTime(2026),
+    );
+
+    watchdog.notifyMemoryPressure();
+
+    expect(cache.clears, 1);
+    expect(cache.liveClears, 1);
+  });
+
+  test('notifyMemoryPressure does not evict an already-small cache', () {
+    final cache = _FakeImageCache(sizeBytes: 1 << 20);
+    final watchdog = MemoryWatchdog(
+      imageCache: cache,
+      currentRss: () => 0,
+      clock: () => DateTime(2026),
+    );
+
+    watchdog.notifyMemoryPressure();
+
+    expect(cache.clears, 0);
+  });
+
+  test(
+    'notifyMemoryPressure ignores repeated signals within the cooldown',
+    () {
+      final cache = _FakeImageCache();
+      var now = DateTime(2026);
+      final watchdog = MemoryWatchdog(
+        imageCache: cache,
+        currentRss: () => 0,
+        clock: () => now,
+      );
+
+      watchdog.notifyMemoryPressure();
+      expect(cache.clears, 1);
+
+      // The OS can redeliver the pressure signal several times in quick
+      // succession while pressure is sustained - each of those must not force
+      // another full clear-and-redecode cycle.
+      cache.sizeBytes = 64 << 20;
+      watchdog.notifyMemoryPressure();
+      watchdog.notifyMemoryPressure();
+      expect(cache.clears, 1);
+
+      now = now.add(const Duration(seconds: 61));
+      watchdog.notifyMemoryPressure();
+      expect(cache.clears, 2);
+    },
+  );
+
+  test(
+    'notifyMemoryPressure and the RSS poll share one cooldown clock',
+    () {
+      final cache = _FakeImageCache();
+      final now = DateTime(2026);
+      final watchdog = MemoryWatchdog(
+        imageCache: cache,
+        currentRss: () => 900 << 20,
+        clock: () => now,
+      );
+
+      watchdog.sampleForTest(800 << 20);
+      expect(cache.clears, 1);
+
+      // A pressure signal arriving right after an RSS-triggered eviction is
+      // still inside that eviction's cooldown window.
+      cache.sizeBytes = 64 << 20;
+      watchdog.notifyMemoryPressure();
+      expect(cache.clears, 1);
+    },
+  );
+}

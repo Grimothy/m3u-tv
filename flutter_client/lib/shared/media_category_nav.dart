@@ -2,6 +2,7 @@ import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 
 import 'package:m3u_tv/shared/app_button.dart';
+import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 
 /// Search + category filter UI shared by media-browsing screens (VOD,
@@ -46,6 +47,7 @@ class MediaCategoryNav extends StatefulWidget {
     this.searchAutofocus = false,
     this.onEntryFocusScopeReady,
     this.onCategoryLongPress,
+    this.onTopEdge,
   });
 
   final bool useSidebarLayout;
@@ -99,10 +101,19 @@ class MediaCategoryNav extends StatefulWidget {
   final ValueChanged<FocusScopeNode>? onEntryFocusScopeReady;
 
   /// TV/desktop only: forwarded to each chip in the sidebar's
-  /// [VerticalCategoryList]. Ignored on the stacked/mobile layout — its
+  /// [VerticalCategoryList]. Ignored on the stacked/mobile layout - its
   /// pushed [MediaCategoryFilterScreen] is out of scope for the VOD sort
   /// affordance in #235.
   final VoidCallback? onCategoryLongPress;
+
+  /// TV/desktop only: called when d-pad Up is pressed at the strip's top
+  /// edge. The strip runs inside its own [FocusScope] (so `requestFocus`
+  /// can restore whichever item was last focused), but that also bounds
+  /// `dpad`'s directional traversal to the scope's own descendants. Up can
+  /// never reach anything above the strip on its own, so a caller with
+  /// content up there (e.g. a `DpadTabBar`) must be told explicitly and
+  /// move focus itself.
+  final VoidCallback? onTopEdge;
 
   @override
   State<MediaCategoryNav> createState() => MediaCategoryNavState();
@@ -139,6 +150,8 @@ class MediaCategoryNavState extends State<MediaCategoryNav> {
       } else {
         widget.gridFocusScopeNode?.requestFocus();
       }
+    } else if (direction == TraversalDirection.up) {
+      widget.onTopEdge?.call();
     }
   }
 
@@ -151,12 +164,15 @@ class MediaCategoryNavState extends State<MediaCategoryNav> {
 
   Widget _buildSidebarLayout(BuildContext context) {
     return SizedBox(
-      width: MediaBrowsingMetrics.interstitialNavWidth,
+      width:
+          MediaBrowsingMetrics.interstitialNavWidth *
+          FontSizeScope.scaleOf(context),
       child: FocusScope(
         node: _stripFocusNode,
         child: DpadRegion(
           memoryKey: '${widget.memoryKeyPrefix}/strip',
           horizontalEdge: DpadEdgeBehavior.stop,
+          verticalEdge: DpadEdgeBehavior.stop,
           onEdge: _handleStripEdge,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(

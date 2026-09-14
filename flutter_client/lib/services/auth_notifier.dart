@@ -87,18 +87,23 @@ class AuthNotifier extends ChangeNotifier {
     bool persistCredentials = true,
     bool publishSession = true,
   }) async {
+    // A bare host typed on the connect form (scheme loosened) must be resolved
+    // to an absolute URL here so every downstream consumer of the credentials
+    // (notification owner key, Reverb config, etc.) sees the same value the
+    // Xtream client normalizes to internally.
+    final normalized = credentials.normalized();
     final connectionGeneration = ++_connectionGeneration;
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final response = await xtreamService.authenticate(credentials);
+      final response = await xtreamService.authenticate(normalized);
       if (!_isCurrentConnection(connectionGeneration, isCurrent)) {
         _finishStaleConnection(connectionGeneration);
         return false;
       }
-      if (persistCredentials) await _persistCredentials(credentials);
+      if (persistCredentials) await _persistCredentials(normalized);
       if (!_isCurrentConnection(connectionGeneration, isCurrent)) {
         _finishStaleConnection(connectionGeneration);
         return false;
@@ -106,7 +111,7 @@ class AuthNotifier extends ChangeNotifier {
 
       _isConfigured = true;
       _authResponse = response;
-      _credentials = credentials;
+      _credentials = normalized;
       _isLoading = false;
       if (publishSession) notifyListeners();
       return true;
@@ -115,7 +120,7 @@ class AuthNotifier extends ChangeNotifier {
         _finishStaleConnection(connectionGeneration);
         return false;
       }
-      _error = _redact(e.message, credentials);
+      _error = _redact(e.message, normalized);
       _isLoading = false;
       notifyListeners();
       return false;
@@ -124,7 +129,7 @@ class AuthNotifier extends ChangeNotifier {
         _finishStaleConnection(connectionGeneration);
         return false;
       }
-      _error = _redact(userFacingXtreamError(e), credentials);
+      _error = _redact(userFacingXtreamError(e), normalized);
       _isLoading = false;
       notifyListeners();
       return false;
@@ -170,6 +175,32 @@ class AuthNotifier extends ChangeNotifier {
       return await connect(credentials, isCurrent: isCurrent);
     } on Object catch (_) {
       return false;
+    }
+  }
+
+  /// Loads saved credentials from secure storage into memory *without* a
+  /// network handshake. Lets `AppStateController.boot` paint cached content
+  /// before the live credential validation in [connect] completes. Returns
+  /// the parsed credentials, or null if none are stored or parsing fails.
+  ///
+  /// This does not set [isConfigured] or [authResponse] - a subsequent
+  /// [connect] call does that once the server confirms the credentials.
+  Future<UserCredentials?> loadSavedCredentialsOffline() async {
+    await _credentialPersistenceQueue.drained;
+    final saved = await secureStorage.read(_credentialsKey);
+    if (saved == null) return null;
+    try {
+      final json = jsonDecode(saved) as Map<String, Object?>;
+      final credentials = UserCredentials(
+        server: '${json['server'] ?? ''}',
+        username: '${json['username'] ?? ''}',
+        password: '${json['password'] ?? ''}',
+      ).normalized();
+      _credentials = credentials;
+      xtreamService.hydrateCredentials(credentials);
+      return credentials;
+    } on Object catch (_) {
+      return null;
     }
   }
 

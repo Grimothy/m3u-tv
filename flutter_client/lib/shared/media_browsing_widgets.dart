@@ -1,13 +1,18 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart'
     show CachedNetworkImageProvider;
 import 'package:dpad/dpad.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
     show KeyDownEvent, KeyEvent, LogicalKeyboardKey;
+import 'package:m3u_tv/services/view_settings_service.dart' show OptimizeFor;
 import 'package:m3u_tv/shared/app_button.dart' show kStadiumFocusEffects;
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
+import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/media_image_cache_manager.dart';
 
 class CategoryTabData {
@@ -38,6 +43,36 @@ class MediaBrowsingMetrics {
   // Width of the TV/Desktop interstitial search+category strip
   // (MediaCategoryNav) between the sidebar and a screen's content grid.
   static const double interstitialNavWidth = 200;
+}
+
+/// Small icon + label header used above a detail-page row (Cast, Related).
+/// Mirrors [MediaPreviewSection]'s own title-row styling so a header reads
+/// consistently whether the row sits inside a preview section or a locked
+/// D-pad row (CastRow/RelatedRow) on the Movie/Series detail pages.
+class DetailRowHeader extends StatelessWidget {
+  const DetailRowHeader({super.key, required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scale = FontSizeScope.scaleOf(context);
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 20 * scale, color: theme.textTheme.titleSmall?.color),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class InlineMediaSearchField extends StatefulWidget {
@@ -208,11 +243,14 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
     const radius = BorderRadius.all(
       Radius.circular(MediaBrowsingMetrics.cardRadius),
     );
+    final scale = FontSizeScope.scaleOf(context);
 
     // Fixed so the facade button and the real TextField below are pixel
     // identical in height - letting each derive its own height from font
     // metrics/padding produced a visible size jump on activate/deactivate.
-    const fieldHeight = 52.0;
+    // Scaled with the display-size setting so the field doesn't clip its
+    // own (already-scaling) text/icons at Large/Very Large.
+    final fieldHeight = 52.0 * scale;
     final hintStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
       color: colorScheme.onSurfaceVariant,
     );
@@ -226,15 +264,15 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
           borderRadius: radius,
           color: colorScheme.surfaceContainerHigh,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: EdgeInsets.symmetric(horizontal: 12 * scale),
             child: Row(
               children: [
                 Icon(
                   Icons.search,
-                  size: 24,
+                  size: 24 * scale,
                   color: colorScheme.onSurfaceVariant,
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: 8 * scale),
                 Expanded(
                   child: Text(
                     widget.query.isEmpty ? widget.hintText : widget.query,
@@ -269,8 +307,8 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
               ),
               child: Padding(
                 padding: EdgeInsets.only(
-                  left: 12,
-                  right: widget.query.isEmpty ? 12 : 4,
+                  left: 12 * scale,
+                  right: (widget.query.isEmpty ? 12 : 4) * scale,
                 ),
                 child: Focus(
                   focusNode: _containerFocusNode,
@@ -286,10 +324,10 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
                     children: [
                       Icon(
                         Icons.search,
-                        size: 24,
+                        size: 24 * scale,
                         color: colorScheme.onSurfaceVariant,
                       ),
-                      const SizedBox(width: 8),
+                      SizedBox(width: 8 * scale),
                       Expanded(
                         child: TextField(
                           controller: _controller,
@@ -318,7 +356,7 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
                           effects: kStadiumFocusEffects,
                           child: IconButton(
                             tooltip: 'Clear search',
-                            icon: const Icon(Icons.clear),
+                            icon: Icon(Icons.clear, size: 24 * scale),
                             onPressed: _clear,
                           ),
                         ),
@@ -353,10 +391,11 @@ class _InlineMediaSearchFieldState extends State<InlineMediaSearchField> {
   }
 }
 
-class ResilientMediaImage extends StatelessWidget {
+class ResilientMediaImage extends StatefulWidget {
   const ResilientMediaImage({
     required this.imageUrl,
     required this.fallbackIcon,
+    this.fallbackImageUrls = const <String>[],
     this.width,
     this.height,
     this.fit = BoxFit.cover,
@@ -364,10 +403,16 @@ class ResilientMediaImage extends StatelessWidget {
     this.fallbackTitle,
     this.borderRadius = MediaBrowsingMetrics.posterRadius,
     this.backgroundColor,
+    this.oversample = 1,
     super.key,
   });
 
   final String? imageUrl;
+
+  /// Alternate URLs to try, in order, once [imageUrl] has failed its retries
+  /// (a season poster that 404s falling back to the series poster, then the
+  /// backdrop). Only the icon fallback shows once every URL is exhausted.
+  final List<String> fallbackImageUrls;
   final IconData fallbackIcon;
   final double? width;
   final double? height;
@@ -377,34 +422,160 @@ class ResilientMediaImage extends StatelessWidget {
   final double borderRadius;
   final Color? backgroundColor;
 
+  /// Decode multiplier on top of the display's raw pixel density. Leave at 1
+  /// (decode at display size) for photographic art - posters, backdrops, cast
+  /// photos - where a 2x oversample just quadruples each decoded bitmap and
+  /// makes the image cache thrash on a 4K TV. Pass 2 for small channel logos
+  /// with thin text/wordmarks, where the box is tiny (memory cost negligible)
+  /// but a display-size decode of a large source looks blocky and aliased.
+  /// [ResizeImage] never upscales past the source's intrinsic size.
+  final double oversample;
+
+  @override
+  State<ResilientMediaImage> createState() => _ResilientMediaImageState();
+}
+
+class _ResilientMediaImageState extends State<ResilientMediaImage> {
+  // On a cold app start, every row on the home screen fires its poster
+  // requests at once, which blows past flutter_cache_manager's hardcoded
+  // concurrentFetches limit (10). Requests queued behind that limit can lose
+  // the race against transient network hiccups, and neither
+  // cached_network_image nor flutter_cache_manager retry on their own - the
+  // failed entry is simply evicted, so the image sits on the fallback icon
+  // until something (e.g. a manual app reload) asks for it again. Retrying
+  // here with backoff closes that gap without needing to touch the shared
+  // cache manager's concurrency settings.
+
+  int _attempt = 0;
+  bool _retryScheduled = false;
+
+  /// Index into [_urlChain] currently being displayed.
+  int _urlIndex = 0;
+
+  /// Once this cell has resolved an image for the current URL, a fling
+  /// starting afterward must not blank it back out to the fallback -
+  /// [DeferImageLoadingScope] only withholds *new* decodes, never already
+  /// -resolved ones.
+  bool _hasResolvedOnce = false;
+
+  List<String> get _urlChain => [
+    ?_nonEmpty(widget.imageUrl),
+    ...widget.fallbackImageUrls.map(_nonEmpty).whereType<String>(),
+  ];
+
+  static String? _nonEmpty(String? value) =>
+      (value == null || value.trim().isEmpty) ? null : value;
+
+  String? get _currentUrl {
+    final chain = _urlChain;
+    return _urlIndex < chain.length ? chain[_urlIndex] : null;
+  }
+
+  @override
+  void didUpdateWidget(covariant ResilientMediaImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.imageUrl != widget.imageUrl ||
+        !listEquals(oldWidget.fallbackImageUrls, widget.fallbackImageUrls)) {
+      _attempt = 0;
+      _urlIndex = 0;
+      _retryScheduled = false;
+      _hasResolvedOnce = false;
+    }
+  }
+
+  void _scheduleRetry() {
+    if (_retryScheduled) return;
+    final hasNextUrl = _urlIndex < _urlChain.length - 1;
+    // In speed mode, cap retries at 1 to avoid redundant decode storms;
+    // quality mode keeps the full 3-retry budget for transient-failure recovery.
+    final isSpeed =
+        ImageQualityScope.of(context)?.optimizeFor == OptimizeFor.speed;
+    final maxRetries = isSpeed ? 1 : 3;
+    // Give the last URL the full retry budget (transient-failure recovery);
+    // when a better candidate is waiting, fail over after a single quick retry.
+    final retryBudget = hasNextUrl ? 1 : maxRetries;
+    if (_attempt >= retryBudget) {
+      if (!hasNextUrl) return;
+      _retryScheduled = true;
+      unawaited(
+        Future.microtask(() {
+          _retryScheduled = false;
+          if (mounted) {
+            setState(() {
+              _urlIndex++;
+              _attempt = 0;
+            });
+          }
+        }),
+      );
+      return;
+    }
+    _retryScheduled = true;
+    final delay = Duration(milliseconds: 500 * (1 << _attempt));
+    _attempt++;
+    Future.delayed(delay, () {
+      _retryScheduled = false;
+      if (mounted) setState(() {});
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final fallback = _MediaImageFallback(
-      icon: fallbackIcon,
-      title: fallbackTitle,
+      icon: widget.fallbackIcon,
+      title: widget.fallbackTitle,
     );
-    final url = imageUrl;
+    final url = _currentUrl;
+    // Decode at display size by default (see [ResilientMediaImage.oversample]).
+    // The user's quality scope multiplies the per-widget oversample: speed
+    // mode keeps the memory footprint low, quality mode sharpens fixed-size
+    // logos. ResizeImage never upscales past the source's intrinsic size.
+    final oversample =
+        ImageQualityScope.oversampleOf(context) * widget.oversample;
+    final filterQuality = ImageQualityScope.filterQualityOf(context);
+    final devicePixelRatio =
+        MediaQuery.devicePixelRatioOf(context) * oversample;
+    final cacheWidth = widget.width == null
+        ? null
+        : (widget.width! * devicePixelRatio).round();
+    final cacheHeight = widget.height == null
+        ? null
+        : (widget.height! * devicePixelRatio).round();
+    final shouldDefer = !_hasResolvedOnce && DeferImageLoadingScope.of(context);
+    final provider = url == null || url.isEmpty || shouldDefer
+        ? null
+        : CachedNetworkImageProvider(
+            url,
+            cacheManager: MediaImageCacheManager(),
+          );
+    if (provider != null) _hasResolvedOnce = true;
 
     final image = ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
+      borderRadius: BorderRadius.circular(widget.borderRadius),
       child: SizedBox(
-        width: width,
-        height: height,
+        width: widget.width,
+        height: widget.height,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: backgroundColor ?? colorScheme.surfaceContainerHighest,
+            color:
+                widget.backgroundColor ?? colorScheme.surfaceContainerHighest,
           ),
-          child: url == null || url.isEmpty
+          child: provider == null
               ? fallback
               : Image(
-                  image: CachedNetworkImageProvider(
-                    url,
-                    cacheManager: MediaImageCacheManager(),
-                  ),
-                  fit: fit,
-                  width: width,
-                  height: height,
+                  image: cacheWidth == null && cacheHeight == null
+                      ? provider
+                      : ResizeImage(
+                          provider,
+                          width: cacheWidth,
+                          height: cacheHeight,
+                          policy: ResizeImagePolicy.fit,
+                        ),
+                  fit: widget.fit,
+                  width: widget.width,
+                  height: widget.height,
+                  filterQuality: filterQuality,
                   gaplessPlayback: true,
                   frameBuilder:
                       (context, child, frame, wasSynchronouslyLoaded) {
@@ -417,13 +588,34 @@ class ResilientMediaImage extends StatelessWidget {
                     if (loadingProgress == null) return child;
                     return fallback;
                   },
-                  errorBuilder: (_, _, _) => fallback,
+                  errorBuilder: (_, _, _) {
+                    _scheduleRetry();
+                    return fallback;
+                  },
                 ),
         ),
       ),
     );
-    if (aspectRatio == null) return image;
-    return AspectRatio(aspectRatio: aspectRatio!, child: image);
+    if (widget.aspectRatio == null) return image;
+    return AspectRatio(aspectRatio: widget.aspectRatio!, child: image);
+  }
+}
+
+/// A `CatalogWindowGrid.placeholderBuilder` for a not-yet-loaded poster
+/// slot: same rounded rect as a resolved [MediaPreviewCard]'s art, filled
+/// with the theme's card background, so a page landing a frame later does
+/// not shift focus or layout under the user.
+class CatalogGridPlaceholder extends StatelessWidget {
+  const CatalogGridPlaceholder({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(MediaBrowsingMetrics.posterRadius),
+      child: ColoredBox(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      ),
+    );
   }
 }
 
@@ -441,7 +633,11 @@ class _MediaImageFallback extends StatelessWidget {
       fit: StackFit.expand,
       children: [
         Center(
-          child: Icon(icon, size: 48, color: colorScheme.onSurfaceVariant),
+          child: Icon(
+            icon,
+            size: 48 * FontSizeScope.scaleOf(context),
+            color: colorScheme.onSurfaceVariant,
+          ),
         ),
         if (fallbackTitle != null && fallbackTitle.isNotEmpty)
           Align(
@@ -649,11 +845,58 @@ class ScrollbarGridView extends StatefulWidget {
 
 class _ScrollbarGridViewState extends State<ScrollbarGridView> {
   final ScrollController _controller = ScrollController();
+  bool _deferImageLoading = false;
+
+  // `ScrollPosition.recommendDeferredLoading` only ever reports true for a
+  // physics-driven fling (BallisticScrollActivity). D-pad navigation moves
+  // the grid via `DpadScroll.ensureVisible`'s `position.animateTo` - a driven
+  // animation, not a fling - so that check alone never engages on TV, which
+  // is exactly where fast, repeated D-pad presses can otherwise queue a
+  // decode burst large enough to OOM. Track recent scroll offsets ourselves
+  // so a rapid run of driven scrolls is caught the same way a fling is.
+  final List<(Duration, double)> _recentOffsets = <(Duration, double)>[];
+  final Stopwatch _clock = Stopwatch()..start();
+
+  static const Duration _velocityWindow = Duration(milliseconds: 180);
+  static const double _fastScrollVelocityThreshold = 2400; // logical px/sec
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification is ScrollEndNotification) {
+      _recentOffsets.clear();
+      if (_deferImageLoading) setState(() => _deferImageLoading = false);
+      return false;
+    }
+
+    var defer =
+        _controller.hasClients &&
+        _controller.position.recommendDeferredLoading(context);
+
+    if (notification is ScrollUpdateNotification) {
+      final now = _clock.elapsed;
+      final pixels = notification.metrics.pixels;
+      _recentOffsets
+        ..add((now, pixels))
+        ..removeWhere((sample) => now - sample.$1 > _velocityWindow);
+      if (_recentOffsets.length > 1) {
+        final oldest = _recentOffsets.first;
+        final dtMicros = (now - oldest.$1).inMicroseconds;
+        if (dtMicros > 0) {
+          final velocity = (pixels - oldest.$2).abs() * 1e6 / dtMicros;
+          if (velocity > _fastScrollVelocityThreshold) defer = true;
+        }
+      }
+    }
+
+    if (defer != _deferImageLoading) {
+      setState(() => _deferImageLoading = defer);
+    }
+    return false;
   }
 
   @override
@@ -663,12 +906,18 @@ class _ScrollbarGridViewState extends State<ScrollbarGridView> {
         controller: _controller,
         thumbVisibility: true,
         trackVisibility: true,
-        child: GridView.builder(
-          controller: _controller,
-          padding: widget.padding,
-          gridDelegate: widget.gridDelegate,
-          itemCount: widget.itemCount,
-          itemBuilder: widget.itemBuilder,
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _handleScrollNotification,
+          child: DeferImageLoadingScope(
+            defer: _deferImageLoading,
+            child: GridView.builder(
+              controller: _controller,
+              padding: widget.padding,
+              gridDelegate: widget.gridDelegate,
+              itemCount: widget.itemCount,
+              itemBuilder: widget.itemBuilder,
+            ),
+          ),
         ),
       ),
     );
@@ -736,6 +985,8 @@ class MediaPreviewItem {
     this.overlayBadges = const <String>[],
     this.overlayLabel,
     this.emphasisLabel,
+    this.upNextLabel,
+    this.ratingLabel,
   });
 
   final String title;
@@ -753,6 +1004,17 @@ class MediaPreviewItem {
 
   /// 0.0-1.0 progress shown as a bar along the bottom of the image.
   final double? progressFraction;
+
+  /// When non-null, landscape cards show this text as a primary-colour badge in
+  /// the top-right corner (where the progress percent normally sits) and
+  /// suppress the bottom progress bar. Used for synthetic "up next" episode
+  /// entries; the caller supplies the localized string.
+  final String? upNextLabel;
+
+  /// Short rating string (e.g. `★ 8.1`) appended to the muted line under the
+  /// title on default/poster cards, after [subtitle] and a `•` separator when
+  /// both are present. Read only by `_buildDefaultContent`.
+  final String? ratingLabel;
 
   /// Short text labels rendered as chips overlaid on the image (right-aligned).
   final List<String> overlayBadges;
@@ -778,22 +1040,45 @@ class MediaPreviewSection extends StatefulWidget {
     required this.title,
     required this.emptyLabel,
     required this.items,
+    this.titleIcon,
     this.posterStyle = false,
     this.landscapeStyle = false,
+    this.useSidebarLayout = false,
     this.onSidebarActivate,
     super.key,
   });
 
   final String title;
+  final IconData? titleIcon;
   final String emptyLabel;
   final List<MediaPreviewItem> items;
   final bool posterStyle;
   final bool landscapeStyle;
+
+  /// Whether this row is hosted inside `AppShell`'s TV/desktop sidebar
+  /// layout, where the content pane sits at a `left` inset equal to the
+  /// collapsed rail's width (see [kSidebarRailInset]) instead of filling
+  /// the full window width.
+  final bool useSidebarLayout;
   final VoidCallback? onSidebarActivate;
+
+  /// A preview row renders at most this many cards regardless of how many
+  /// [items] it is handed. Callers building [items] from a large catalog
+  /// should `.take(MediaPreviewSection.maxVisibleItems)` before mapping so a
+  /// provider tick doesn't allocate a [MediaPreviewItem] per catalog entry on
+  /// every rebuild.
+  static const int maxVisibleItems = 12;
 
   @override
   State<MediaPreviewSection> createState() => _MediaPreviewSectionState();
 }
+
+/// Base (unscaled) width of `NavigationSidebar`'s collapsed rail and the
+/// `left` inset `AppShell._buildTvLayout` gives its content pane outside of
+/// the full-screen-detail transition (see [_MediaPreviewSectionState.build]).
+/// The single source of truth for this value - shared with `app_shell.dart`
+/// so the rail and the content pane it insets can't independently drift.
+const double kSidebarRailInset = 64;
 
 class _MediaPreviewSectionState extends State<MediaPreviewSection> {
   final ScrollController _controller = ScrollController();
@@ -806,81 +1091,113 @@ class _MediaPreviewSectionState extends State<MediaPreviewSection> {
 
   @override
   Widget build(BuildContext context) {
-    final visibleItems = widget.items.take(12).toList(growable: false);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final double baseWidth;
-        final double baseHeight;
-        if (widget.landscapeStyle) {
-          baseWidth = MediaBrowsingMetrics.landscapeCardWidth;
-          baseHeight = MediaBrowsingMetrics.landscapeCardHeight;
-        } else if (widget.posterStyle) {
-          baseWidth = MediaBrowsingMetrics.posterCardWidth;
-          baseHeight = MediaBrowsingMetrics.posterCardHeight;
-        } else {
-          baseWidth = MediaBrowsingMetrics.previewCardWidth;
-          baseHeight = MediaBrowsingMetrics.previewCardHeight;
-        }
-        final scale = _previewCardScale(constraints.maxWidth);
-        final cardWidth = baseWidth * scale;
-        final cardHeight = baseHeight * scale;
+    final fontScale = FontSizeScope.scaleOf(context);
+    final visibleItems = widget.items
+        .take(MediaPreviewSection.maxVisibleItems)
+        .toList(growable: false);
+    final double baseWidth;
+    final double baseHeight;
+    if (widget.landscapeStyle) {
+      baseWidth = MediaBrowsingMetrics.landscapeCardWidth;
+      baseHeight = MediaBrowsingMetrics.landscapeCardHeight;
+    } else if (widget.posterStyle) {
+      baseWidth = MediaBrowsingMetrics.posterCardWidth;
+      baseHeight = MediaBrowsingMetrics.posterCardHeight;
+    } else {
+      baseWidth = MediaBrowsingMetrics.previewCardWidth;
+      baseHeight = MediaBrowsingMetrics.previewCardHeight;
+    }
+    // Scale off the window width rather than this row's LayoutBuilder
+    // constraints: pushing a full-screen detail route re-parents the content
+    // pane's `left` from 64 to 0 (see AppShell._buildTvLayout), and this row
+    // stays mounted underneath that transition, so a constraints-derived
+    // cardWidth would change the ResizeImage cache key every animation
+    // frame, forcing a fresh decode per frame and flickering the thumbnails.
+    // Subtracting the fixed rail inset and the row's own horizontal page
+    // padding up front keeps the result correct for the sidebar layout's
+    // steady state without reintroducing that per-frame dependency.
+    final availableWidth =
+        MediaQuery.sizeOf(context).width -
+        (widget.useSidebarLayout ? kSidebarRailInset * fontScale : 0) -
+        MediaBrowsingMetrics.pagePadding * 2;
+    final scale = _previewCardScale(availableWidth);
+    final cardWidth = baseWidth * scale;
+    // MediaPreviewCard multiplies its own width by FontSizeScope.scaleOf
+    // (see below) on top of `cardWidth`, so the row height reserved for it
+    // must grow by the same factor or a larger font setting overflows the
+    // card's Column (bigger image + taller scaled-up text in a row height
+    // that never grew to match).
+    final cardHeight = baseHeight * scale * fontScale;
 
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
+              if (widget.titleIcon != null) ...[
+                Icon(
+                  widget.titleIcon,
+                  size: 20 * fontScale,
+                  color: Theme.of(context).textTheme.titleLarge?.color,
+                ),
+                const SizedBox(width: 8),
+              ],
               Text(
                 widget.title,
-                style: Theme.of(context).textTheme.titleLarge,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontSize: 18),
               ),
-              const SizedBox(height: MediaBrowsingMetrics.chipGap),
-              if (visibleItems.isEmpty)
-                Text(widget.emptyLabel)
-              else
-                SizedBox(
-                  height: cardHeight + 16,
-                  // ExcludeSemantics prevents the tvOS framework bug where
-                  // ScrollableState.setIgnorePointer calls markNeedsSemanticsUpdate
-                  // during the semantics flush phase, causing an assertion crash
-                  // when scrolling quickly.
-                  child: ExcludeSemantics(
-                    child: DpadRegion(
-                      memoryKey: 'preview-row/${widget.title}',
-                      horizontalEdge: DpadEdgeBehavior.stop,
-                      onEdge: (direction) {
-                        if (direction == TraversalDirection.left) {
-                          widget.onSidebarActivate?.call();
-                        }
-                      },
-                      child: Scrollbar(
-                        controller: _controller,
-                        thumbVisibility: true,
-                        trackVisibility: true,
-                        child: ListView.separated(
-                          controller: _controller,
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.only(bottom: 12),
-                          itemCount: visibleItems.length,
-                          separatorBuilder: (_, _) => const SizedBox(
-                            width: MediaBrowsingMetrics.itemGap,
-                          ),
-                          itemBuilder: (context, index) => MediaPreviewCard(
-                            item: visibleItems[index],
-                            posterStyle: widget.posterStyle,
-                            landscapeStyle: widget.landscapeStyle,
-                            autofocus: index == 0,
-                            cardWidth: cardWidth,
-                          ),
-                        ),
+            ],
+          ),
+          const SizedBox(height: MediaBrowsingMetrics.chipGap),
+          if (visibleItems.isEmpty)
+            Text(widget.emptyLabel)
+          else
+            SizedBox(
+              height: cardHeight + 16,
+              // ExcludeSemantics prevents the tvOS framework bug where
+              // ScrollableState.setIgnorePointer calls markNeedsSemanticsUpdate
+              // during the semantics flush phase, causing an assertion crash
+              // when scrolling quickly.
+              child: ExcludeSemantics(
+                child: DpadRegion(
+                  memoryKey: 'preview-row/${widget.title}',
+                  horizontalEdge: DpadEdgeBehavior.stop,
+                  onEdge: (direction) {
+                    if (direction == TraversalDirection.left) {
+                      widget.onSidebarActivate?.call();
+                    }
+                  },
+                  child: Scrollbar(
+                    controller: _controller,
+                    thumbVisibility: true,
+                    trackVisibility: true,
+                    child: ListView.separated(
+                      controller: _controller,
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.only(bottom: 12),
+                      itemCount: visibleItems.length,
+                      separatorBuilder: (_, _) => const SizedBox(
+                        width: MediaBrowsingMetrics.itemGap,
+                      ),
+                      itemBuilder: (context, index) => MediaPreviewCard(
+                        item: visibleItems[index],
+                        posterStyle: widget.posterStyle,
+                        landscapeStyle: widget.landscapeStyle,
+                        autofocus: index == 0,
+                        cardWidth: cardWidth,
                       ),
                     ),
                   ),
                 ),
-            ],
-          ),
-        );
-      },
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -897,6 +1214,7 @@ class MediaPreviewCard extends StatefulWidget {
     this.landscapeStyle = false,
     this.autofocus = false,
     this.cardWidth,
+    this.keepAlive = true,
     super.key,
   });
 
@@ -906,6 +1224,12 @@ class MediaPreviewCard extends StatefulWidget {
   final bool autofocus;
   final double? cardWidth;
 
+  /// Horizontal preview rows keep cards alive so sideways scrolling does not
+  /// re-decode their thumbnails. Vertical grids (Movies/Series listing pages)
+  /// pass false: those lists can run to thousands of items, where keeping every
+  /// scrolled-past card mounted is an unbounded memory cost.
+  final bool keepAlive;
+
   @override
   State<MediaPreviewCard> createState() => _MediaPreviewCardState();
 }
@@ -913,7 +1237,7 @@ class MediaPreviewCard extends StatefulWidget {
 class _MediaPreviewCardState extends State<MediaPreviewCard>
     with AutomaticKeepAliveClientMixin {
   @override
-  bool get wantKeepAlive => true;
+  bool get wantKeepAlive => widget.keepAlive;
 
   @override
   Widget build(BuildContext context) {
@@ -924,14 +1248,14 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
       !widget.landscapeStyle || item.emphasisLabel == null,
       'MediaPreviewItem.emphasisLabel is not rendered by landscape cards.',
     );
-    final isRating = item.subtitle?.startsWith('★') ?? false;
-    final width =
+    final baseWidth =
         widget.cardWidth ??
         (widget.landscapeStyle
             ? MediaBrowsingMetrics.landscapeCardWidth
             : widget.posterStyle
             ? MediaBrowsingMetrics.posterCardWidth
             : MediaBrowsingMetrics.previewCardWidth);
+    final width = baseWidth * FontSizeScope.scaleOf(context);
 
     return SizedBox(
       width: width,
@@ -941,10 +1265,14 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
         onLongTap: item.onLongTap,
         color: colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(MediaBrowsingMetrics.cardRadius),
-        clipBehavior: Clip.antiAlias,
+        // Landscape cards still edge-clip their full-bleed thumbnail. Default/
+        // poster cards deliberately do not clip: the card's rounded background
+        // stays visible behind the poster, which carries its own matching
+        // corner radius (see `_buildDefaultContent`) - the detail-page look.
+        clipBehavior: widget.landscapeStyle ? Clip.antiAlias : Clip.none,
         child: widget.landscapeStyle
             ? _buildLandscapeContent(context, colorScheme, width)
-            : _buildDefaultContent(context, colorScheme, isRating),
+            : _buildDefaultContent(context, colorScheme),
       ),
     );
   }
@@ -1095,6 +1423,31 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
                       color: colorScheme.primary,
                     ),
                   ),
+                if (widget.item.upNextLabel != null)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        child: Text(
+                          widget.item.upNextLabel!,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: colorScheme.onPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -1130,13 +1483,16 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
     );
   }
 
-  Widget _buildDefaultContent(
-    BuildContext context,
-    ColorScheme colorScheme,
-    bool isRating,
-  ) {
+  Widget _buildDefaultContent(BuildContext context, ColorScheme colorScheme) {
     final item = widget.item;
     final posterStyle = widget.posterStyle;
+    // Year and rating share the muted line under the title, joined by a
+    // separator when both are present (e.g. "2004 • ★ 8.1").
+    final subtitleText = [
+      if (item.subtitle != null && item.subtitle!.isNotEmpty) item.subtitle!,
+      if (item.ratingLabel != null && item.ratingLabel!.isNotEmpty)
+        item.ratingLabel!,
+    ].join(' • ');
     final mediaImage = ResilientMediaImage(
       imageUrl: item.imageUrl,
       fallbackIcon: item.fallbackIcon,
@@ -1144,8 +1500,9 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
       aspectRatio: item.imageAspectRatio,
       fallbackTitle: item.fallbackTitle,
       backgroundColor: item.imageBackgroundColor,
-      borderRadius: 0,
+      borderRadius: MediaBrowsingMetrics.cardRadius,
     );
+    final scale = FontSizeScope.scaleOf(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1158,18 +1515,18 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
                 mediaImage,
                 if (item.isFavorite)
                   Positioned(
-                    top: 4,
-                    left: 4,
+                    top: 4 * scale,
+                    left: 4 * scale,
                     child: Container(
-                      padding: const EdgeInsets.all(3),
+                      padding: EdgeInsets.all(3 * scale),
                       decoration: BoxDecoration(
                         color: colorScheme.primary,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.star,
                         color: Colors.white,
-                        size: 14,
+                        size: 14 * scale,
                       ),
                     ),
                   ),
@@ -1187,7 +1544,7 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   fontWeight: posterStyle ? FontWeight.normal : FontWeight.w700,
                 ),
-                maxLines: posterStyle ? 2 : 1,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
               if (item.emphasisLabel != null) ...[
@@ -1206,17 +1563,13 @@ class _MediaPreviewCardState extends State<MediaPreviewCard>
                   ),
                 ),
               ],
-              if (item.subtitle != null) ...[
+              if (subtitleText.isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Text(
-                  item.subtitle!,
+                  subtitleText,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: posterStyle && isRating
-                        ? const Color(0xFFFFCC00)
-                        : colorScheme.onSurfaceVariant,
-                    fontWeight: posterStyle && isRating
-                        ? FontWeight.bold
-                        : FontWeight.normal,
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.normal,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

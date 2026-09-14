@@ -4,6 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:m3u_tv/features/search/search_screen.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_database.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/shared/dpad_tab_bar.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
@@ -13,8 +16,10 @@ void main() {
     late List<Channel> testChannels;
     late List<VodItem> testVodItems;
     late List<Series> testSeriesList;
+    late CatalogDatabase testDb;
+    late CatalogRepository testRepo;
 
-    setUp(() {
+    setUp(() async {
       testChannels = [
         const Channel(
           id: 1,
@@ -56,14 +61,30 @@ void main() {
         ),
         const Series(id: 21, name: 'Bad Sisters', categoryId: '31'),
       ];
+      // Runs before flutter_test's per-testWidgets fakeAsync zone exists, so
+      // this real drift I/O completes normally without needing
+      // tester.runAsync (unlike DB work done inside a testWidgets body).
+      testDb = CatalogDatabase.memory();
+      testRepo = CatalogRepository(testDb);
+      await testRepo.replaceItems(
+        sourceKey: CatalogRepository.activeSource,
+        kind: kCatalogKindVod,
+        items: testVodItems,
+      );
+      await testRepo.replaceItems(
+        sourceKey: CatalogRepository.activeSource,
+        kind: kCatalogKindSeries,
+        items: testSeriesList,
+      );
     });
+
+    tearDown(() => testDb.close());
 
     testWidgets('renders search field', (tester) async {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -75,8 +96,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -95,8 +115,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -111,8 +130,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -131,8 +149,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -156,8 +173,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -182,8 +198,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -210,8 +225,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -233,8 +247,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
           onChannelSelect: (channel) => selectedChannel = channel,
           onVodSelect: (item) => selectedVod = item,
           onSeriesSelect: (series) => selectedSeries = series,
@@ -247,12 +260,15 @@ void main() {
       await tester.tap(find.text('BBC News'));
       await tester.pumpAndSettle();
 
+      // Replacing an existing query goes through the catalog-filter debounce.
       await tester.enterText(find.byType(TextField), 'matrix');
+      await tester.pump(const Duration(milliseconds: 250));
       await tester.pumpAndSettle();
       await tester.tap(find.text('The Matrix'));
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byType(TextField), 'bad');
+      await tester.pump(const Duration(milliseconds: 250));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Breaking Bad'));
       await tester.pumpAndSettle();
@@ -270,8 +286,7 @@ void main() {
         await tester.pumpWidget(
           _TestApp(
             channels: testChannels,
-            vodItems: testVodItems,
-            seriesList: testSeriesList,
+            catalogRepository: testRepo,
             onChannelContextChanged: (channels) => reportedContext = channels,
           ),
         );
@@ -291,8 +306,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
         ),
       );
       await tester.pumpAndSettle();
@@ -309,8 +323,7 @@ void main() {
       await tester.pumpWidget(
         _TestApp(
           channels: testChannels,
-          vodItems: testVodItems,
-          seriesList: testSeriesList,
+          catalogRepository: testRepo,
           isConfigured: false,
         ),
       );
@@ -321,29 +334,356 @@ void main() {
         findsOneWidget,
       );
     });
+
+    // --- EPG show search wiring (#227) ---
+
+    group('EPG show search', () {
+      // Now/future-relative fixtures: `airingNow` must be within [start,
+      // end]; `recentEpisodes` for the Upcoming row must be in the future.
+      final now = DateTime.now();
+      final pastStart = now.subtract(const Duration(minutes: 5));
+      final pastEnd = now.add(const Duration(minutes: 30));
+      final futureStart = now.add(const Duration(hours: 1));
+      final futureEnd = futureStart.add(const Duration(minutes: 30));
+
+      final onNowShow = EpgShow(
+        normalizedTitle: 'nightly-report',
+        displayTitle: 'Nightly Report',
+        channelCount: 1,
+        channels: const [],
+        episodeCount: 1,
+        recentEpisodes: const [],
+        airingNow: [
+          EpgShowEpisode(
+            channelId: 1,
+            channelName: 'BBC News',
+            title: 'Nightly Report Episode',
+            startTime: pastStart,
+            endTime: pastEnd,
+          ),
+        ],
+      );
+      final upcomingShow = EpgShow(
+        normalizedTitle: 'bear',
+        displayTitle: 'Bear',
+        channelCount: 1,
+        channels: const [],
+        episodeCount: 1,
+        recentEpisodes: [
+          EpgShowEpisode(
+            channelId: 2,
+            channelName: 'CNN International',
+            title: 'Bear Episode',
+            startTime: futureStart,
+            endTime: futureEnd,
+          ),
+        ],
+      );
+      final showResults = [onNowShow, upcomingShow];
+
+      Future<List<EpgShow>> Function(String) staticShows(
+        List<EpgShow> results,
+      ) {
+        return (query) async => results;
+      }
+
+      testWidgets(
+        'Live TV tab replaces channel list with On Now/Upcoming sub-tabs on '
+        'qualifying query',
+        (tester) async {
+          await tester.pumpWidget(
+            _TestApp(
+              channels: testChannels,
+              catalogRepository: testRepo,
+              onSearchShows: staticShows(showResults),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await tester.enterText(find.byType(TextField), 'be');
+          // Cross the 350ms debounce + the future async resolution.
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+
+          // On the Live TV tab, the channel-name-filter list is gone,
+          // replaced by the All/On Now/Upcoming sub-tab view.
+          await tester.tap(
+            find.descendant(
+              of: find.byType(DpadTabBar),
+              matching: find.text('Live TV'),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // The outer SearchScreen DpadTabBar still has its 4 tabs
+          // (All / Live TV / Movies / Series); ShowSearchResultsView
+          // contributes a nested DpadTabBar for the sub-tabs.
+          expect(find.byType(DpadTabBar), findsNWidgets(2));
+          expect(find.text('All'), findsWidgets);
+          expect(find.text('On Now'), findsOneWidget);
+          expect(find.text('Upcoming'), findsOneWidget);
+          // The channel-tile list is gone (ShowSearchResultsView replaced
+          // it). ScrollbarListView is the new view's scroll container;
+          // the old Live TV tab used a plain ListView.builder.
+          expect(find.byType(ScrollbarListView), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'Live TV tab renders EPG sub-tabs even when no channel name matches '
+        'the query (regression guard for channel-list-source bug)',
+        (tester) async {
+          // Query "bear" matches no channel name (BBC News, CNN), no VOD
+          // (Matrix…), no series (Breaking Bad…). Only the EPG show
+          // "Bear" matches. Without the full-channels lookup, this test
+          // would silently render the empty-state.
+          await tester.pumpWidget(
+            _TestApp(
+              channels: testChannels,
+              catalogRepository: testRepo,
+              onSearchShows: (query) async {
+                return query == 'bear' ? showResults : const [];
+              },
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await tester.enterText(find.byType(TextField), 'bear');
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+
+          await tester.tap(
+            find.descendant(
+              of: find.byType(DpadTabBar),
+              matching: find.text('Live TV'),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // ShowSearchResultsView's nested DpadTabBar must be present.
+          expect(find.text('On Now'), findsOneWidget);
+          expect(find.text('Upcoming'), findsOneWidget);
+          // The "Bear" show still appears in the upcoming results.
+          expect(find.text('Bear'), findsOneWidget);
+          // Empty-state must NOT be shown.
+          expect(find.text('No results found'), findsNothing);
+        },
+      );
+
+      testWidgets(
+        'All tab renders On Now + Upcoming sections above the Live TV '
+        'channel-match section for a qualifying query',
+        (tester) async {
+          await tester.pumpWidget(
+            _TestApp(
+              channels: testChannels,
+              catalogRepository: testRepo,
+              onSearchShows: staticShows(showResults),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await tester.enterText(find.byType(TextField), 'be');
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+
+          // We're on All by default.
+          expect(find.text('Nightly Report'), findsOneWidget);
+          expect(find.text('Bear'), findsOneWidget);
+          // Channel-name matches still appear below the EPG sections.
+          expect(find.text('BBC News'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'All tab renders EPG sections when query matches no '
+        'channel/VOD/series name but matches a show (regression guard '
+        'for empty-state-guard bug)',
+        (tester) async {
+          // Query "bear" matches only the EPG show "Bear"; no channel
+          // name, VOD name, or series name contains "bear". Without the
+          // empty-state-guard fix, the EPG sections would be hidden by
+          // the "all empty -> show empty state" early-return.
+          await tester.pumpWidget(
+            _TestApp(
+              channels: testChannels,
+              catalogRepository: testRepo,
+              onSearchShows: (query) async {
+                return query == 'bear' ? showResults : const [];
+              },
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await tester.enterText(find.byType(TextField), 'bear');
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+
+          expect(find.text('Bear'), findsOneWidget);
+          // Empty-state must NOT be shown.
+          expect(find.text('No results found'), findsNothing);
+        },
+      );
+
+      testWidgets(
+        'tapping an On Now row calls onChannelContextChanged then '
+        'onChannelSelect with the right channel',
+        (tester) async {
+          List<Channel>? reportedContext;
+          Channel? selectedChannel;
+
+          await tester.pumpWidget(
+            _TestApp(
+              channels: testChannels,
+              catalogRepository: testRepo,
+              onSearchShows: staticShows(showResults),
+              onChannelSelect: (channel) => selectedChannel = channel,
+              onChannelContextChanged: (channels) => reportedContext = channels,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await tester.enterText(find.byType(TextField), 'be');
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+
+          await tester.tap(find.text('Nightly Report'));
+          await tester.pumpAndSettle();
+
+          expect(reportedContext, isNotNull);
+          expect(reportedContext!.map((c) => c.id), [1]);
+          expect(selectedChannel?.id, 1);
+        },
+      );
+
+      testWidgets(
+        'tapping an Upcoming row calls onShowSelect with the parent show',
+        (tester) async {
+          EpgShow? selectedShow;
+
+          await tester.pumpWidget(
+            _TestApp(
+              channels: testChannels,
+              catalogRepository: testRepo,
+              onSearchShows: staticShows(showResults),
+              onShowSelect: (show) => selectedShow = show,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await tester.enterText(find.byType(TextField), 'be');
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+
+          await tester.tap(find.text('Bear'));
+          await tester.pumpAndSettle();
+
+          expect(selectedShow, isNotNull);
+          expect(selectedShow!.normalizedTitle, 'bear');
+        },
+      );
+
+      testWidgets(
+        'null onSearchShows keeps the channel-name results; no EPG '
+        'sections/sub-tabs anywhere',
+        (tester) async {
+          await tester.pumpWidget(
+            _TestApp(
+              channels: testChannels,
+              catalogRepository: testRepo,
+              // No onSearchShows callback - the screen should behave
+              // exactly like pre-#227.
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await tester.enterText(find.byType(TextField), 'bbc');
+          await tester.pumpAndSettle();
+
+          // Only one DpadTabBar (the screen's outer one) - no nested
+          // sub-tabs from ShowSearchResultsView.
+          expect(find.byType(DpadTabBar), findsOneWidget);
+          // No EPG section headers rendered.
+          expect(find.text('On Now'), findsNothing);
+          expect(find.text('Upcoming'), findsNothing);
+          // Channel-name filter still works.
+          expect(find.text('BBC News'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'Movies and Series tabs are unaffected by EPG show search wiring',
+        (tester) async {
+          await tester.pumpWidget(
+            _TestApp(
+              channels: testChannels,
+              catalogRepository: testRepo,
+              onSearchShows: staticShows(showResults),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // Movies tab: a query matching VOD items only.
+          await tester.enterText(find.byType(TextField), 'matrix');
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+
+          await tester.tap(
+            find.descendant(
+              of: find.byType(DpadTabBar),
+              matching: find.text('Movies'),
+            ),
+          );
+          await tester.pumpAndSettle();
+          // The Movies tab still shows the VOD matches; the EPG show
+          // search results are scoped to All/Live TV only.
+          expect(find.text('The Matrix'), findsOneWidget);
+          expect(find.text('Nightly Report'), findsNothing);
+          expect(find.text('Bear'), findsNothing);
+
+          // Series tab: a different query matching series.
+          await tester.enterText(find.byType(TextField), 'bad');
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+
+          await tester.tap(
+            find.descendant(
+              of: find.byType(DpadTabBar),
+              matching: find.text('Series'),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.text('Breaking Bad'), findsOneWidget);
+          expect(find.text('Nightly Report'), findsNothing);
+          expect(find.text('Bear'), findsNothing);
+        },
+      );
+    });
   });
 }
 
 class _TestApp extends StatelessWidget {
   const _TestApp({
     required this.channels,
-    required this.vodItems,
-    required this.seriesList,
+    required this.catalogRepository,
     this.isConfigured = true,
     this.onChannelSelect,
     this.onChannelContextChanged,
     this.onVodSelect,
     this.onSeriesSelect,
+    this.onSearchShows,
+    this.onShowSelect,
   });
 
   final List<Channel> channels;
-  final List<VodItem> vodItems;
-  final List<Series> seriesList;
+  final CatalogRepository catalogRepository;
   final bool isConfigured;
   final void Function(Channel)? onChannelSelect;
   final void Function(List<Channel>)? onChannelContextChanged;
   final void Function(VodItem)? onVodSelect;
   final void Function(Series)? onSeriesSelect;
+  final Future<List<EpgShow>> Function(String)? onSearchShows;
+  final void Function(EpgShow)? onShowSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -352,8 +692,7 @@ class _TestApp extends StatelessWidget {
         isBootstrappingProvider.overrideWith((_) => false),
         isConfiguredProvider.overrideWith((_) => isConfigured),
         liveChannelsProvider.overrideWith((_) => channels),
-        vodItemsProvider.overrideWith((_) => vodItems),
-        seriesListProvider.overrideWith((_) => seriesList),
+        catalogRepositoryProvider.overrideWith((_) => catalogRepository),
       ],
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -363,6 +702,8 @@ class _TestApp extends StatelessWidget {
           onChannelContextChanged: onChannelContextChanged,
           onVodSelect: onVodSelect ?? (_) {},
           onSeriesSelect: onSeriesSelect ?? (_) {},
+          onSearchShows: onSearchShows,
+          onShowSelect: onShowSelect,
         ),
       ),
     );

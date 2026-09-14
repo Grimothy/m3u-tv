@@ -1,11 +1,27 @@
+import 'dart:async';
+
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/providers/app_providers.dart';
+import 'package:m3u_tv/services/catalog_db/catalog_codec.dart'
+    show kCatalogKindSeries, kCatalogKindVod;
+import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
+import 'package:m3u_tv/shared/catalog_text_filter.dart';
 import 'package:m3u_tv/shared/dpad_tab_bar.dart';
+import 'package:m3u_tv/shared/epg_show_results.dart';
+import 'package:m3u_tv/shared/epg_show_search_controller.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
+import 'package:m3u_tv/shared/show_search_results_view.dart';
+
+/// Hard cap on VOD/series search matches fetched from the catalog. A real
+/// query already narrows results at the SQL layer (unlike the old in-memory
+/// scan, which held the whole catalog just to filter it down) - this is a
+/// safety net against a single broad character matching a huge fraction of
+/// a 100k-item library, not the expected case.
+const _searchResultLimit = 500;
 
 /// Search screen with client-side filtering across Live TV, Movies, and Series.
 ///
@@ -21,6 +37,8 @@ class SearchScreen extends ConsumerStatefulWidget {
     required this.onVodSelect,
     required this.onSeriesSelect,
     this.onSidebarActivate,
+    this.onSearchShows,
+    this.onShowSelect,
   });
 
   final void Function(Channel) onChannelSelect;
@@ -33,61 +51,147 @@ class SearchScreen extends ConsumerStatefulWidget {
   final void Function(Series) onSeriesSelect;
   final VoidCallback? onSidebarActivate;
 
+  /// When non-null, a ≥2-character query surfaces EPG show results in
+  /// both the All tab (as On-Now/Upcoming sections above the existing
+  /// channel-name section) and the Live TV tab (which fully replaces its
+  /// content with the All/On-Now/Upcoming sub-tab view). The same
+  /// nullable convention `LiveTvScreen` uses - hides the affordance
+  /// entirely when the host app hasn't wired it.
+  final Future<List<EpgShow>> Function(String)? onSearchShows;
+
+  /// Tapping an Upcoming row in either tab calls this. On Now rows still
+  /// go through [onChannelSelect] (today's player skip-previous/next
+  /// semantics depend on that channel-first path).
+  final void Function(EpgShow)? onShowSelect;
+
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
+
+/// The three catalog filters only re-run once typing pauses for this long.
+/// [_SearchScreenState._query] still tracks every keystroke (it drives the
+/// text field and the EPG show search); [_SearchScreenState._appliedQuery]
+/// lags behind it by up to one debounce and drives the catalog filtering.
+const _searchDebounce = Duration(milliseconds: 200);
 
 class _SearchScreenState extends ConsumerState<SearchScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   String _query = '';
+  String _appliedQuery = '';
+  Timer? _debounce;
+
+  final _showSearchController = EpgShowSearchController();
+  final CatalogTextFilter<Channel> _channelFilter = CatalogTextFilter(
+    (c) => c.name,
+  );
+
+  /// The query these results were fetched for - re-fetch only when
+  /// [_appliedQuery] moves past this, not on every unrelated rebuild.
+  String? _catalogResultsFor;
+  List<VodItem> _vodResults = const [];
+  List<Series> _seriesResults = const [];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _showSearchController.addListener(_onShowSearchChanged);
+  }
+
+  void _onShowSearchChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _tabController.dispose();
+    _showSearchController
+      ..removeListener(_onShowSearchChanged)
+      ..dispose();
     super.dispose();
+  }
+
+  void _onQueryChanged(String value) {
+    // The EPG show search runs its own 350ms debounce, so feed it every
+    // keystroke; only the catalog query is debounced here.
+    _showSearchController.onQueryChanged(value, widget.onSearchShows);
+    _debounce?.cancel();
+    setState(() => _query = value);
+    if (value.trim().isEmpty) {
+      setState(() => _appliedQuery = '');
+      return;
+    }
+    // Apply the first character of a fresh query immediately so results show
+    // without a debounce-length flash of the empty state; only throttle
+    // subsequent keystrokes while results are already on screen.
+    if (_appliedQuery.isEmpty) {
+      setState(() => _appliedQuery = value);
+      return;
+    }
+    _debounce = Timer(_searchDebounce, () {
+      if (mounted && value != _appliedQuery) {
+        setState(() => _appliedQuery = value);
+      }
+    });
   }
 
   String get _normalizedQuery => _query.trim().toLowerCase();
   bool get _hasQuery => _normalizedQuery.isNotEmpty;
 
-  List<Channel> _filterChannels(List<Channel> channels) => _hasQuery
-      ? channels
-            .where(
-              (c) => c.name.toLowerCase().contains(_normalizedQuery),
-            )
-            .toList(growable: false)
-      : const [];
+  List<Channel> _filterChannels(List<Channel> channels) =>
+      _channelFilter.filterWhole(channels, _appliedQuery);
 
-  List<VodItem> _filterVodItems(List<VodItem> vodItems) => _hasQuery
-      ? vodItems
-            .where(
-              (v) => v.name.toLowerCase().contains(_normalizedQuery),
-            )
-            .toList(growable: false)
-      : const [];
+  /// Kicks off (or skips, if already resolved for [_appliedQuery]) the VOD/
+  /// series catalog search. Called from [build] - `setState` inside is safe
+  /// because it only fires from the async completion callback, never
+  /// synchronously during the build that triggered it.
+  void _ensureCatalogResults(CatalogRepository repo) {
+    if (_catalogResultsFor == _appliedQuery) return;
+    _catalogResultsFor = _appliedQuery;
+    final query = _appliedQuery;
+    if (query.trim().isEmpty) {
+      _vodResults = const [];
+      _seriesResults = const [];
+      return;
+    }
+    unawaited(
+      Future.wait([
+        repo.pageActiveItems<VodItem>(
+          kind: kCatalogKindVod,
+          search: query,
+          offset: 0,
+          limit: _searchResultLimit,
+        ),
+        repo.pageActiveItems<Series>(
+          kind: kCatalogKindSeries,
+          search: query,
+          offset: 0,
+          limit: _searchResultLimit,
+        ),
+      ]).then((results) {
+        if (mounted && _catalogResultsFor == query) {
+          setState(() {
+            _vodResults = results[0] as List<VodItem>;
+            _seriesResults = results[1] as List<Series>;
+          });
+        }
+      }),
+    );
+  }
 
-  List<Series> _filterSeriesList(List<Series> seriesList) => _hasQuery
-      ? seriesList
-            .where(
-              (s) => s.name.toLowerCase().contains(_normalizedQuery),
-            )
-            .toList(growable: false)
-      : const [];
+  /// Active when the EPG show search should render in place of (Live TV
+  /// tab) or alongside (All tab) the synchronous channel-name filter.
+  /// Mirrors `live_tv_screen.dart:764`'s `showSearchActive` condition.
+  bool get _showSearchActive =>
+      widget.onSearchShows != null && _normalizedQuery.length >= 2;
 
   @override
   Widget build(BuildContext context) {
     final isBootstrapping = ref.watch(isBootstrappingProvider);
     final isConfigured = ref.watch(isConfiguredProvider);
     final channels = ref.watch(liveChannelsProvider);
-    final vodItems = ref.watch(vodItemsProvider);
-    final seriesList = ref.watch(seriesListProvider);
 
     if (isBootstrapping) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -104,9 +208,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       );
     }
 
+    _ensureCatalogResults(ref.watch(catalogRepositoryProvider));
     final filteredChannels = _filterChannels(channels);
-    final filteredVodItems = _filterVodItems(vodItems);
-    final filteredSeries = _filterSeriesList(seriesList);
+    final filteredVodItems = _vodResults;
+    final filteredSeries = _seriesResults;
+    // Build from the FULL channel list (not the filtered one) - EPG
+    // show-result channel lookups must work even when the show's
+    // channel name doesn't match the current query.
+    final channelsById = {for (final c in channels) c.id: c};
+    // Computed once per build and threaded through to both the All tab and
+    // the Live TV tab's ShowSearchResultsView - both are built eagerly by
+    // TabBarView on every keystroke, so without sharing this the On-Now/
+    // Upcoming grouping work ran twice per build.
+    final showResult = _showSearchActive
+        ? buildShowResultEntries(_showSearchController.results, channelsById)
+        : null;
 
     return Scaffold(
       body: Column(
@@ -116,7 +232,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
             child: InlineMediaSearchField(
               query: _query,
               hintText: AppLocalizations.of(context).searchHint,
-              onChanged: (value) => setState(() => _query = value),
+              onChanged: _onQueryChanged,
             ),
           ),
           DpadTabBar(
@@ -136,8 +252,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                   filteredChannels,
                   filteredVodItems,
                   filteredSeries,
+                  channelsById,
+                  showResult,
                 ),
-                _buildLiveTvTab(filteredChannels),
+                _buildLiveTvTab(filteredChannels, channelsById, showResult),
                 _buildMoviesTab(filteredVodItems),
                 _buildSeriesTab(filteredSeries),
               ],
@@ -152,11 +270,43 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     List<Channel> channels,
     List<VodItem> vodItems,
     List<Series> seriesList,
+    Map<int, Channel> channelsById,
+    ShowResultEntries? showResult,
   ) {
     if (!_hasQuery) return _buildPromptState();
-    if (channels.isEmpty && vodItems.isEmpty && seriesList.isEmpty) {
+    final languageTag = Localizations.localeOf(context).toLanguageTag();
+    final onNowEntries = showResult?.onNow ?? const <ShowResultEntry>[];
+    final upcomingEntries = showResult?.upcoming ?? const <ShowResultEntry>[];
+    final onNowChannels = showResult?.onNowChannels ?? const <Channel>[];
+    // Empty-state-guard: a query can match a show name that doesn't match
+    // any channel/VOD/series name (e.g. "Bear" matching no channel called
+    // "Bear" but airing on some channel). Without this check, the EPG
+    // results would never render.
+    if (channels.isEmpty &&
+        vodItems.isEmpty &&
+        seriesList.isEmpty &&
+        onNowEntries.isEmpty &&
+        upcomingEntries.isEmpty) {
       return _buildEmptyState('No results found');
     }
+
+    final l = AppLocalizations.of(context);
+    // Flatten every section into one addressable row list so the whole tab
+    // scrolls through a single lazy ListView.builder. The previous
+    // `ListView(children: [...maps])` mounted every match at once - hundreds
+    // of ListTiles, each firing a network image request - the instant a
+    // broad query landed. Entries are either a section-title String or a
+    // domain object; the builder switches on the runtime type.
+    final rows = <Object>[
+      if (onNowEntries.isNotEmpty) ...[l.liveTvOnNow, ...onNowEntries],
+      if (upcomingEntries.isNotEmpty) ...[
+        l.liveTvUpcomingAirings,
+        ...upcomingEntries,
+      ],
+      if (channels.isNotEmpty) ...[l.searchSectionLiveTv, ...channels],
+      if (vodItems.isNotEmpty) ...[l.searchSectionMovies, ...vodItems],
+      if (seriesList.isNotEmpty) ...[l.searchSectionSeries, ...seriesList],
+    ];
 
     return DpadRegion(
       memoryKey: 'search/all',
@@ -166,48 +316,79 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           widget.onSidebarActivate?.call();
         }
       },
-      child: ListView(
-        children: [
-          if (channels.isNotEmpty) ...[
-            _SectionHeader(
-              title: AppLocalizations.of(context).searchSectionLiveTv,
-            ),
-            ...channels.map(
-              (c) => _ChannelListTile(
-                channel: c,
-                onTap: () {
-                  widget.onChannelContextChanged?.call(channels);
-                  widget.onChannelSelect(c);
-                },
-              ),
-            ),
-          ],
-          if (vodItems.isNotEmpty) ...[
-            _SectionHeader(
-              title: AppLocalizations.of(context).searchSectionMovies,
-            ),
-            ...vodItems.map(
-              (v) => _VodListTile(item: v, onTap: () => widget.onVodSelect(v)),
-            ),
-          ],
-          if (seriesList.isNotEmpty) ...[
-            _SectionHeader(
-              title: AppLocalizations.of(context).searchSectionSeries,
-            ),
-            ...seriesList.map(
-              (s) => _SeriesListTile(
-                item: s,
-                onTap: () => widget.onSeriesSelect(s),
-              ),
-            ),
-          ],
-        ],
+      child: ListView.builder(
+        itemCount: rows.length,
+        itemBuilder: (context, index) {
+          final row = rows[index];
+          if (row is String) return _SectionHeader(title: row);
+          if (row is ShowResultEntry) {
+            return ShowResultRow(
+              entry: row,
+              channel: channelsById[row.channelId],
+              onNowChannels: onNowChannels,
+              onChannelSelect: widget.onChannelSelect,
+              onChannelContextChanged: widget.onChannelContextChanged,
+              onShowSelect: widget.onShowSelect,
+              languageTag: languageTag,
+            );
+          }
+          if (row is Channel) {
+            return _ChannelListTile(
+              channel: row,
+              onTap: () {
+                widget.onChannelContextChanged?.call(channels);
+                widget.onChannelSelect(row);
+              },
+            );
+          }
+          if (row is VodItem) {
+            return _VodListTile(
+              item: row,
+              onTap: () => widget.onVodSelect(row),
+            );
+          }
+          if (row is Series) {
+            return _SeriesListTile(
+              item: row,
+              onTap: () => widget.onSeriesSelect(row),
+            );
+          }
+          assert(false, 'Unhandled search row type: ${row.runtimeType}');
+          return const SizedBox.shrink();
+        },
       ),
     );
   }
 
-  Widget _buildLiveTvTab(List<Channel> channels) {
+  Widget _buildLiveTvTab(
+    List<Channel> channels,
+    Map<int, Channel> channelsById,
+    ShowResultEntries? showResult,
+  ) {
     if (!_hasQuery) return _buildPromptState();
+    // When the EPG show search is active, fully replace the channel-tile
+    // list with the same All/On-Now/Upcoming sub-tab view LiveTvScreen
+    // uses - mirrors LiveTvScreen exactly because (like Live TV) this tab
+    // has nothing else to show once a show search fires.
+    if (_showSearchActive) {
+      return ShowSearchResultsView(
+        shows: _showSearchController.results,
+        isLoading: _showSearchController.isLoading,
+        error: _showSearchController.error,
+        channelsById: channelsById,
+        onChannelSelect: widget.onChannelSelect,
+        onChannelContextChanged: widget.onChannelContextChanged,
+        onShowSelect: widget.onShowSelect,
+        memoryKeyPrefix: 'search/live-tv/search-results',
+        onEdge: (direction) {
+          if (direction == TraversalDirection.left) {
+            widget.onSidebarActivate?.call();
+          }
+        },
+        resetTabsToken: _showSearchController.searchSessionId,
+        precomputedResult: showResult,
+      );
+    }
     if (channels.isEmpty) return _buildEmptyState('No results found');
     return DpadRegion(
       memoryKey: 'search/live-tv',
@@ -322,6 +503,7 @@ class _ChannelListTile extends StatelessWidget {
           width: MediaBrowsingMetrics.logoSize,
           height: MediaBrowsingMetrics.logoSize,
           fit: BoxFit.contain,
+          oversample: 2,
         ),
         title: Text(channel.name),
         onTap: onTap,
@@ -352,6 +534,7 @@ class _VodListTile extends StatelessWidget {
           width: MediaBrowsingMetrics.logoSize,
           height: MediaBrowsingMetrics.logoSize,
           fit: BoxFit.contain,
+          oversample: 2,
         ),
         title: Text(item.name),
         subtitle: item.rating != null ? Text('★ ${item.rating}') : null,
@@ -383,6 +566,7 @@ class _SeriesListTile extends StatelessWidget {
           width: MediaBrowsingMetrics.logoSize,
           height: MediaBrowsingMetrics.logoSize,
           fit: BoxFit.contain,
+          oversample: 2,
         ),
         title: Text(item.name),
         subtitle: item.rating != null ? Text('★ ${item.rating}') : null,

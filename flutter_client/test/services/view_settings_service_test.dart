@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:m3u_tv/navigation/route_names.dart';
 import 'package:m3u_tv/services/persistent_store.dart';
 import 'package:m3u_tv/services/view_settings_service.dart';
 
@@ -19,7 +20,32 @@ void main() {
       expect(await service.epgStartView(), EpgStartView.currentTime);
       expect(await service.rememberVodSort(), isFalse);
       expect(await service.vodSortOption(), VodSortOption.defaultOrder);
+      expect(await service.defaultStartPage(), DefaultStartPage.home);
     });
+
+    test('persists and restores the default start page', () async {
+      for (final page in DefaultStartPage.values) {
+        await service.setDefaultStartPage(page);
+        expect(await service.defaultStartPage(), page);
+        expect(service.defaultStartPageSync, page);
+      }
+    });
+
+    test('start page enum maps to the matching router location', () {
+      expect(DefaultStartPage.home.route, RouteNames.home);
+      expect(DefaultStartPage.search.route, RouteNames.search);
+      expect(DefaultStartPage.liveTv.route, RouteNames.liveTv);
+      expect(DefaultStartPage.movies.route, RouteNames.vod);
+      expect(DefaultStartPage.series.route, RouteNames.series);
+    });
+
+    test(
+      'ignores unknown persisted start page and falls back to Home',
+      () async {
+        memory[ViewSettingsService.defaultStartPageKey] = 'dashboard';
+        expect(await service.defaultStartPage(), DefaultStartPage.home);
+      },
+    );
 
     test('persists and restores live TV layout', () async {
       for (final layout in LiveTvLayout.values) {
@@ -141,5 +167,50 @@ void main() {
         expect(reader.epgStartViewSync, EpgStartView.primeTime);
       },
     );
+
+    test(
+      'window bounds default to null before anything is persisted',
+      () async {
+        expect(await service.windowBounds(), isNull);
+      },
+    );
+
+    test('persists and restores window bounds', () async {
+      await service.setWindowBounds(
+        const WindowBounds(
+          x: 120,
+          y: 64,
+          width: 1280,
+          height: 800,
+          maximized: false,
+        ),
+      );
+
+      final restored = await ViewSettingsService(memory: memory).windowBounds();
+      expect(restored, isNotNull);
+      expect(restored!.x, 120);
+      expect(restored.y, 64);
+      expect(restored.width, 1280);
+      expect(restored.height, 800);
+      expect(restored.maximized, isFalse);
+    });
+
+    test('rejects degenerate or absurd saved window sizes', () {
+      expect(
+        WindowBounds.fromJson({
+          'x': 0,
+          'y': 0,
+          'width': 40,
+          'height': 30,
+          'maximized': false,
+        }),
+        isNull,
+      );
+      expect(
+        WindowBounds.fromJson({'x': 0, 'y': 0, 'width': 1024}),
+        isNull,
+      );
+      expect(WindowBounds.fromJson('not a map'), isNull);
+    });
   });
 }

@@ -20,7 +20,7 @@ import kotlinx.coroutines.sync.withLock
  *
  * Modeled on `macos/Runner/MpvPlayer/MpvPlayerPlugin.swift`, with one added
  * constraint the Apple plugins don't have: the underlying
- * `dev.jdtech.mpv.MpvPlayer` is a process-wide singleton (see
+ * `dev.sparkison.tv.libmpv.MpvPlayer` is a process-wide singleton (see
  * `MpvPlayerCore`'s header comment), so at most one [MpvPlayerCore] is ever
  * active. `attachCore` fully disposes any previous core -- awaiting its
  * native mpv handle actually closing -- before creating and initializing
@@ -112,6 +112,7 @@ class MpvPlayerPlugin(val context: Context, flutterEngine: FlutterEngine) :
                     core.load(
                         uri = args["uri"] as? String ?: "",
                         startPositionMs = (args["startPositionMs"] as? Number)?.toInt() ?: 0,
+                        isLive = args["isLive"] as? Boolean ?: false,
                         userAgent = args["userAgent"] as? String,
                         headers = headers,
                         externalSubtitles = parseExternalSubtitles(args["externalSubtitles"]),

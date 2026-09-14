@@ -12,7 +12,8 @@
   "navMore": "Plus",
   "notificationsDesktopOpen": "Ouvrir",
   "appBackToExit": "Appuyez à nouveau sur Retour pour quitter",
-  "appRecordingScheduled": "Enregistrement programmé : {title}",
+  "appRecordingScheduling": "Enregistrement en cours de programmation\u2026",
+  "appRecordingScheduled": "Enregistrement programmé : {title}",
   "@appRecordingScheduled": {
     "placeholders": {
       "title": {
@@ -78,6 +79,7 @@
   "liveTvRemoveFavorite": "Retirer des favoris",
   "liveTvCatchupShows": "Programmes de rattrapage",
   "catchupShowsEmpty": "Aucun programme de rattrapage disponible",
+  "catchupShowsLoading": "Chargement des programmes de rattrapage…",
   "liveTvAddMultiview": "Ajouter à Multivue",
   "liveTvRemoveMultiview": "Retirer de Multivue",
   "liveTvMultiviewFull": "Multivue est complet (9 flux max)",
@@ -90,6 +92,17 @@
   "multiviewBackToGrid": "Retour à la grille",
   "multiviewRemove": "Retirer de Multivue",
   "multiviewRetry": "Échec de la lecture - sélectionner pour réessayer",
+  "multiviewManageTitle": "Gérer Multivue",
+  "multiviewClearAll": "Tout retirer",
+  "multiviewRemoveChannel": "Retirer {channel}",
+  "@multiviewRemoveChannel": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "close": "Fermer",
   "catchupBadgeAvailable": "Catchup disponible",
   "catchupBadgeAvailableDays": "Catchup disponible : {days} j",
   "@catchupBadgeAvailableDays": {
@@ -107,6 +120,19 @@
   "epgNoData": "Aucune donnée EPG",
   "epgProgramScheduledToRecord": "Programmé pour enregistrement",
   "epgProgramCurrentlyRecording": "En cours d'enregistrement",
+  "epgSweepLoadingTitle": "Chargement du guide des programmes",
+  "epgSweepLoadingBody": "{loaded} sur {total} chaînes",
+  "@epgSweepLoadingBody": {
+    "description": "Body text on the in-app toast shown while the EPG background sweep fetches program guide data for the remaining channels after app start, so the user understands the app is not frozen. Non-blocking - dismisses automatically when the sweep finishes.",
+    "placeholders": {
+      "loaded": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "playerGoBack": "Retour",
   "playerResumeWatching": "Reprendre la lecture",
   "playerContinue": "Continuer",
@@ -120,6 +146,8 @@
   },
   "playerStartFromBeginning": "Recommencer depuis le début",
   "playerResume": "Reprendre",
+  "playerClearProgress": "Effacer la progression",
+  "playerProgressCleared": "Progression effacée",
   "playerSkipPreviousTooltip": "Chaîne précédente",
   "playerSkipNextTooltip": "Chaîne suivante",
   "playerNowPlayingMovie": "Film",
@@ -137,6 +165,13 @@
   },
   "playerCommercialSkipped": "Publicité ignorée",
   "playerSkipCommercial": "Ignorer la publicité",
+  "playerSkipCredits": "Ignorer le générique",
+  "playerSkipIntro": "Ignorer l'intro",
+  "playerUpNext": "À suivre",
+  "playerUpNextPlay": "Lire la suite",
+  "playerUpNextDismiss": "Ignorer",
+  "playerLiveStreamEnded": "Diffusion terminée",
+  "playerReturningToMenu": "Retour au menu…",
   "searchHint": "Rechercher Télévision en direct, films et séries…",
   "searchSectionLiveTv": "Télévision en direct",
   "searchSectionMovies": "Films",
@@ -200,6 +235,40 @@
   },
   "settingsAppViewRelease": "Voir la version",
   "settingsAppScanQr": "Scanner pour ouvrir sur votre téléphone",
+  "settingsReleaseNotesTab": "Nouveautés",
+  "settingsReleaseNotesLoading": "Chargement des notes de version…",
+  "settingsReleaseNotesError": "Impossible de charger les notes de version. Vérifiez votre connexion et réessayez.",
+  "settingsReleaseNotesRetry": "Réessayer",
+  "settingsReleaseNotesCurrentBadge": "Actuelle",
+  "settingsReleaseNotesNewBadge": "Nouvelle",
+  "settingsReleaseNotesYouAreOn": "Vous utilisez la version {version}",
+  "@settingsReleaseNotesYouAreOn": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsReleaseNotesLatestIs": "Dernière : {version}",
+  "@settingsReleaseNotesLatestIs": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsReleaseNotesNewerCount": "{count} plus récentes",
+  "@settingsReleaseNotesNewerCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsReleaseNotesUpToDate": "Vous utilisez la dernière version",
+  "settingsReleaseNotesViewOnGithub": "Tout voir sur GitHub",
+  "settingsReleaseNotesNoneForVersion": "Aucune note pour cette version.",
+  "settingsReleaseNotesSelectVersion": "Sélectionner une version",
   "settingsFillAllFields": "Veuillez remplir tous les champs",
   "settingsConnectionSettings": "Paramètres de connexion",
   "settingsConnectionSettingsSubtitle": "Entrez vos identifiants Xtream Codes",
@@ -217,7 +286,7 @@
   "pairingScanQr": "Scannez pour ouvrir la page de couplage sur votre téléphone",
   "pairingOpenBrowser": "Ouvrir dans le navigateur",
   "pairingPendingGoTo": "Sur votre téléphone ou ordinateur, allez sur :",
-  "pairingPendingEnterCode": "Puis entrez ce code :",
+  "pairingPendingEnterCode": "Code d'appairage :",
   "pairingPendingWaiting": "En attente d'approbation…",
   "settingsContentCache": "Cache de contenu",
   "settingsCacheSubtitle": "Le contenu en cache se charge instantanément. Les données se rafraîchissent automatiquement en arrière-plan.",
@@ -246,6 +315,17 @@
   "settingsCreate": "Créer",
   "homeContinueWatching": "Reprendre",
   "homeNoContinueWatching": "Rien à reprendre",
+  "homeContinueWatchingSeeAll": "Tout afficher",
+  "homeContinueWatchingMoreCount": "{count, plural, =1{+1 autre} other{+{count} autres}}",
+  "@homeContinueWatchingMoreCount": {
+    "description": "Subtitle on the Continue Watching row's overflow tile, showing how many additional resumable titles exist beyond the ones shown directly in the row.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "homeUpNext": "À suivre",
   "homeNoLiveTv": "Pas de Télévision en direct disponible",
   "homeFavoriteChannels": "Chaînes favorites",
   "homeNoFavoriteChannels": "Aucune chaîne favorite disponible",
@@ -312,6 +392,52 @@
       }
     }
   },
+  "seriesSeasons": "Saisons",
+  "seriesCast": "Casting",
+  "relatedTitle": "Contenus similaires",
+  "seriesEpisodeCount": "{count, plural, =1{1 épisode} other{{count} épisodes}}",
+  "@seriesEpisodeCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "seriesPlayEpisode": "Lire S{season}E{episode}",
+  "@seriesPlayEpisode": {
+    "placeholders": {
+      "season": {
+        "type": "int"
+      },
+      "episode": {
+        "type": "int"
+      }
+    }
+  },
+  "seriesResumeEpisode": "Reprendre S{season}E{episode}",
+  "@seriesResumeEpisode": {
+    "placeholders": {
+      "season": {
+        "type": "int"
+      },
+      "episode": {
+        "type": "int"
+      }
+    }
+  },
+  "seriesMarkWatched": "Marquer comme vu",
+  "seriesMarkUnwatched": "Marquer comme non vu",
+  "seriesMarkedWatched": "Marqué comme vu",
+  "seriesMarkedUnwatched": "Marqué comme non vu",
+  "seriesMarkSyncFailed": "Impossible de synchroniser le statut vu",
+  "seriesMarkSeasonPrompt": "Mettre à jour le statut vu pour tous les épisodes de la saison {number} ?",
+  "@seriesMarkSeasonPrompt": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
   "traktWatchHistory": "Historique de visionnage",
   "traktWatchHistorySubtitle": "Synchronisez votre historique de visionnage avec Trakt pour suivre votre progression sur toutes les applications et services.",
   "traktNotConfigured": "Les identifiants du client Trakt ne sont pas configurés.",
@@ -338,6 +464,29 @@
   "searchTypeToSearch": "Saisir pour rechercher",
   "vodPlayMovie": "Lire le film",
   "vodContinueMovie": "Continuer le film",
+  "vodCast": "Casting",
+  "castShowAll": "Voir tout le casting",
+  "vodTimeLeftMinutes": "{minutes, plural, =1{Il reste 1 min} other{Il reste {minutes} min}}",
+  "@vodTimeLeftMinutes": {
+    "description": "Trailing label inside the resume button on a VOD detail screen, showing time remaining under an hour.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "vodTimeLeftHoursMinutes": "Il reste {hours} h {minutes} min",
+  "@vodTimeLeftHoursMinutes": {
+    "description": "Trailing label inside the resume button on a VOD detail screen, showing time remaining of an hour or more.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "navAioStreams": "AIOStreams",
   "aiostreamsGetStreams": "Obtenir les sources",
   "aiostreamsLoadingStreams": "Chargement des sources…",
@@ -407,7 +556,7 @@
   "requestsStatusRejected": "Rejeté",
   "requestsStatusCompleted": "Terminé",
   "requestsStatusUnknown": "Inconnu",
-  "dvrRecordingsTitle": "Enregistrements DVR",
+  "dvrRecordingsTitle": "Enregistrements",
   "dvrRecordingsSubtitle": "Enregistrements terminés et en cours",
   "dvrNoRecordings": "Aucun enregistrement DVR disponible",
   "dvrNotConfigured": "Veuillez vous connecter à votre service dans les paramètres",
@@ -504,7 +653,7 @@
   "dvrDeleteSeriesRuleConfirm": "Supprimer cette règle de série ?",
   "dvrSeriesCancel": "Annuler",
   "dvrDeleteSeriesRuleSuccess": "Règle de série supprimée",
-  "dvrSeriesRulesTitle": "Règles de séries",
+  "dvrSeriesRulesTitle": "Règles",
   "dvrSeriesMatchModeContains": "Contient",
   "dvrSeriesMatchModeExact": "Exact",
   "dvrSeriesModeUseDefault": "Par défaut",
@@ -559,6 +708,34 @@
     }
   },
   "showSeriesRuleActive": "Règle de série active",
+  "showScheduled": "Programmé",
+  "showBatchRecord": "Enregistrer ({count})",
+  "@showBatchRecord": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "showBatchScheduleSummary": "{scheduled, plural, =1{1 épisode programmé} other{{scheduled} épisodes programmés}}. {failed, plural, =0{Tous réussis.} =1{1 échec.} other{{failed} échecs.}}",
+  "@showBatchScheduleSummary": {
+    "placeholders": {
+      "scheduled": {
+        "type": "int"
+      },
+      "failed": {
+        "type": "int"
+      }
+    }
+  },
+  "showBatchScheduleFailures": "Échecs : {titles}",
+  "@showBatchScheduleFailures": {
+    "placeholders": {
+      "titles": {
+        "type": "String"
+      }
+    }
+  },
   "showDetailTitle": "Détails du show",
   "showEpisodesCount": "{count, plural, =1{1 épisode} other{{count} épisodes}}",
   "@showEpisodesCount": {
@@ -634,5 +811,21 @@
   "settingsFilterPersistenceReset": "Réinitialiser à chaque fois",
   "vodSortDialogTitle": "Trier les films par",
   "vodSortDefault": "Par défaut",
-  "vodSortRating": "Note"
+  "vodSortRating": "Note",
+  "settingsDefaultStartPage": "Page de démarrage par défaut",
+  "settingsHdrMode": "Mode HDR",
+  "settingsHdrModeHint": "Autoriser les vidéos HDR à basculer l'écran en mode HDR. Windows et Linux uniquement.",
+  "settingsMatchRefreshRate": "Adapter la fréquence de rafraîchissement",
+  "settingsMatchRefreshRateHint": "Bascule le moniteur sur la fréquence d'images de la vidéo au démarrage de la lecture. Peut brièvement rendre l'écran noir. Windows uniquement.",
+  "settingsToggleOn": "Activé",
+  "settingsToggleOff": "Désactivé",
+  "settingsOptimizeFor": "Optimiser pour",
+  "settingsOptimizeForQuality": "Qualité",
+  "settingsOptimizeForQualityHint": "Images plus nettes, utilisation mémoire accrue.",
+  "settingsOptimizeForSpeed": "Vitesse",
+  "settingsOptimizeForSpeedHint": "Chargement plus rapide, qualité image réduite.",
+  "settingsFontSize": "Taille d'affichage",
+  "settingsFontSizeNormal": "Normal",
+  "settingsFontSizeLarge": "Grand",
+  "settingsFontSizeVeryLarge": "Très grand"
 }

@@ -1,6 +1,7 @@
 // ignore_for_file: prefer_initializing_formals
 
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:m3u_tv/services/async_lifecycle.dart';
 import 'package:m3u_tv/services/cache_service.dart';
@@ -182,6 +183,7 @@ class XtreamRequest {
     this.params = const {},
     this.body = const {},
     this.method = 'GET',
+    this.wantsRawText = false,
   });
 
   final UserCredentials credentials;
@@ -191,6 +193,13 @@ class XtreamRequest {
   final Map<String, String> headers;
   final String method;
 
+  /// When set, the caller intends to decode and map the JSON body itself on a
+  /// background isolate, so a transport that can should return the raw body
+  /// wrapped in an [XtreamRawResponse] instead of a decoded structure. It is
+  /// advisory: transports that do not honor it (the test fakes, the web stub)
+  /// keep returning decoded data and the caller falls back to parsing inline.
+  final bool wantsRawText;
+
   Map<String, Object?> toDebugMap() => {
     'server': credentials.server,
     'action': action,
@@ -198,6 +207,17 @@ class XtreamRequest {
     'body': body,
     'method': method,
   };
+}
+
+/// Wraps the raw, still-encoded JSON body of a successful response. Returned by
+/// the default IO transport only when [XtreamRequest.wantsRawText] is set, so
+/// the caller can run `jsonDecode` plus domain-object mapping in a single
+/// background-isolate hop instead of decoding on the transport isolate and
+/// mapping on the UI isolate.
+class XtreamRawResponse {
+  const XtreamRawResponse(this.text);
+
+  final String text;
 }
 
 class AIOStreamsCatalog {
@@ -475,6 +495,14 @@ class XtreamService {
     return authResponse;
   }
 
+  /// Seeds credentials from disk on boot without a live handshake, so cached
+  /// content can be painted before [authenticate] validates them. The next
+  /// [authenticate] call overwrites this with the normalized form and fills
+  /// in the server location / feature flags.
+  void hydrateCredentials(UserCredentials credentials) {
+    _credentials ??= credentials.normalized();
+  }
+
   void clearCredentials() {
     _credentials = null;
     _isM3UEditor = false;
@@ -503,7 +531,17 @@ class XtreamService {
     final response = await _request(
       'get_live_streams',
       params: {'category_id': ?categoryId},
+      wantsRawText: true,
     );
+    if (response is XtreamRawResponse) {
+      final c = _requireCredentials();
+      return _parseLiveStreams(
+        response.text,
+        c.server,
+        c.username,
+        c.password,
+      );
+    }
     return _asList(response)
         .map((item) {
           final json = _asMap(item);
@@ -517,7 +555,12 @@ class XtreamService {
     final response = await _request(
       'get_vod_streams',
       params: {'category_id': ?categoryId},
+      wantsRawText: true,
     );
+    if (response is XtreamRawResponse) {
+      final c = _requireCredentials();
+      return _parseVodStreams(response.text, c.server, c.username, c.password);
+    }
     return _asList(response)
         .map((item) {
           final json = _asMap(item);
@@ -540,7 +583,11 @@ class XtreamService {
     final response = await _request(
       'get_series',
       params: {'category_id': ?categoryId},
+      wantsRawText: true,
     );
+    if (response is XtreamRawResponse) {
+      return _parseSeries(response.text);
+    }
     return _asList(
       response,
     ).map((item) => Series.fromXtream(_asMap(item))).toList(growable: false);
@@ -679,16 +726,22 @@ class XtreamService {
     UserCredentials credentials,
     String uuid,
   ) async {
-    final response = await _requestWithCredentials(
-      credentials,
-      'cancel_dvr_recording',
-      method: 'POST',
-      body: {'recording_id': uuid},
-    );
-    final map = _asMap(response);
-    final errorMessage = map['error'];
-    if (errorMessage != null && '$errorMessage'.trim().isNotEmpty) {
-      throw XtreamDvrScheduleException('$errorMessage');
+    try {
+      final response = await _requestWithCredentials(
+        credentials,
+        'cancel_dvr_recording',
+        method: 'POST',
+        body: {'recording_id': uuid},
+      );
+      final map = _asMap(response);
+      final errorMessage = map['error'];
+      if (errorMessage != null && '$errorMessage'.trim().isNotEmpty) {
+        throw XtreamDvrScheduleException('$errorMessage');
+      }
+    } on XtreamHttpException catch (e) {
+      throw XtreamDvrScheduleException(
+        e.serverMessage ?? 'Recording not found or not cancellable',
+      );
     }
   }
 
@@ -705,16 +758,22 @@ class XtreamService {
     UserCredentials credentials,
     String uuid,
   ) async {
-    final response = await _requestWithCredentials(
-      credentials,
-      'delete_dvr_recording',
-      method: 'POST',
-      body: {'recording_id': uuid},
-    );
-    final map = _asMap(response);
-    final errorMessage = map['error'];
-    if (errorMessage != null && '$errorMessage'.trim().isNotEmpty) {
-      throw XtreamDvrScheduleException('$errorMessage');
+    try {
+      final response = await _requestWithCredentials(
+        credentials,
+        'delete_dvr_recording',
+        method: 'POST',
+        body: {'recording_id': uuid},
+      );
+      final map = _asMap(response);
+      final errorMessage = map['error'];
+      if (errorMessage != null && '$errorMessage'.trim().isNotEmpty) {
+        throw XtreamDvrScheduleException('$errorMessage');
+      }
+    } on XtreamHttpException catch (e) {
+      throw XtreamDvrScheduleException(
+        e.serverMessage ?? 'Recording not found or not deletable',
+      );
     }
   }
 
@@ -983,6 +1042,8 @@ class XtreamService {
         'viewer_id': viewerId,
         'limit': '$limit',
         if (type != null) 'type': type.wireName,
+        // Opt in to synthetic "up next" episode entries (editor >= v0.12.53; older editors ignore the param).
+        'include_up_next': '1',
       },
     );
     return _asList(response)
@@ -1074,18 +1135,31 @@ class XtreamService {
     final response = await _request(
       'get_short_epg',
       params: {'stream_id': '$streamId', 'limit': '$limit'},
+      wantsRawText: true,
     );
+    if (response is XtreamRawResponse) {
+      return _parseEpgProgramsFromRaw(
+        response.text,
+        fallbackChannelId: channelId ?? '$streamId',
+      );
+    }
     return _parseEpgPrograms(
       response,
       fallbackChannelId: channelId ?? '$streamId',
     );
   }
 
+  /// [dropPlaceholders] skips m3u-editor's synthetic gap-fill programmes
+  /// (`dummy-` ids, titled with the channel name, "No information available").
+  /// The catchup dialog asks for this: a retention day with no real cached
+  /// EPG otherwise comes back as ~24 hourly placeholder rows, each of which
+  /// would start a timeshift stream over dead air.
   Future<List<EpgProgram>> getEpgBatch(
     List<Channel> channels, {
     int limit = 8,
     DateTime? startDate,
     DateTime? endDate,
+    bool dropPlaceholders = false,
   }) async {
     if (channels.isEmpty) return const <EpgProgram>[];
     final dates = <DateTime?>[null];
@@ -1135,10 +1209,25 @@ class XtreamService {
             'limit': '$limit',
             if (date != null) 'date': _formatEpgDate(date),
           },
+          wantsRawText: true,
         );
-        programs.addAll(
-          _parseEpgPrograms(response, channelIdsByStream: channelIdsByStream),
-        );
+        if (response is XtreamRawResponse) {
+          programs.addAll(
+            await _parseEpgProgramsFromRaw(
+              response.text,
+              channelIdsByStream: channelIdsByStream,
+              dropPlaceholders: dropPlaceholders,
+            ),
+          );
+        } else {
+          programs.addAll(
+            _parseEpgPrograms(
+              response,
+              channelIdsByStream: channelIdsByStream,
+              dropPlaceholders: dropPlaceholders,
+            ),
+          );
+        }
       }
     }
     programs.sort((a, b) => a.start.compareTo(b.start));
@@ -1332,6 +1421,7 @@ class XtreamService {
     Map<String, String> params = const {},
     Map<String, Object?> body = const {},
     String method = 'GET',
+    bool wantsRawText = false,
   }) {
     return _requestWithCredentials(
       _requireCredentials(),
@@ -1339,6 +1429,7 @@ class XtreamService {
       params: params,
       body: body,
       method: method,
+      wantsRawText: wantsRawText,
     );
   }
 
@@ -1349,6 +1440,7 @@ class XtreamService {
     Map<String, Object?> body = const {},
     Map<String, String> headers = const {},
     String method = 'GET',
+    bool wantsRawText = false,
   }) {
     final requestHeaders = <String, String>{
       'Accept': 'application/json',
@@ -1363,6 +1455,7 @@ class XtreamService {
         body: body,
         headers: requestHeaders,
         method: method,
+        wantsRawText: wantsRawText,
       ),
     );
   }
@@ -1391,10 +1484,119 @@ int _asInt(Object? value) {
   return int.tryParse('$value') ?? 0;
 }
 
+// ---------------------------------------------------------------------------
+// Off-isolate catalog parsing.
+//
+// The default IO transport hands back the raw JSON body for the big list
+// endpoints (see [XtreamRequest.wantsRawText]). These helpers run `jsonDecode`
+// AND the domain-object mapping in one hop so neither the multi-hundred-KB
+// decode nor the construction of hundreds of thousands of model objects lands
+// on the UI isolate. Below the threshold the spawn/copy overhead outweighs the
+// work, so parse inline - mirrors `json_isolate.dart`.
+// ---------------------------------------------------------------------------
+
+const int _rawParseOffloadBytes = 32 * 1024;
+
+Future<List<Channel>> _parseLiveStreams(
+  String rawJson,
+  String server,
+  String username,
+  String password,
+) {
+  List<Channel> parse() {
+    final decoded = jsonDecode(rawJson);
+    if (decoded is! List) return const <Channel>[];
+    return decoded
+        .map((item) {
+          final json = _asMap(item);
+          final id = _asInt(json['stream_id']);
+          return Channel.fromXtream(
+            json,
+            '$server/live/$username/$password/$id.m3u8',
+          );
+        })
+        .toList(growable: false);
+  }
+
+  return rawJson.length < _rawParseOffloadBytes
+      ? Future.value(parse())
+      : Isolate.run(parse);
+}
+
+Future<List<VodItem>> _parseVodStreams(
+  String rawJson,
+  String server,
+  String username,
+  String password,
+) {
+  List<VodItem> parse() {
+    final decoded = jsonDecode(rawJson);
+    if (decoded is! List) return const <VodItem>[];
+    return decoded
+        .map((item) {
+          final json = _asMap(item);
+          final id = _asInt(json['stream_id']);
+          final extension = '${json['container_extension'] ?? 'mp4'}';
+          return VodItem.fromXtream(
+            json,
+            '$server/movie/$username/$password/$id.$extension',
+          );
+        })
+        .toList(growable: false);
+  }
+
+  return rawJson.length < _rawParseOffloadBytes
+      ? Future.value(parse())
+      : Isolate.run(parse);
+}
+
+Future<List<Series>> _parseSeries(String rawJson) {
+  List<Series> parse() {
+    final decoded = jsonDecode(rawJson);
+    if (decoded is! List) return const <Series>[];
+    return decoded
+        .map((item) => Series.fromXtream(_asMap(item)))
+        .toList(growable: false);
+  }
+
+  return rawJson.length < _rawParseOffloadBytes
+      ? Future.value(parse())
+      : Isolate.run(parse);
+}
+
+// EPG sweep batches recur throughout the background sweep (not a one-time
+// startup cost like the catalog lists above), so - unlike
+// `_parseLiveStreams`/`_parseVodStreams`/`_parseSeries` - offload
+// unconditionally rather than gating on `_rawParseOffloadBytes`: repeated
+// small hops off the UI isolate beat repeated inline decodes stacking up as
+// visible jank during the sweep. Only takes effect when the transport
+// honored `wantsRawText` (the real IO transport); callers still branch on
+// `response is XtreamRawResponse` and fall back to calling `_parseEpgPrograms`
+// inline exactly as before, matching `getLiveStreams`/`getVodStreams`/
+// `getSeries` above - an `await` on this is never inserted into a path that
+// used to complete synchronously (an `await`, even of an already-available
+// value, always yields a microtask in Dart, which broke callers relying on
+// that synchronous completion, e.g. `AppStateController`'s unawaited EPG
+// prime finishing before other awaited work in the same call chain).
+Future<List<EpgProgram>> _parseEpgProgramsFromRaw(
+  String rawJson, {
+  String? fallbackChannelId,
+  Map<String, String> channelIdsByStream = const <String, String>{},
+  bool dropPlaceholders = false,
+}) => Isolate.run(
+  () => _parseEpgPrograms(
+    jsonDecode(rawJson),
+    fallbackChannelId: fallbackChannelId,
+    channelIdsByStream: channelIdsByStream,
+    dropPlaceholders: dropPlaceholders,
+  ),
+);
+
 List<EpgProgram> _parseEpgPrograms(
   Object? response, {
   String? fallbackChannelId,
   Map<String, String> channelIdsByStream = const <String, String>{},
+  bool dropPlaceholders = false,
 }) {
   final programs = <EpgProgram>[];
   void addPrograms(Object? raw, String? channelId) {
@@ -1403,6 +1605,7 @@ List<EpgProgram> _parseEpgPrograms(
         _asMap(item),
         channelId,
         channelIdsByStream,
+        dropPlaceholders: dropPlaceholders,
       );
       if (program != null) programs.add(program);
     }
@@ -1447,8 +1650,15 @@ List<Object?> _epgListingList(Object? value) {
 EpgProgram? _epgProgramFromMap(
   Map<String, Object?> json,
   String? fallbackChannelId,
-  Map<String, String> channelIdsByStream,
-) {
+  Map<String, String> channelIdsByStream, {
+  bool dropPlaceholders = false,
+}) {
+  if (dropPlaceholders) {
+    // m3u-editor fills EPG gaps with synthetic hourly rows whose id is
+    // `dummy-<md5>` (see XtreamApiController get_epg_batch).
+    final id = _stringOrNull(json['id']);
+    if (id != null && id.startsWith('dummy-')) return null;
+  }
   final streamId = _stringOrNull(json['stream_id']);
   // Prefer the caller-resolved key (fallbackChannelId, derived from the
   // stream→channel mapping) so that EpgService stores programs under the same

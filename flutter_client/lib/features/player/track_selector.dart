@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:m3u_tv/playback/player_adapter.dart';
 import 'package:m3u_tv/shared/app_button.dart';
+import 'package:m3u_tv/shared/image_quality_scope.dart';
 
 /// Track selector widget for audio and subtitle track selection.
 ///
@@ -26,10 +27,18 @@ class TrackSelector extends StatelessWidget {
     super.key,
   });
 
-  static const double buttonWidth = 136;
   static const double buttonHeight = 48;
-  static const double buttonGap = 6;
-  static const double controlsWidth = buttonWidth * 2 + buttonGap;
+  // Halved from 6 -- the perceived gap between Audio/Subtitles used to be
+  // dominated by each button sitting centered inside its own fixed-width
+  // cell (see the old `buttonWidth`), not by this constant, so shrinking it
+  // alone wouldn't have done much. Removing the per-button cell (below)
+  // fixed the bulk of it; this still halves the deliberate gap on top.
+  static const double buttonGap = 3;
+  // Rough reservation for [PlaybackControls]' non-compact layout math and
+  // its `Align(centerRight)` box -- no longer the exact width of the button
+  // row now that each button sizes to its own content instead of a fixed
+  // cell, but only needs to be a safe upper bound.
+  static const double controlsWidth = 300;
 
   /// Available audio tracks.
   final List<PlaybackTrack> audioTracks;
@@ -66,6 +75,18 @@ class TrackSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Each button now sizes to its own content (height pinned, width
+    // intrinsic) instead of being centered inside a fixed-width cell -- the
+    // old fixed cell was wide enough to fit "Subtitles" without shrinking,
+    // which left "Audio" (a shorter label) surrounded by dead space on
+    // both sides. That dead space, not `buttonGap` itself, was the bulk of
+    // the visually "large gap" between the two buttons.
+    //
+    // The pinned height must scale with the display-size setting - AppButton
+    // itself grows (padding + text) at larger scales, and a fixed unscaled
+    // height here would clip that growth instead of fitting it.
+    final scale = FontSizeScope.scaleOf(context);
+    final scaledButtonHeight = buttonHeight * scale;
     final row = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -77,51 +98,37 @@ class TrackSelector extends StatelessWidget {
                   : 0,
             ),
             child: SizedBox(
-              width: buttonWidth,
-              height: buttonHeight,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: AppButton(
-                  icon: Icons.hdr_on,
-                  label: hdrEnabled ? 'HDR On' : 'HDR Off',
-                  onPressed: () => onHdrEnabledChanged?.call(!hdrEnabled),
-                ),
+              height: scaledButtonHeight,
+              child: AppButton(
+                icon: Icons.hdr_on,
+                label: hdrEnabled ? 'HDR On' : 'HDR Off',
+                onPressed: () => onHdrEnabledChanged?.call(!hdrEnabled),
               ),
             ),
           ),
         if (audioTracks.isNotEmpty)
           SizedBox(
-            width: buttonWidth,
-            height: buttonHeight,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: AppButton(
-                icon: Icons.audiotrack,
-                label: 'Audio',
-                onPressed: () => _showAudioDialog(context),
-              ),
+            height: scaledButtonHeight,
+            child: AppButton(
+              icon: Icons.audiotrack,
+              label: 'Audio',
+              onPressed: () => _showAudioDialog(context),
             ),
           ),
         if (audioTracks.isNotEmpty && subtitleTracks.isNotEmpty)
           const SizedBox(width: buttonGap),
         if (subtitleTracks.isNotEmpty)
           SizedBox(
-            width: buttonWidth,
-            height: buttonHeight,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: AppButton(
-                icon: Icons.subtitles,
-                label: 'Subtitles',
-                onPressed: () => _showSubtitleDialog(context),
-              ),
+            height: scaledButtonHeight,
+            child: AppButton(
+              icon: Icons.subtitles,
+              label: 'Subtitles',
+              onPressed: () => _showSubtitleDialog(context),
             ),
           ),
       ],
     );
-    // Individual buttons already shrink their own label via FittedBox, but
-    // the row's total width (2 * buttonWidth + gap) is otherwise fixed —
-    // wrapping the whole row lets it scale down as a unit instead of
+    // Wrapping the whole row lets it scale down as a unit instead of
     // overflowing off the edge of narrow/portrait screens.
     return FittedBox(
       fit: BoxFit.scaleDown,

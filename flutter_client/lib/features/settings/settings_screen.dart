@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:dpad/dpad.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:m3u_tv/app/app_shell.dart' show DeviceType;
+import 'package:m3u_tv/features/settings/release_notes_view.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/services/app_version_service.dart';
 import 'package:m3u_tv/services/auth_notifier.dart';
@@ -18,6 +21,7 @@ import 'package:m3u_tv/shared/app_callout.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
 import 'package:m3u_tv/shared/dpad_tab_bar.dart';
 import 'package:m3u_tv/shared/gradient_border_effect.dart';
+import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -47,11 +51,17 @@ class SettingsScreen extends StatefulWidget {
     this.proxyPlaybackSettings,
     this.comskipSettings,
     this.viewSettingsService,
+    this.deviceType,
+    this.onSidebarActivate,
   });
 
   final AuthNotifier authNotifier;
   final TraktService traktService;
   final DevicePairingService? devicePairingService;
+
+  /// Used to decide whether the pairing URL should be a tappable link with an
+  /// "open in browser" affordance (every non-TV device) or plain text (TV).
+  final DeviceType? deviceType;
   final ProxyPlaybackSettings? proxyPlaybackSettings;
   final ComskipSettings? comskipSettings;
   final ViewSettingsService? viewSettingsService;
@@ -74,6 +84,9 @@ class SettingsScreen extends StatefulWidget {
   final VoidCallback? onConnected;
   final Locale? locale;
   final void Function(Locale?)? onLocaleChanged;
+
+  /// Activates the shell sidebar (left-edge press from tab content).
+  final VoidCallback? onSidebarActivate;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -134,6 +147,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               widget.sourceError ??
               widget.authNotifier.error,
           devicePairingService: widget.devicePairingService,
+          deviceType: widget.deviceType,
         ),
       );
     }
@@ -160,6 +174,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         proxyPlaybackSettings: widget.proxyPlaybackSettings,
         comskipSettings: widget.comskipSettings,
         viewSettingsService: widget.viewSettingsService,
+        onSidebarActivate: widget.onSidebarActivate,
+        deviceType: widget.deviceType,
       ),
     );
   }
@@ -207,12 +223,14 @@ class _ConnectionFormBody extends StatefulWidget {
     this.initialValues,
     this.error,
     this.devicePairingService,
+    this.deviceType,
   });
 
   final Future<void> Function(UserCredentials credentials) onConnect;
   final UserCredentials? initialValues;
   final String? error;
   final DevicePairingService? devicePairingService;
+  final DeviceType? deviceType;
 
   @override
   State<_ConnectionFormBody> createState() => _ConnectionFormBodyState();
@@ -318,6 +336,7 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody>
           child: _DevicePairingBody(
             service: service,
             onCancel: _cancelPairing,
+            linksAreTappable: widget.deviceType != DeviceType.tv,
           ),
         ),
       );
@@ -388,6 +407,10 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody>
                       decoration: InputDecoration(
                         labelText: l.settingsServerUrl,
                         hintText: 'example.com:8080',
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12 * FontSizeScope.scaleOf(context),
+                          vertical: 16 * FontSizeScope.scaleOf(context),
+                        ),
                       ),
                       autocorrect: false,
                       keyboardType: TextInputType.url,
@@ -459,6 +482,14 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody>
     AppLocalizations l, {
     required bool autofocusServer,
   }) {
+    final scale = FontSizeScope.scaleOf(context);
+    // Material's default content padding is fixed and unscaled - as the
+    // field's (already-scaling) text grows with the display-size setting,
+    // a static padding makes the box look proportionally smaller.
+    final contentPadding = EdgeInsets.symmetric(
+      horizontal: 12 * scale,
+      vertical: 16 * scale,
+    );
     return [
       TextFormField(
         controller: _serverController,
@@ -466,6 +497,7 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody>
         decoration: InputDecoration(
           labelText: l.settingsServerUrl,
           hintText: 'example.com:8080',
+          contentPadding: contentPadding,
         ),
         autocorrect: false,
         keyboardType: TextInputType.url,
@@ -474,14 +506,20 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody>
       const SizedBox(height: 16),
       TextFormField(
         controller: _usernameController,
-        decoration: InputDecoration(labelText: l.settingsUsername),
+        decoration: InputDecoration(
+          labelText: l.settingsUsername,
+          contentPadding: contentPadding,
+        ),
         autocorrect: false,
         textInputAction: TextInputAction.next,
       ),
       const SizedBox(height: 16),
       TextFormField(
         controller: _passwordController,
-        decoration: InputDecoration(labelText: l.settingsPassword),
+        decoration: InputDecoration(
+          labelText: l.settingsPassword,
+          contentPadding: contentPadding,
+        ),
         obscureText: true,
         autocorrect: false,
         textInputAction: TextInputAction.done,
@@ -505,18 +543,29 @@ class _ConnectionFormBodyState extends State<_ConnectionFormBody>
 // ---------------------------------------------------------------------------
 
 class _DevicePairingBody extends StatelessWidget {
-  const _DevicePairingBody({required this.service, required this.onCancel});
+  const _DevicePairingBody({
+    required this.service,
+    required this.onCancel,
+    this.linksAreTappable = true,
+  });
 
   final DevicePairingService service;
   final VoidCallback onCancel;
 
-  static Widget get _logo =>
-      SvgPicture.asset('assets/icons/editor-logo.svg', height: 40);
+  /// True on every non-TV device: the pairing URL becomes a real link with an
+  /// "open in browser" button, so a server admin setting up the device doesn't
+  /// have to retype it. On a TV there's no browser and no pointer, so it stays
+  /// plain text next to the QR code.
+  final bool linksAreTappable;
 
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
     final theme = Theme.of(context);
+    final logo = SvgPicture.asset(
+      'assets/icons/editor-logo.svg',
+      height: 40 * FontSizeScope.scaleOf(context),
+    );
 
     final Widget body;
     if (service.status == DevicePairingStatus.error) {
@@ -540,11 +589,13 @@ class _DevicePairingBody extends StatelessWidget {
                 uri: uri,
                 userCode: userCode,
                 onCancel: onCancel,
+                linksAreTappable: linksAreTappable,
               )
             : _DevicePairingNarrow(
                 uri: uri,
                 userCode: userCode,
                 onCancel: onCancel,
+                linksAreTappable: linksAreTappable,
               ),
       );
     }
@@ -554,7 +605,7 @@ class _DevicePairingBody extends StatelessWidget {
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [_logo, const SizedBox(height: 16), body],
+          children: [logo, const SizedBox(height: 16), body],
         ),
       ),
     );
@@ -566,20 +617,43 @@ class _DevicePairingWide extends StatelessWidget {
     required this.uri,
     required this.userCode,
     required this.onCancel,
+    this.linksAreTappable = true,
   });
 
   final String uri;
   final String userCode;
   final VoidCallback onCancel;
+  final bool linksAreTappable;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l = AppLocalizations.of(context);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: _DevicePairingInstructions(uri: uri, userCode: userCode),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _DevicePairingInstructions(
+                uri: uri,
+                userCode: userCode,
+                uriTappable: linksAreTappable,
+              ),
+              if (linksAreTappable && uri.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                AppButton(
+                  icon: Icons.open_in_new,
+                  label: l.pairingOpenBrowser,
+                  onPressed: () => launchUrl(
+                    Uri.parse(uri),
+                    mode: LaunchMode.externalApplication,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
         const SizedBox(width: 24),
         Column(
@@ -589,13 +663,13 @@ class _DevicePairingWide extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               child: QrImageView(
                 data: uri.isEmpty ? ' ' : uri,
-                size: 140,
+                size: 140 * FontSizeScope.scaleOf(context),
                 backgroundColor: Colors.white,
               ),
             ),
             const SizedBox(height: 6),
             Text(
-              AppLocalizations.of(context).pairingScanQr,
+              l.pairingScanQr,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -603,7 +677,7 @@ class _DevicePairingWide extends StatelessWidget {
             const SizedBox(height: 12),
             AppButton(
               autofocus: true,
-              label: AppLocalizations.of(context).cancel,
+              label: l.cancel,
               onPressed: onCancel,
             ),
           ],
@@ -618,11 +692,13 @@ class _DevicePairingNarrow extends StatelessWidget {
     required this.uri,
     required this.userCode,
     required this.onCancel,
+    this.linksAreTappable = true,
   });
 
   final String uri;
   final String userCode;
   final VoidCallback onCancel;
+  final bool linksAreTappable;
 
   @override
   Widget build(BuildContext context) {
@@ -632,10 +708,10 @@ class _DevicePairingNarrow extends StatelessWidget {
         _DevicePairingInstructions(
           uri: uri,
           userCode: userCode,
-          uriTappable: true,
+          uriTappable: linksAreTappable,
         ),
         const SizedBox(height: 20),
-        if (uri.isNotEmpty)
+        if (linksAreTappable && uri.isNotEmpty)
           SizedBox(
             width: double.infinity,
             child: AppButton(
@@ -765,13 +841,17 @@ class _ConnectedView extends StatefulWidget {
     this.proxyPlaybackSettings,
     this.comskipSettings,
     this.viewSettingsService,
+    this.onSidebarActivate,
+    this.deviceType,
   });
 
   final AuthNotifier authNotifier;
   final TraktService traktService;
+  final VoidCallback? onSidebarActivate;
   final ProxyPlaybackSettings? proxyPlaybackSettings;
   final ComskipSettings? comskipSettings;
   final ViewSettingsService? viewSettingsService;
+  final DeviceType? deviceType;
   final Viewer? activeViewer;
   final List<Viewer> viewers;
   final String? sourceLabel;
@@ -793,7 +873,7 @@ class _ConnectedView extends StatefulWidget {
 
 class _ConnectedViewState extends State<_ConnectedView>
     with SingleTickerProviderStateMixin {
-  late final _tabController = TabController(length: 2, vsync: this);
+  late final _tabController = TabController(length: 3, vsync: this);
 
   @override
   void dispose() {
@@ -858,6 +938,7 @@ class _ConnectedViewState extends State<_ConnectedView>
           tabs: [
             AppLocalizations.of(context).settingsGeneral,
             AppLocalizations.of(context).settingsIntegrations,
+            AppLocalizations.of(context).settingsReleaseNotesTab,
           ],
         ),
         Expanded(
@@ -871,6 +952,12 @@ class _ConnectedViewState extends State<_ConnectedView>
               SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
                 child: _buildIntegrationsTab(context),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: ReleaseNotesView(
+                  onSidebarActivate: widget.onSidebarActivate,
+                ),
               ),
             ],
           ),
@@ -1058,7 +1145,10 @@ class _ConnectedViewState extends State<_ConnectedView>
         ],
 
         if (widget.viewSettingsService != null) ...[
-          _ViewSettingsSection(service: widget.viewSettingsService!),
+          _ViewSettingsSection(
+            service: widget.viewSettingsService!,
+            deviceType: widget.deviceType,
+          ),
           const SizedBox(height: 20),
         ],
 
@@ -1330,14 +1420,13 @@ class _TraktCard extends StatelessWidget {
 
   final TraktService traktService;
 
-  static Widget get _logo => SvgPicture.asset(
-    'assets/icons/trakt-logo.svg',
-    height: 40,
-  );
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final logo = SvgPicture.asset(
+      'assets/icons/trakt-logo.svg',
+      height: 40 * FontSizeScope.scaleOf(context),
+    );
 
     final l = AppLocalizations.of(context);
     final body = !traktService.isConfigured
@@ -1372,7 +1461,7 @@ class _TraktCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _logo,
+        logo,
         const SizedBox(height: 16),
         body,
       ],
@@ -1664,7 +1753,7 @@ Future<bool> _showConfirmDialog(
     context: context,
     builder: (ctx) => Dialog(
       child: SizedBox(
-        width: 480,
+        width: 480 * FontSizeScope.scaleOf(ctx),
         child: DpadRegion(
           memoryKey: 'confirm-dialog',
           child: Padding(
@@ -1766,9 +1855,11 @@ class _ViewerManagementDialogState extends State<_ViewerManagementDialog> {
         .where((v) => v.ulid != widget.activeViewer.ulid)
         .toList();
 
+    final scale = FontSizeScope.scaleOf(context);
+
     return Dialog(
       child: SizedBox(
-        width: 520,
+        width: 520 * scale,
         child: DpadRegion(
           memoryKey: 'viewer-management',
           child: Padding(
@@ -1810,6 +1901,10 @@ class _ViewerManagementDialogState extends State<_ViewerManagementDialog> {
                       ).settingsViewerNameLabel,
                       errorText: _createError,
                       border: const OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12 * scale,
+                        vertical: 16 * scale,
+                      ),
                     ),
                     textInputAction: TextInputAction.done,
                     onSubmitted: (_) => _handleCreate(),
@@ -1860,7 +1955,7 @@ class _ViewerManagementDialogState extends State<_ViewerManagementDialog> {
                     ),
                     const SizedBox(height: 8),
                     ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 280),
+                      constraints: BoxConstraints(maxHeight: 280 * scale),
                       child: ListView.builder(
                         shrinkWrap: true,
                         itemCount: others.length,
@@ -2070,9 +2165,10 @@ class _ProxyProfilePicker extends StatelessWidget {
 }
 
 class _ViewSettingsSection extends StatefulWidget {
-  const _ViewSettingsSection({required this.service});
+  const _ViewSettingsSection({required this.service, this.deviceType});
 
   final ViewSettingsService service;
+  final DeviceType? deviceType;
 
   @override
   State<_ViewSettingsSection> createState() => _ViewSettingsSectionState();
@@ -2083,6 +2179,16 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
   EpgStartView _epgStartView = EpgStartView.currentTime;
   ChannelColumnLayout _channelColumnLayout = ChannelColumnLayout.logoOnly;
   bool _rememberVodSort = false;
+  DefaultStartPage _defaultStartPage = DefaultStartPage.home;
+  bool _hdrEnabled = true;
+  bool _matchRefreshRate = false;
+  OptimizeFor _optimizeFor = OptimizeFor.quality;
+  AppFontSize _fontSize = AppFontSize.normal;
+
+  // The mpv HDR override ships on the Linux and Windows desktop backends
+  // only; refresh-rate matching is Windows-only (see DisplayModeManager).
+  static final bool _showHdrToggle = Platform.isWindows || Platform.isLinux;
+  static final bool _showRefreshRateToggle = Platform.isWindows;
 
   @override
   void initState() {
@@ -2102,12 +2208,26 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
     final startView = await widget.service.epgStartView();
     final channelColumnLayout = await widget.service.channelColumnLayout();
     final rememberVodSort = await widget.service.rememberVodSort();
+    final defaultStartPage = await widget.service.defaultStartPage();
+    final hdrEnabled = await widget.service.hdrEnabled();
+    final matchRefreshRate = await widget.service.matchRefreshRate();
+    final optimizeFor = await widget.service.optimizeFor();
+    final storedFontSize = await widget.service.fontSizeOrNull();
+    final fontSize = AppFontSize.resolveDefault(
+      stored: storedFontSize,
+      isTv: widget.deviceType == DeviceType.tv,
+    );
     if (!mounted) return;
     setState(() {
       _liveTvLayout = layout;
       _epgStartView = startView;
       _channelColumnLayout = channelColumnLayout;
       _rememberVodSort = rememberVodSort;
+      _defaultStartPage = defaultStartPage;
+      _hdrEnabled = hdrEnabled;
+      _matchRefreshRate = matchRefreshRate;
+      _optimizeFor = optimizeFor;
+      _fontSize = fontSize;
     });
   }
 
@@ -2121,6 +2241,23 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Text(
+              l.settingsDefaultStartPage,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final page in DefaultStartPage.values)
+                  _IntervalChip(
+                    label: _startPageLabel(l, page),
+                    isSelected: _defaultStartPage == page,
+                    onTap: () => widget.service.setDefaultStartPage(page),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
             Text(
               l.settingsLiveTvLayout,
               style: Theme.of(context).textTheme.bodyMedium,
@@ -2207,6 +2344,82 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
                 ),
               ],
             ),
+            if (_showHdrToggle) ...[
+              const SizedBox(height: 16),
+              _BooleanSetting(
+                label: l.settingsHdrMode,
+                hint: l.settingsHdrModeHint,
+                value: _hdrEnabled,
+                onChanged: widget.service.setHdrEnabled,
+              ),
+            ],
+            if (_showRefreshRateToggle) ...[
+              const SizedBox(height: 16),
+              _BooleanSetting(
+                label: l.settingsMatchRefreshRate,
+                hint: l.settingsMatchRefreshRateHint,
+                value: _matchRefreshRate,
+                onChanged: widget.service.setMatchRefreshRate,
+              ),
+            ],
+            const SizedBox(height: 16),
+            Text(
+              l.settingsOptimizeFor,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              l.settingsOptimizeForSpeedHint,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                _IntervalChip(
+                  label: l.settingsOptimizeForQuality,
+                  isSelected: _optimizeFor == OptimizeFor.quality,
+                  onTap: () =>
+                      widget.service.setOptimizeFor(OptimizeFor.quality),
+                ),
+                _IntervalChip(
+                  label: l.settingsOptimizeForSpeed,
+                  isSelected: _optimizeFor == OptimizeFor.speed,
+                  onTap: () => widget.service.setOptimizeFor(OptimizeFor.speed),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              l.settingsFontSize,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                _IntervalChip(
+                  icon: Icons.smartphone,
+                  label: l.settingsFontSizeNormal,
+                  isSelected: _fontSize == AppFontSize.normal,
+                  onTap: () => widget.service.setFontSize(AppFontSize.normal),
+                ),
+                _IntervalChip(
+                  label: l.settingsFontSizeLarge,
+                  isSelected: _fontSize == AppFontSize.large,
+                  onTap: () => widget.service.setFontSize(AppFontSize.large),
+                ),
+                _IntervalChip(
+                  icon: Icons.tv,
+                  label: l.settingsFontSizeVeryLarge,
+                  isSelected: _fontSize == AppFontSize.veryLarge,
+                  onTap: () =>
+                      widget.service.setFontSize(AppFontSize.veryLarge),
+                ),
+              ],
+            ),
             const SizedBox(height: 16),
             Text(
               l.settingsFilterPersistence,
@@ -2231,6 +2444,57 @@ class _ViewSettingsSectionState extends State<_ViewSettingsSection> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// An on/off pair of [_IntervalChip]s with a label and explanatory hint,
+/// matching the rest of the View settings section's chip styling.
+class _BooleanSetting extends StatelessWidget {
+  const _BooleanSetting({
+    required this.label,
+    required this.hint,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String hint;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l = AppLocalizations.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: theme.textTheme.bodyMedium),
+        const SizedBox(height: 4),
+        Text(
+          hint,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            _IntervalChip(
+              label: l.settingsToggleOn,
+              isSelected: value,
+              onTap: () => onChanged(true),
+            ),
+            _IntervalChip(
+              label: l.settingsToggleOff,
+              isSelected: !value,
+              onTap: () => onChanged(false),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -2276,50 +2540,56 @@ class _IntervalChip extends StatelessWidget {
     required this.label,
     required this.isSelected,
     required this.onTap,
+    this.icon,
   });
 
   final String label;
   final bool isSelected;
   final VoidCallback? onTap;
 
+  /// Optional leading icon, shown before the label (e.g. a device glyph on
+  /// the font-size chips). Null (default) omits it, as every other caller
+  /// of this shared chip still wants.
+  final IconData? icon;
+
   static const double _radius = 20;
-  static const _effects = [
-    GradientBorderEffect(
-      borderRadius: BorderRadius.all(Radius.circular(_radius)),
-    ),
-  ];
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    const radius = BorderRadius.all(Radius.circular(_radius));
+    final scale = FontSizeScope.scaleOf(context);
+    final radius = BorderRadius.all(Radius.circular(_radius * scale));
+    final contentColor = isSelected
+        ? colorScheme.onPrimaryContainer
+        : colorScheme.onSurfaceVariant;
     return DpadInkWell(
       onTap: onTap,
-      effects: _effects,
+      effects: [GradientBorderEffect(borderRadius: radius)],
       color: isSelected
           ? colorScheme.primaryContainer
           : colorScheme.surfaceContainerHigh,
       borderRadius: radius,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: EdgeInsets.symmetric(
+          horizontal: 12 * scale,
+          vertical: 6 * scale,
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (icon != null) ...[
+              Icon(icon, size: 16 * scale, color: contentColor),
+              SizedBox(width: 4 * scale),
+            ],
             if (isSelected) ...[
-              Icon(
-                Icons.check,
-                size: 16,
-                color: colorScheme.onPrimaryContainer,
-              ),
-              const SizedBox(width: 4),
+              Icon(Icons.check, size: 16 * scale, color: contentColor),
+              SizedBox(width: 4 * scale),
             ],
             Text(
               label,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: isSelected
-                    ? colorScheme.onPrimaryContainer
-                    : colorScheme.onSurfaceVariant,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge?.copyWith(color: contentColor),
             ),
           ],
         ),
@@ -2365,6 +2635,15 @@ class _StatusRow extends StatelessWidget {
     );
   }
 }
+
+String _startPageLabel(AppLocalizations l, DefaultStartPage page) =>
+    switch (page) {
+      DefaultStartPage.home => l.navHome,
+      DefaultStartPage.search => l.navSearch,
+      DefaultStartPage.liveTv => l.navLiveTv,
+      DefaultStartPage.movies => l.navVod,
+      DefaultStartPage.series => l.navSeries,
+    };
 
 String _intervalLabel(AppLocalizations l, Duration d) {
   if (d.inHours >= 1) {

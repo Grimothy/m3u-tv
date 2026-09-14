@@ -45,6 +45,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get appBackToExit => 'Zum Beenden erneut Zurück drücken';
 
   @override
+  String get appRecordingScheduling => 'Aufnahme wird geplant…';
+
+  @override
   String appRecordingScheduled(String title) {
     return 'Aufnahme geplant: $title';
   }
@@ -155,6 +158,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get catchupShowsEmpty => 'Keine Catchup-Sendungen verfügbar';
 
   @override
+  String get catchupShowsLoading => 'Catchup-Sendungen werden geladen…';
+
+  @override
   String get liveTvAddMultiview => 'Zu Multiview hinzufügen';
 
   @override
@@ -193,6 +199,20 @@ class AppLocalizationsDe extends AppLocalizations {
       'Wiedergabe fehlgeschlagen - zum Wiederholen auswählen';
 
   @override
+  String get multiviewManageTitle => 'Multiview verwalten';
+
+  @override
+  String get multiviewClearAll => 'Alle entfernen';
+
+  @override
+  String multiviewRemoveChannel(String channel) {
+    return '$channel entfernen';
+  }
+
+  @override
+  String get close => 'Schließen';
+
+  @override
   String get catchupBadgeAvailable => 'Catchup verfügbar';
 
   @override
@@ -225,6 +245,14 @@ class AppLocalizationsDe extends AppLocalizations {
   String get epgProgramCurrentlyRecording => 'Wird aufgenommen';
 
   @override
+  String get epgSweepLoadingTitle => 'Programmführer wird geladen';
+
+  @override
+  String epgSweepLoadingBody(int loaded, int total) {
+    return '$loaded von $total Sendern';
+  }
+
+  @override
   String get playerGoBack => 'Zurück';
 
   @override
@@ -243,6 +271,12 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get playerResume => 'Fortsetzen';
+
+  @override
+  String get playerClearProgress => 'Fortschritt löschen';
+
+  @override
+  String get playerProgressCleared => 'Fortschritt gelöscht';
 
   @override
   String get playerSkipPreviousTooltip => 'Vorheriger Sender';
@@ -266,6 +300,27 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get playerSkipCommercial => 'Werbung überspringen';
+
+  @override
+  String get playerSkipCredits => 'Abspann überspringen';
+
+  @override
+  String get playerSkipIntro => 'Intro überspringen';
+
+  @override
+  String get playerUpNext => 'Als Nächstes';
+
+  @override
+  String get playerUpNextPlay => 'Nächste Folge';
+
+  @override
+  String get playerUpNextDismiss => 'Schließen';
+
+  @override
+  String get playerLiveStreamEnded => 'Übertragung beendet';
+
+  @override
+  String get playerReturningToMenu => 'Rückkehr zum Menü…';
 
   @override
   String get searchHint => 'Live-TV, Filme und Serien durchsuchen …';
@@ -484,6 +539,53 @@ class AppLocalizationsDe extends AppLocalizations {
   String get settingsAppScanQr => 'Scannen, um auf deinem Handy zu öffnen';
 
   @override
+  String get settingsReleaseNotesTab => 'Neuigkeiten';
+
+  @override
+  String get settingsReleaseNotesLoading => 'Versionshinweise werden geladen…';
+
+  @override
+  String get settingsReleaseNotesError =>
+      'Versionshinweise konnten nicht geladen werden. Prüfe deine Verbindung und versuche es erneut.';
+
+  @override
+  String get settingsReleaseNotesRetry => 'Erneut versuchen';
+
+  @override
+  String get settingsReleaseNotesCurrentBadge => 'Aktuell';
+
+  @override
+  String get settingsReleaseNotesNewBadge => 'Neu';
+
+  @override
+  String settingsReleaseNotesYouAreOn(String version) {
+    return 'Du nutzt $version';
+  }
+
+  @override
+  String settingsReleaseNotesLatestIs(String version) {
+    return 'Neueste: $version';
+  }
+
+  @override
+  String settingsReleaseNotesNewerCount(int count) {
+    return '$count neuere';
+  }
+
+  @override
+  String get settingsReleaseNotesUpToDate => 'Du nutzt die neueste Version';
+
+  @override
+  String get settingsReleaseNotesViewOnGithub => 'Alle auf GitHub ansehen';
+
+  @override
+  String get settingsReleaseNotesNoneForVersion =>
+      'Keine Hinweise für diese Version.';
+
+  @override
+  String get settingsReleaseNotesSelectVersion => 'Version auswählen';
+
+  @override
   String get settingsFillAllFields => 'Bitte fülle alle Felder aus';
 
   @override
@@ -540,7 +642,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get pairingPendingGoTo => 'Gehe auf deinem Telefon oder Computer zu:';
 
   @override
-  String get pairingPendingEnterCode => 'Gib dann diesen Code ein:';
+  String get pairingPendingEnterCode => 'Kopplungscode:';
 
   @override
   String get pairingPendingWaiting => 'Warte auf Bestätigung…';
@@ -550,6 +652,23 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get homeNoContinueWatching => 'Nichts zum Weiterschauen';
+
+  @override
+  String get homeContinueWatchingSeeAll => 'Alle anzeigen';
+
+  @override
+  String homeContinueWatchingMoreCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '+$count weitere',
+      one: '+1 weitere',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get homeUpNext => 'Als Nächstes';
 
   @override
   String get homeNoLiveTv => 'Kein Live-TV verfügbar';
@@ -639,6 +758,57 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
+  String get seriesSeasons => 'Staffeln';
+
+  @override
+  String get seriesCast => 'Besetzung';
+
+  @override
+  String get relatedTitle => 'Ähnliche Titel';
+
+  @override
+  String seriesEpisodeCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Folgen',
+      one: '1 Folge',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String seriesPlayEpisode(int season, int episode) {
+    return 'S${season}E$episode abspielen';
+  }
+
+  @override
+  String seriesResumeEpisode(int season, int episode) {
+    return 'S${season}E$episode fortsetzen';
+  }
+
+  @override
+  String get seriesMarkWatched => 'Als gesehen markieren';
+
+  @override
+  String get seriesMarkUnwatched => 'Als ungesehen markieren';
+
+  @override
+  String get seriesMarkedWatched => 'Als gesehen markiert';
+
+  @override
+  String get seriesMarkedUnwatched => 'Als ungesehen markiert';
+
+  @override
+  String get seriesMarkSyncFailed =>
+      'Gesehen-Status konnte nicht synchronisiert werden';
+
+  @override
+  String seriesMarkSeasonPrompt(int number) {
+    return 'Den Gesehen-Status für jede Folge von Staffel $number aktualisieren?';
+  }
+
+  @override
   String get traktWatchHistory => 'Wiedergabeverlauf';
 
   @override
@@ -700,6 +870,28 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get vodContinueMovie => 'Film fortsetzen';
+
+  @override
+  String get vodCast => 'Besetzung';
+
+  @override
+  String get castShowAll => 'Alle Darsteller anzeigen';
+
+  @override
+  String vodTimeLeftMinutes(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other: 'noch $minutes Min.',
+      one: 'noch 1 Min.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String vodTimeLeftHoursMinutes(int hours, int minutes) {
+    return 'noch $hours Std. $minutes Min.';
+  }
 
   @override
   String get navAioStreams => 'AIOStreams';
@@ -824,7 +1016,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get requestsStatusUnknown => 'Unbekannt';
 
   @override
-  String get dvrRecordingsTitle => 'DVR-Aufnahmen';
+  String get dvrRecordingsTitle => 'Aufnahmen';
 
   @override
   String get dvrRecordingsSubtitle => 'Abgeschlossene und laufende Aufnahmen';
@@ -1008,7 +1200,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get dvrDeleteSeriesRuleSuccess => 'Serien-Regel gelöscht';
 
   @override
-  String get dvrSeriesRulesTitle => 'Serien-Regeln';
+  String get dvrSeriesRulesTitle => 'Regeln';
 
   @override
   String get dvrSeriesMatchModeContains => 'Enthält';
@@ -1104,6 +1296,37 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get showSeriesRuleActive => 'Serien-Regel aktiv';
+
+  @override
+  String get showScheduled => 'Geplant';
+
+  @override
+  String showBatchRecord(int count) {
+    return 'Aufnehmen ($count)';
+  }
+
+  @override
+  String showBatchScheduleSummary(int scheduled, int failed) {
+    String _temp0 = intl.Intl.pluralLogic(
+      scheduled,
+      locale: localeName,
+      other: '$scheduled Folgen aufgenommen',
+      one: '1 Folge aufgenommen',
+    );
+    String _temp1 = intl.Intl.pluralLogic(
+      failed,
+      locale: localeName,
+      other: '$failed fehlgeschlagen.',
+      one: '1 fehlgeschlagen.',
+      zero: 'Alle erfolgreich.',
+    );
+    return '$_temp0. $_temp1';
+  }
+
+  @override
+  String showBatchScheduleFailures(String titles) {
+    return 'Fehlgeschlagen: $titles';
+  }
 
   @override
   String get showDetailTitle => 'Show-Details';
@@ -1215,4 +1438,56 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get vodSortRating => 'Bewertung';
+
+  @override
+  String get settingsDefaultStartPage => 'Standardstartseite';
+
+  @override
+  String get settingsHdrMode => 'HDR-Modus';
+
+  @override
+  String get settingsHdrModeHint =>
+      'HDR-Videos dürfen das Display in den HDR-Modus schalten. Nur Windows und Linux.';
+
+  @override
+  String get settingsMatchRefreshRate => 'Bildwiederholrate anpassen';
+
+  @override
+  String get settingsMatchRefreshRateHint =>
+      'Schaltet den Monitor beim Start der Wiedergabe auf die Bildrate des Videos. Kann den Bildschirm kurz schwarz werden lassen. Nur Windows.';
+
+  @override
+  String get settingsToggleOn => 'Ein';
+
+  @override
+  String get settingsToggleOff => 'Aus';
+
+  @override
+  String get settingsOptimizeFor => 'Optimierung';
+
+  @override
+  String get settingsOptimizeForQuality => 'Qualität';
+
+  @override
+  String get settingsOptimizeForQualityHint =>
+      'Schärfere Bilder, höherer Speicherverbrauch.';
+
+  @override
+  String get settingsOptimizeForSpeed => 'Geschwindigkeit';
+
+  @override
+  String get settingsOptimizeForSpeedHint =>
+      'Schnelleres Laden, niedrigere Bildqualität.';
+
+  @override
+  String get settingsFontSize => 'Anzeigegröße';
+
+  @override
+  String get settingsFontSizeNormal => 'Normal';
+
+  @override
+  String get settingsFontSizeLarge => 'Groß';
+
+  @override
+  String get settingsFontSizeVeryLarge => 'Sehr groß';
 }

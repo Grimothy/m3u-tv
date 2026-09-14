@@ -12,6 +12,7 @@
   "navMore": "More",
   "notificationsDesktopOpen": "Open",
   "appBackToExit": "Press back again to exit",
+  "appRecordingScheduling": "Recording is being scheduled\u2026",
   "appRecordingScheduled": "Recording scheduled: {title}",
   "@appRecordingScheduled": {
     "placeholders": {
@@ -79,6 +80,7 @@
   "liveTvRemoveFavorite": "Remove favorite",
   "liveTvCatchupShows": "Catchup shows",
   "catchupShowsEmpty": "No catchup shows available",
+  "catchupShowsLoading": "Loading catchup shows…",
   "liveTvAddMultiview": "Add to Multiview",
   "liveTvRemoveMultiview": "Remove from Multiview",
   "liveTvMultiviewFull": "Multiview is full (9 streams max)",
@@ -91,6 +93,17 @@
   "multiviewBackToGrid": "Back to Grid",
   "multiviewRemove": "Remove from Multiview",
   "multiviewRetry": "Couldn't play - select to retry",
+  "multiviewManageTitle": "Manage Multiview",
+  "multiviewClearAll": "Clear All",
+  "multiviewRemoveChannel": "Remove {channel}",
+  "@multiviewRemoveChannel": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "close": "Close",
   "catchupBadgeAvailable": "Catchup available",
   "catchupBadgeAvailableDays": "Catchup available: {days}d",
   "@catchupBadgeAvailableDays": {
@@ -108,6 +121,19 @@
   "epgNoData": "No EPG data",
   "epgProgramScheduledToRecord": "Scheduled to record",
   "epgProgramCurrentlyRecording": "Currently recording",
+  "epgSweepLoadingTitle": "Loading program guide",
+  "epgSweepLoadingBody": "{loaded} of {total} channels",
+  "@epgSweepLoadingBody": {
+    "description": "Body text on the in-app toast shown while the EPG background sweep fetches program guide data for the remaining channels after app start, so the user understands the app is not frozen. Non-blocking - dismisses automatically when the sweep finishes.",
+    "placeholders": {
+      "loaded": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "playerGoBack": "Go back",
   "playerResumeWatching": "Resume Watching",
   "playerContinue": "Continue",
@@ -121,6 +147,8 @@
   },
   "playerStartFromBeginning": "Start from Beginning",
   "playerResume": "Resume",
+  "playerClearProgress": "Clear progress",
+  "playerProgressCleared": "Progress cleared",
   "playerSkipPreviousTooltip": "Previous channel",
   "playerSkipNextTooltip": "Next channel",
   "playerNowPlayingMovie": "Movie",
@@ -138,6 +166,13 @@
   },
   "playerCommercialSkipped": "Skipped commercial",
   "playerSkipCommercial": "Skip commercial",
+  "playerSkipCredits": "Skip Credits",
+  "playerSkipIntro": "Skip Intro",
+  "playerUpNext": "Up next",
+  "playerUpNextPlay": "Play next",
+  "playerUpNextDismiss": "Dismiss",
+  "playerLiveStreamEnded": "Stream ended",
+  "playerReturningToMenu": "Returning to the menu…",
   "searchHint": "Search live TV, movies, and series...",
   "searchSectionLiveTv": "Live TV",
   "searchSectionMovies": "Movies",
@@ -226,6 +261,40 @@
   },
   "settingsAppViewRelease": "View release",
   "settingsAppScanQr": "Scan to open on your phone",
+  "settingsReleaseNotesTab": "What's New",
+  "settingsReleaseNotesLoading": "Loading release notes…",
+  "settingsReleaseNotesError": "Couldn't load release notes. Check your connection and try again.",
+  "settingsReleaseNotesRetry": "Retry",
+  "settingsReleaseNotesCurrentBadge": "Current",
+  "settingsReleaseNotesNewBadge": "New",
+  "settingsReleaseNotesYouAreOn": "You're on {version}",
+  "@settingsReleaseNotesYouAreOn": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsReleaseNotesLatestIs": "Latest: {version}",
+  "@settingsReleaseNotesLatestIs": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsReleaseNotesNewerCount": "{count} newer",
+  "@settingsReleaseNotesNewerCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsReleaseNotesUpToDate": "You're on the latest version",
+  "settingsReleaseNotesViewOnGithub": "View all on GitHub",
+  "settingsReleaseNotesNoneForVersion": "No notes for this release.",
+  "settingsReleaseNotesSelectVersion": "Select a version",
   "settingsFillAllFields": "Please fill in all fields",
   "settingsConnectionSettings": "Connection Settings",
   "settingsConnectionSettingsSubtitle": "Enter your Xtream codes details",
@@ -243,10 +312,21 @@
   "pairingScanQr": "Scan to open the pairing page on your phone",
   "pairingOpenBrowser": "Open in browser",
   "pairingPendingGoTo": "On your phone or computer, go to:",
-  "pairingPendingEnterCode": "Then enter this code:",
+  "pairingPendingEnterCode": "Pairing code:",
   "pairingPendingWaiting": "Waiting for approval…",
   "homeContinueWatching": "Continue Watching",
   "homeNoContinueWatching": "No Continue Watching available",
+  "homeContinueWatchingSeeAll": "See All",
+  "homeContinueWatchingMoreCount": "{count, plural, =1{+1 more} other{+{count} more}}",
+  "@homeContinueWatchingMoreCount": {
+    "description": "Subtitle on the Continue Watching row's overflow tile, showing how many additional resumable titles exist beyond the ones shown directly in the row.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "homeUpNext": "Up next",
   "homeNoLiveTv": "No Live TV available",
   "homeFavoriteChannels": "Favorite Channels",
   "homeNoFavoriteChannels": "No favorite channels available",
@@ -313,6 +393,52 @@
       }
     }
   },
+  "seriesSeasons": "Seasons",
+  "seriesCast": "Cast",
+  "relatedTitle": "Related",
+  "seriesEpisodeCount": "{count, plural, =1{1 episode} other{{count} episodes}}",
+  "@seriesEpisodeCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "seriesPlayEpisode": "Play S{season}E{episode}",
+  "@seriesPlayEpisode": {
+    "placeholders": {
+      "season": {
+        "type": "int"
+      },
+      "episode": {
+        "type": "int"
+      }
+    }
+  },
+  "seriesResumeEpisode": "Resume S{season}E{episode}",
+  "@seriesResumeEpisode": {
+    "placeholders": {
+      "season": {
+        "type": "int"
+      },
+      "episode": {
+        "type": "int"
+      }
+    }
+  },
+  "seriesMarkWatched": "Mark watched",
+  "seriesMarkUnwatched": "Mark unwatched",
+  "seriesMarkedWatched": "Marked as watched",
+  "seriesMarkedUnwatched": "Marked as unwatched",
+  "seriesMarkSyncFailed": "Couldn't sync watched status",
+  "seriesMarkSeasonPrompt": "Update the watched status for every episode in Season {number}?",
+  "@seriesMarkSeasonPrompt": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
   "traktWatchHistory": "Watch History",
   "traktWatchHistorySubtitle": "Sync your watch history with Trakt to track progress across apps and services.",
   "traktNotConfigured": "Trakt client credentials are not configured.",
@@ -339,6 +465,29 @@
   "searchTypeToSearch": "Type to search",
   "vodPlayMovie": "Play movie",
   "vodContinueMovie": "Continue movie",
+  "vodCast": "Cast",
+  "castShowAll": "Show all cast",
+  "vodTimeLeftMinutes": "{minutes, plural, =1{1 min left} other{{minutes} min left}}",
+  "@vodTimeLeftMinutes": {
+    "description": "Trailing label inside the resume button on a VOD detail screen, showing time remaining under an hour.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "vodTimeLeftHoursMinutes": "{hours}h {minutes}m left",
+  "@vodTimeLeftHoursMinutes": {
+    "description": "Trailing label inside the resume button on a VOD detail screen, showing time remaining of an hour or more.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "navAioStreams": "AIOStreams",
   "aiostreamsGetStreams": "Get Streams",
   "aiostreamsLoadingStreams": "Loading streams…",
@@ -408,7 +557,7 @@
   "requestsStatusRejected": "Rejected",
   "requestsStatusCompleted": "Completed",
   "requestsStatusUnknown": "Unknown",
-  "dvrRecordingsTitle": "DVR Recordings",
+  "dvrRecordingsTitle": "Recordings",
   "dvrRecordingsSubtitle": "Completed recordings and currently recording programmes",
   "dvrNoRecordings": "No DVR recordings available",
   "dvrNotConfigured": "Please connect to your service in Settings",
@@ -505,7 +654,7 @@
   "dvrDeleteSeriesRuleConfirm": "Delete this series rule?",
   "dvrSeriesCancel": "Cancel",
   "dvrDeleteSeriesRuleSuccess": "Series rule deleted",
-  "dvrSeriesRulesTitle": "Series Rules",
+  "dvrSeriesRulesTitle": "Rules",
   "dvrSeriesMatchModeContains": "Contains",
   "dvrSeriesMatchModeExact": "Exact",
   "dvrSeriesModeUseDefault": "Use default",
@@ -560,6 +709,34 @@
     }
   },
   "showSeriesRuleActive": "Series rule active",
+  "showScheduled": "Scheduled",
+  "showBatchRecord": "Record ({count})",
+  "@showBatchRecord": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "showBatchScheduleSummary": "{scheduled, plural, =1{Recorded 1 episode} other{Recorded {scheduled} episodes}}. {failed, plural, =0{All succeeded.} =1{1 failed.} other{{failed} failed.}}",
+  "@showBatchScheduleSummary": {
+    "placeholders": {
+      "scheduled": {
+        "type": "int"
+      },
+      "failed": {
+        "type": "int"
+      }
+    }
+  },
+  "showBatchScheduleFailures": "Failed: {titles}",
+  "@showBatchScheduleFailures": {
+    "placeholders": {
+      "titles": {
+        "type": "String"
+      }
+    }
+  },
   "showDetailTitle": "Show details",
   "showEpisodesCount": "{count, plural, =1{1 episode} other{{count} episodes}}",
   "@showEpisodesCount": {
@@ -635,5 +812,21 @@
   "settingsFilterPersistenceReset": "Reset Each Time",
   "vodSortDialogTitle": "Sort Movies By",
   "vodSortDefault": "Default",
-  "vodSortRating": "Rating"
+  "vodSortRating": "Rating",
+  "settingsDefaultStartPage": "Default start page",
+  "settingsHdrMode": "HDR mode",
+  "settingsHdrModeHint": "Let HDR videos switch the display into HDR mode. Windows and Linux only.",
+  "settingsMatchRefreshRate": "Match display refresh rate",
+  "settingsMatchRefreshRateHint": "Switch the monitor to the video's frame rate when playback starts. Can briefly blank the screen. Windows only.",
+  "settingsToggleOn": "On",
+  "settingsToggleOff": "Off",
+  "settingsOptimizeFor": "Optimize for",
+  "settingsOptimizeForQuality": "Quality",
+  "settingsOptimizeForQualityHint": "Sharper images, higher memory usage.",
+  "settingsOptimizeForSpeed": "Speed",
+  "settingsOptimizeForSpeedHint": "Faster loading, lower image quality.",
+  "settingsFontSize": "Display size",
+  "settingsFontSizeNormal": "Normal",
+  "settingsFontSizeLarge": "Large",
+  "settingsFontSizeVeryLarge": "Very Large"
 }

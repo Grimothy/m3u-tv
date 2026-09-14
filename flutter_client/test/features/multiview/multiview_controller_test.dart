@@ -67,6 +67,29 @@ void main() {
       expect(controller.channels.map((c) => c.id), [1]);
     });
 
+    test('remove drops a channel by id and notifies listeners', () {
+      var notifications = 0;
+      final controller = MultiviewController()
+        ..toggle(_channel(1))
+        ..toggle(_channel(2))
+        ..addListener(() => notifications++)
+        ..remove(1);
+
+      expect(controller.channels.map((c) => c.id), [2]);
+      expect(notifications, 1);
+    });
+
+    test('remove is a no-op for an id that is not queued', () {
+      var notifications = 0;
+      final controller = MultiviewController()
+        ..toggle(_channel(1))
+        ..addListener(() => notifications++)
+        ..remove(99);
+
+      expect(controller.channels.map((c) => c.id), [1]);
+      expect(notifications, 0);
+    });
+
     test('clear empties the selection', () {
       final controller = MultiviewController()
         ..toggle(_channel(1))
