@@ -10,11 +10,15 @@ import 'package:m3u_tv/services/catalog_db/catalog_codec.dart'
 import 'package:m3u_tv/services/catalog_db/catalog_repository.dart';
 import 'package:m3u_tv/services/domain_models.dart';
 import 'package:m3u_tv/services/favorites_service.dart';
+import 'package:m3u_tv/services/view_settings_service.dart';
+import 'package:m3u_tv/shared/app_button.dart';
 import 'package:m3u_tv/shared/catalog_window.dart';
 import 'package:m3u_tv/shared/catalog_window_grid.dart';
 import 'package:m3u_tv/shared/image_quality_scope.dart';
 import 'package:m3u_tv/shared/media_browsing_widgets.dart';
 import 'package:m3u_tv/shared/media_category_nav.dart';
+import 'package:m3u_tv/shared/media_sort.dart';
+import 'package:m3u_tv/shared/media_sort_dialog.dart';
 
 /// VOD (Movies) screen with category filtering and poster grid.
 ///
@@ -69,6 +73,7 @@ class _VodScreenState extends ConsumerState<VodScreen> {
   Timer? _debounce;
 
   Set<int> _favoriteIds = {};
+  MediaSortOption _sortOption = MediaSortOption.defaultOrder;
   List<VodItem> _favoriteItems = const [];
   bool _favoritesLoadedOnce = false;
 
@@ -90,7 +95,24 @@ class _VodScreenState extends ConsumerState<VodScreen> {
   void initState() {
     super.initState();
     unawaited(_loadFavorites());
+    _sortOption = _initialSortOption();
     _reconfigureWindow();
+  }
+
+  /// The sort to open with: the persisted VOD sort when the user has opted
+  /// in via Settings -> View -> Filter Persistence, otherwise
+  /// [MediaSortOption.defaultOrder]. Reads the sync getters rather than
+  /// awaiting the async ones so the very first [_reconfigureWindow] call
+  /// already uses the right sort - main.dart preloads both keys into the
+  /// service's in-memory cache during bootstrap, so by the time any screen
+  /// mounts these are warm. Awaiting here instead would mean the window
+  /// reconfigures twice on every cold start (once at the default order,
+  /// again once the persisted value resolved) with a visible reorder in
+  /// between.
+  MediaSortOption _initialSortOption() {
+    final service = ref.read(viewSettingsServiceProvider);
+    if (!service.rememberMediaSortSync) return MediaSortOption.defaultOrder;
+    return service.vodSortOptionSync;
   }
 
   @override
@@ -111,6 +133,7 @@ class _VodScreenState extends ConsumerState<VodScreen> {
           kind: kCatalogKindVod,
           categoryId: categoryId,
           search: search,
+          sort: catalogSortFor(_sortOption),
           offset: offset,
           limit: limit,
         ),
@@ -172,6 +195,15 @@ class _VodScreenState extends ConsumerState<VodScreen> {
       });
     }
   }
+
+  /// Applies [_sortOption] to the (already category/query-filtered)
+  /// favorites list - see [sortMediaItems].
+  List<VodItem> _sortedFavorites(List<VodItem> items) => sortMediaItems(
+    items,
+    _sortOption,
+    ratingOf: (item) => item.rating,
+    yearOf: (item) => int.tryParse(item.year ?? ''),
+  );
 
   /// Refreshes tab-count labels (total / favorites / per-category) when the
   /// category list changes (a fresh catalog load) or the favorites count
@@ -257,6 +289,7 @@ class _VodScreenState extends ConsumerState<VodScreen> {
       gridFocusScopeNode: _gridFocusNode,
       memoryKeyPrefix: 'vod',
       onEntryFocusScopeReady: widget.onEntryFocusScopeReady,
+      leading: _buildSortButton(context),
     );
     final content = Expanded(
       child: isFavoritesTab
@@ -283,7 +316,7 @@ class _VodScreenState extends ConsumerState<VodScreen> {
         ),
       );
     }
-    return _buildGrid(_favoriteItems);
+    return _buildGrid(_sortedFavorites(_favoriteItems));
   }
 
   Widget _buildGrid(List<VodItem> items) {
@@ -431,5 +464,46 @@ class _VodScreenState extends ConsumerState<VodScreen> {
                 (minCardWidth + MediaBrowsingMetrics.itemGap))
             .floor();
     return minimumColumns.clamp(1, maximumColumns.clamp(1, 100));
+  }
+
+  /// Rendered as [MediaCategoryNav.leading] in both layouts - alongside the
+  /// vertical category list on TV/desktop, next to the "Filter" button on
+  /// mobile - so sorting is discoverable and one press away regardless of
+  /// layout, instead of hidden behind a press-and-hold on a category chip
+  /// that visually suggested a per-category action it wasn't. The label
+  /// doubles as a status indicator - see [mediaSortButtonLabel].
+  Widget _buildSortButton(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    return AppButton(
+      icon: Icons.sort,
+      label: mediaSortButtonLabel(l, _sortOption),
+      onPressed: () => _showSortMenu(context),
+    );
+  }
+
+  /// Opens the shared "Sort By" modal. Reads [ViewSettingsService
+  /// .rememberMediaSort] fresh on each open so a change to the Settings
+  /// toggle in another tab is honored on next open, then applies the user's
+  /// selection (or no-op on dismiss): always updates the local
+  /// [_sortOption]; only writes back to the service when persistence is
+  /// currently on.
+  Future<void> _showSortMenu(BuildContext context) async {
+    final service = ref.read(viewSettingsServiceProvider);
+    final remember = await service.rememberMediaSort();
+    if (!mounted || !context.mounted) return;
+
+    final selected = await showMediaSortDialog(
+      context,
+      title: AppLocalizations.of(context).vodSortDialogTitle,
+      current: _sortOption,
+    );
+
+    if (selected == null || !mounted) return;
+    setState(() => _sortOption = selected);
+    _reconfigureWindow();
+    if (!remember) return;
+    unawaited(
+      ref.read(viewSettingsServiceProvider).setVodSortOption(selected),
+    );
   }
 }

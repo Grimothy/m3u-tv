@@ -55,11 +55,19 @@ Future<void> main() async {
     unawaited(_initPushNotifications(appState));
   }
   // Pre-load persisted view settings into the in-memory cache so the
-  // synchronous getters (fontSizeSync, optimizeForSync) return the correct
-  // values on the very first build - without this, fontSizeSync defaults to
+  // synchronous getters (fontSizeSync, optimizeForSync, rememberMediaSortSync,
+  // vodSortOptionSync, seriesSortOptionSync) return the correct values on the
+  // very first build - without this, fontSizeSync defaults to
   // AppFontSize.normal and the user's saved choice is ignored until the
-  // settings screen opens and triggers an async refresh.
+  // settings screen opens and triggers an async refresh. VodScreen/
+  // SeriesScreen rely on the sort ones specifically to seed their initial
+  // sort in a single pass instead of reconfiguring their windowed grid twice.
   await appState.viewSettingsService.fontSize();
+  await Future.wait([
+    appState.viewSettingsService.rememberMediaSort(),
+    appState.viewSettingsService.vodSortOption(),
+    appState.viewSettingsService.seriesSortOption(),
+  ]);
   // Resolve the user's preferred start page before the router is built so a
   // cold launch opens there instead of always on Home.
   final startPage = await appState.viewSettingsService.defaultStartPage();

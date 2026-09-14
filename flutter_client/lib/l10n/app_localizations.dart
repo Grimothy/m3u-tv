@@ -230,6 +230,12 @@ abstract class AppLocalizations {
   /// **'Filter'**
   String get mediaCategoryFilterButton;
 
+  /// No description provided for @mediaCategorySortButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort'**
+  String get mediaCategorySortButton;
+
   /// No description provided for @mediaCategoryFilterScreenTitle.
   ///
   /// In en, this message translates to:
@@ -2527,6 +2533,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Prime time'**
   String get settingsEpgStartViewPrimeTime;
+
+  /// No description provided for @settingsFilterPersistence.
+  ///
+  /// In en, this message translates to:
+  /// **'Filter Persistence'**
+  String get settingsFilterPersistence;
+
+  /// No description provided for @settingsFilterPersistenceRemember.
+  ///
+  /// In en, this message translates to:
+  /// **'Remember'**
+  String get settingsFilterPersistenceRemember;
+
+  /// No description provided for @settingsFilterPersistenceReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset Each Time'**
+  String get settingsFilterPersistenceReset;
+
+  /// No description provided for @vodSortDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort Movies By'**
+  String get vodSortDialogTitle;
+
+  /// No description provided for @seriesSortDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort Series By'**
+  String get seriesSortDialogTitle;
+
+  /// No description provided for @mediaSortDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get mediaSortDefault;
+
+  /// No description provided for @mediaSortRating.
+  ///
+  /// In en, this message translates to:
+  /// **'Rating'**
+  String get mediaSortRating;
+
+  /// No description provided for @mediaSortReleaseDateNewest.
+  ///
+  /// In en, this message translates to:
+  /// **'Newest First'**
+  String get mediaSortReleaseDateNewest;
+
+  /// No description provided for @mediaSortReleaseDateOldest.
+  ///
+  /// In en, this message translates to:
+  /// **'Oldest First'**
+  String get mediaSortReleaseDateOldest;
 
   /// No description provided for @settingsDefaultStartPage.
   ///

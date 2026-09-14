@@ -77,6 +77,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get mediaCategoryFilterButton => 'Filter';
 
   @override
+  String get mediaCategorySortButton => 'Trier';
+
+  @override
   String get mediaCategoryFilterScreenTitle => 'Categories';
 
   @override
@@ -1425,6 +1428,33 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get settingsEpgStartViewPrimeTime => 'Prime time';
+
+  @override
+  String get settingsFilterPersistence => 'Persistance du filtre';
+
+  @override
+  String get settingsFilterPersistenceRemember => 'Mémoriser';
+
+  @override
+  String get settingsFilterPersistenceReset => 'Réinitialiser à chaque fois';
+
+  @override
+  String get vodSortDialogTitle => 'Trier les films par';
+
+  @override
+  String get seriesSortDialogTitle => 'Trier les séries par';
+
+  @override
+  String get mediaSortDefault => 'Par défaut';
+
+  @override
+  String get mediaSortRating => 'Note';
+
+  @override
+  String get mediaSortReleaseDateNewest => 'Plus récents d\'abord';
+
+  @override
+  String get mediaSortReleaseDateOldest => 'Plus anciens d\'abord';
 
   @override
   String get settingsDefaultStartPage => 'Page de démarrage par défaut';

@@ -72,6 +72,26 @@ enum ChannelColumnLayout {
       );
 }
 
+/// Sort order for a sortable media grid (VOD, Series). Defaults to the
+/// server's natural order so existing callers see no change. New sort
+/// dimensions should be appended here rather than overloading existing
+/// values.
+enum MediaSortOption {
+  defaultOrder('defaultOrder'),
+  ratingDesc('ratingDesc'),
+  releaseDateDesc('releaseDateDesc'),
+  releaseDateAsc('releaseDateAsc');
+
+  const MediaSortOption(this.value);
+  final String value;
+
+  static MediaSortOption fromValue(String? value) =>
+      MediaSortOption.values.firstWhere(
+        (option) => option.value == value,
+        orElse: () => MediaSortOption.defaultOrder,
+      );
+}
+
 /// Whether to optimize image rendering for visual quality or performance.
 enum OptimizeFor {
   quality('quality'),
@@ -131,6 +151,9 @@ class ViewSettingsService extends ChangeNotifier {
   static const epgStartViewKey = 'm3ue_tv_epg_start_view';
   static const channelColumnLayoutKey = 'm3ue_tv_channel_column_layout';
   static const hdrEnabledKey = 'm3ue_tv_hdr_enabled';
+  static const rememberMediaSortKey = 'm3ue_tv_remember_vod_sort';
+  static const vodSortOptionKey = 'm3ue_tv_vod_sort_option';
+  static const seriesSortOptionKey = 'm3ue_tv_series_sort_option';
   static const matchRefreshRateKey = 'm3ue_tv_match_refresh_rate';
   static const defaultStartPageKey = 'm3ue_tv_default_start_page';
   static const windowBoundsKey = 'm3ue_tv_window_bounds';
@@ -220,6 +243,57 @@ class ViewSettingsService extends ChangeNotifier {
     bool enabled,
   ) async {
     await _write(hdrEnabledKey, enabled);
+    notifyListeners();
+  }
+
+  /// Whether the user's chosen media sort order (VOD, Series) survives
+  /// across launches. Defaults to `false` so existing users keep today's
+  /// session-only behavior (resets to server order on each fresh boot of the
+  /// app). Shared across every sortable screen - persisted as its own key so
+  /// toggling this off doesn't clear the separately-stored [vodSortOption]/
+  /// [seriesSortOption], which are simply ignored until re-enabled.
+  Future<bool> rememberMediaSort() async {
+    final raw = await _read(rememberMediaSortKey);
+    return raw as bool? ?? false;
+  }
+
+  /// Synchronous accessor - see [hdrEnabledSync].
+  bool get rememberMediaSortSync =>
+      (_memory[rememberMediaSortKey] as bool?) ?? false;
+
+  Future<void> setRememberMediaSort(
+    // ignore: avoid_positional_boolean_parameters
+    bool value,
+  ) async {
+    await _write(rememberMediaSortKey, value);
+    notifyListeners();
+  }
+
+  Future<MediaSortOption> vodSortOption() async {
+    final raw = await _read(vodSortOptionKey);
+    return MediaSortOption.fromValue(raw as String?);
+  }
+
+  /// Synchronous accessor - see [hdrEnabledSync].
+  MediaSortOption get vodSortOptionSync =>
+      MediaSortOption.fromValue(_memory[vodSortOptionKey] as String?);
+
+  Future<void> setVodSortOption(MediaSortOption option) async {
+    await _write(vodSortOptionKey, option.value);
+    notifyListeners();
+  }
+
+  Future<MediaSortOption> seriesSortOption() async {
+    final raw = await _read(seriesSortOptionKey);
+    return MediaSortOption.fromValue(raw as String?);
+  }
+
+  /// Synchronous accessor - see [hdrEnabledSync].
+  MediaSortOption get seriesSortOptionSync =>
+      MediaSortOption.fromValue(_memory[seriesSortOptionKey] as String?);
+
+  Future<void> setSeriesSortOption(MediaSortOption option) async {
+    await _write(seriesSortOptionKey, option.value);
     notifyListeners();
   }
 

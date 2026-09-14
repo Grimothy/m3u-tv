@@ -76,6 +76,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mediaCategoryFilterButton => 'Filter';
 
   @override
+  String get mediaCategorySortButton => '排序';
+
+  @override
   String get mediaCategoryFilterScreenTitle => 'Categories';
 
   @override
@@ -1371,6 +1374,33 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsEpgStartViewPrimeTime => '黄金时段';
+
+  @override
+  String get settingsFilterPersistence => '筛选保留';
+
+  @override
+  String get settingsFilterPersistenceRemember => '记住';
+
+  @override
+  String get settingsFilterPersistenceReset => '每次重置';
+
+  @override
+  String get vodSortDialogTitle => '电影排序';
+
+  @override
+  String get seriesSortDialogTitle => '剧集排序';
+
+  @override
+  String get mediaSortDefault => '默认';
+
+  @override
+  String get mediaSortRating => '评分';
+
+  @override
+  String get mediaSortReleaseDateNewest => '最新优先';
+
+  @override
+  String get mediaSortReleaseDateOldest => '最早优先';
 
   @override
   String get settingsDefaultStartPage => '默认启动页面';
