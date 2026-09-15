@@ -64,7 +64,13 @@ void ANGLESurfaceManager::MakeCurrent(bool current) {
 
 void ANGLESurfaceManager::SwapBuffers() { glFinish(); }
 
+bool ANGLESurfaceManager::DeviceLost() const {
+  if (d3d_11_device_ == nullptr) return false;
+  return d3d_11_device_->GetDeviceRemovedReason() != S_OK;
+}
+
 void ANGLESurfaceManager::Draw(const std::function<void()>& callback) {
+  if (DeviceLost()) return;
   ::WaitForSingleObject(mutex_, INFINITE);
   MakeCurrent(true);
   callback();
@@ -74,6 +80,7 @@ void ANGLESurfaceManager::Draw(const std::function<void()>& callback) {
 }
 
 void ANGLESurfaceManager::Read() {
+  if (DeviceLost()) return;
   ::WaitForSingleObject(mutex_, INFINITE);
   if (d3d_11_device_context_ != nullptr) {
     d3d_11_device_context_->CopyResource(d3d_11_texture_2d_.Get(),

@@ -92,6 +92,20 @@ class ANGLESurfaceManager {
   // frame rather than one mpv/ANGLE is still drawing.
   void Read();
 
+  // True once the D3D11 device has been lost (driver reset/update, GPU
+  // removed, TDR recovery, ...) -- ID3D11Device::GetDeviceRemovedReason()
+  // stays a fixed non-S_OK value forever after that happens, so this is
+  // cheap to poll every frame. Draw()/Read() check it themselves and become
+  // no-ops once true, since every D3D11 call against a removed device is a
+  // guaranteed crash, not a recoverable error -- there is no in-place
+  // recovery here (that would mean rebuilding the device, both D3D11
+  // textures, the EGL display/surface/context, and mpv's own render context
+  // against it), only "stop touching the dead device." The caller (see the
+  // GpuSurfaceTexture callback in desktop_libmpv_backend.cpp) is expected to
+  // notice via this method and end the session with a recoverable error
+  // instead of continuing to render.
+  bool DeviceLost() const;
+
  private:
   void SwapBuffers();
   bool CreateD3DDevice();

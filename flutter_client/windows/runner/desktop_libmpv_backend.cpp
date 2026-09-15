@@ -455,6 +455,12 @@ struct CopyPixelsContext {
   std::vector<uint8_t> pixels;             // SW path only.
   FlutterDesktopPixelBuffer pixel_buffer = {};  // SW path only.
   FlutterDesktopGpuSurfaceDescriptor gpu_descriptor = {};  // GPU-texture path only.
+  // Set by the raster-thread GpuSurfaceTexture callback (GPU-texture path
+  // only) once ANGLESurfaceManager::DeviceLost() goes true, so the event
+  // thread -- which owns the PlayerInstance this context belongs to and can
+  // safely call QueueEvent -- notices and reports it. Never cleared: a
+  // removed D3D11 device does not come back for this session.
+  std::atomic<bool> device_lost{false};
 };
 
 struct TextureReleaseContext {
@@ -677,6 +683,10 @@ struct PlayerInstance {
   bool using_gpu_window = false;
   // GPU-texture path only (see the third constructor above).
   bool using_gpu_texture = false;
+  // Event-thread-only, no lock needed: guards ReportDeviceLostIfNeeded so a
+  // removed D3D11 device (copy_context->device_lost, set by the raster
+  // thread) is only reported to Dart once.
+  bool device_lost_reported = false;
   HWND video_hwnd = nullptr;
   // Shared by both GPU paths (native-window and texture) for DisplayConfig/
   // monitor lookups -- see the comment on the second constructor above.
@@ -1210,6 +1220,9 @@ bool TryLoadGpuTexture(LibmpvApi& api, HWND hwnd,
           ctx->api->render_context_render(ctx->render_context, params);
         });
         surface_manager->Read();
+        if (surface_manager->DeviceLost()) {
+          ctx->device_lost.store(true, std::memory_order_relaxed);
+        }
         return &ctx->gpu_descriptor;
       }));
   const int64_t texture_id = g_texture_registrar->RegisterTexture(texture.get());
@@ -1587,6 +1600,16 @@ void PlayerInstance::StartEventThread() {
       api->observe_property(handle, 0, "container-fps", MPV_FORMAT_DOUBLE);
     }
     while (!disposing.load()) {
+      if (using_gpu_texture && !device_lost_reported &&
+          copy_context->device_lost.load(std::memory_order_relaxed)) {
+        device_lost_reported = true;
+        EventSnapshot snapshot;
+        snapshot.kind = "ERROR";
+        snapshot.message = "graphics device removed";
+        snapshot.code = "gpu-device-lost";
+        snapshot.recoverable = true;
+        QueueEvent(snapshot);
+      }
       mpv_event* event = api->wait_event(handle, 0.1);
       if (event == nullptr || event->event_id == MPV_EVENT_NONE) continue;
       if ((using_gpu_window || using_gpu_texture) && event->event_id == MPV_EVENT_PROPERTY_CHANGE &&
