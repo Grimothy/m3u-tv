@@ -473,95 +473,104 @@ class _LiveTvScreenState extends ConsumerState<LiveTvScreen>
 
     final action = await showDialog<_ChannelContextAction>(
       context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: Row(
+      builder: (dialogContext) {
+        final scale = FontSizeScope.scaleOf(dialogContext);
+        return SimpleDialog(
+          title: Row(
+            children: [
+              Icon(Icons.tv, size: 18 * scale),
+              SizedBox(width: 8 * scale),
+              Expanded(
+                child: Text(
+                  channel.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
           children: [
-            const Icon(Icons.tv, size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                channel.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+            DpadRegion(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (hasRecord)
+                    _ContextMenuOption(
+                      icon: activeRecording != null
+                          ? Icons.stop_circle
+                          : Icons.fiber_manual_record,
+                      label: activeRecording != null
+                          ? AppLocalizations.of(
+                              dialogContext,
+                            ).liveTvStopRecording
+                          : AppLocalizations.of(dialogContext).liveTvRecord,
+                      subtitle: activeRecording != null
+                          ? null
+                          : recordableProgram?.displayTitle,
+                      autofocus: true,
+                      onTap: () => Navigator.of(
+                        dialogContext,
+                      ).pop(_ChannelContextAction.record),
+                    ),
+                  if (hasSeriesRule)
+                    _ContextMenuOption(
+                      icon: Icons.fiber_new,
+                      label: AppLocalizations.of(dialogContext).epgRecordSeries,
+                      subtitle: recordableProgram.title,
+                      autofocus: !hasRecord,
+                      onTap: () => Navigator.of(
+                        dialogContext,
+                      ).pop(_ChannelContextAction.recordSeries),
+                    ),
+                  _ContextMenuOption(
+                    icon: isFavorite ? Icons.star : Icons.star_border,
+                    label: isFavorite
+                        ? AppLocalizations.of(
+                            dialogContext,
+                          ).liveTvRemoveFavorite
+                        : AppLocalizations.of(dialogContext).liveTvFavorite,
+                    autofocus: !hasRecord && !hasSeriesRule,
+                    onTap: () => Navigator.of(
+                      dialogContext,
+                    ).pop(_ChannelContextAction.toggleFavorite),
+                  ),
+                  if (channel.catchupSupported)
+                    _ContextMenuOption(
+                      icon: Icons.video_library,
+                      label: AppLocalizations.of(
+                        dialogContext,
+                      ).liveTvCatchupShows,
+                      onTap: () => Navigator.of(
+                        dialogContext,
+                      ).pop(_ChannelContextAction.catchupShows),
+                    ),
+                  if (_multiviewSupported)
+                    _ContextMenuOption(
+                      icon: isInMultiview
+                          ? Icons.grid_view
+                          : Icons.grid_view_outlined,
+                      label: isInMultiview
+                          ? AppLocalizations.of(
+                              dialogContext,
+                            ).liveTvRemoveMultiview
+                          : AppLocalizations.of(
+                              dialogContext,
+                            ).liveTvAddMultiview,
+                      onTap: () => Navigator.of(
+                        dialogContext,
+                      ).pop(_ChannelContextAction.toggleMultiview),
+                    ),
+                  _ContextMenuOption(
+                    icon: Icons.close,
+                    label: AppLocalizations.of(dialogContext).cancel,
+                    onTap: () => Navigator.of(dialogContext).pop(),
+                  ),
+                ],
               ),
             ),
           ],
-        ),
-        children: [
-          DpadRegion(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (hasRecord)
-                  _ContextMenuOption(
-                    icon: activeRecording != null
-                        ? Icons.stop_circle
-                        : Icons.fiber_manual_record,
-                    label: activeRecording != null
-                        ? AppLocalizations.of(dialogContext).liveTvStopRecording
-                        : AppLocalizations.of(dialogContext).liveTvRecord,
-                    subtitle: activeRecording != null
-                        ? null
-                        : recordableProgram?.displayTitle,
-                    autofocus: true,
-                    onTap: () => Navigator.of(
-                      dialogContext,
-                    ).pop(_ChannelContextAction.record),
-                  ),
-                if (hasSeriesRule)
-                  _ContextMenuOption(
-                    icon: Icons.fiber_new,
-                    label: AppLocalizations.of(dialogContext).epgRecordSeries,
-                    subtitle: recordableProgram.title,
-                    autofocus: !hasRecord,
-                    onTap: () => Navigator.of(
-                      dialogContext,
-                    ).pop(_ChannelContextAction.recordSeries),
-                  ),
-                _ContextMenuOption(
-                  icon: isFavorite ? Icons.star : Icons.star_border,
-                  label: isFavorite
-                      ? AppLocalizations.of(dialogContext).liveTvRemoveFavorite
-                      : AppLocalizations.of(dialogContext).liveTvFavorite,
-                  autofocus: !hasRecord && !hasSeriesRule,
-                  onTap: () => Navigator.of(
-                    dialogContext,
-                  ).pop(_ChannelContextAction.toggleFavorite),
-                ),
-                if (channel.catchupSupported)
-                  _ContextMenuOption(
-                    icon: Icons.video_library,
-                    label: AppLocalizations.of(
-                      dialogContext,
-                    ).liveTvCatchupShows,
-                    onTap: () => Navigator.of(
-                      dialogContext,
-                    ).pop(_ChannelContextAction.catchupShows),
-                  ),
-                if (_multiviewSupported)
-                  _ContextMenuOption(
-                    icon: isInMultiview
-                        ? Icons.grid_view
-                        : Icons.grid_view_outlined,
-                    label: isInMultiview
-                        ? AppLocalizations.of(
-                            dialogContext,
-                          ).liveTvRemoveMultiview
-                        : AppLocalizations.of(dialogContext).liveTvAddMultiview,
-                    onTap: () => Navigator.of(
-                      dialogContext,
-                    ).pop(_ChannelContextAction.toggleMultiview),
-                  ),
-                _ContextMenuOption(
-                  icon: Icons.close,
-                  label: AppLocalizations.of(dialogContext).cancel,
-                  onTap: () => Navigator.of(dialogContext).pop(),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (!context.mounted) return;
@@ -1082,15 +1091,19 @@ class _ContextMenuOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scale = FontSizeScope.scaleOf(context);
     return DpadInkWell(
       autofocus: autofocus,
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 24),
+        padding: EdgeInsets.symmetric(
+          vertical: 10 * scale,
+          horizontal: 24 * scale,
+        ),
         child: Row(
           children: [
-            Icon(icon, size: 20),
-            const SizedBox(width: 12),
+            Icon(icon, size: 20 * scale),
+            SizedBox(width: 12 * scale),
             Expanded(
               child: subtitle != null
                   ? Column(

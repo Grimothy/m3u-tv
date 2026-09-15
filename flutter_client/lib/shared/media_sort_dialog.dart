@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:m3u_tv/l10n/app_localizations.dart';
 import 'package:m3u_tv/services/view_settings_service.dart';
 import 'package:m3u_tv/shared/dpad_ink_well.dart';
+import 'package:m3u_tv/shared/image_quality_scope.dart';
 
 /// Shows the "Sort By" modal shared by every sortable media grid (VOD,
 /// Series). Returns the newly selected [MediaSortOption], or null if the
@@ -29,37 +30,40 @@ Future<MediaSortOption?> showMediaSortDialog(
   ];
   return showDialog<MediaSortOption>(
     context: context,
-    builder: (dialogContext) => SimpleDialog(
-      title: Row(
-        children: [
-          const Icon(Icons.sort, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(title)),
-        ],
-      ),
-      children: [
-        DpadRegion(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final (icon, label, option) in options)
-                _MediaSortOptionRow(
-                  icon: icon,
-                  label: label,
-                  isActive: current == option,
-                  autofocus: current == option,
-                  onTap: () => Navigator.of(dialogContext).pop(option),
-                ),
-              _MediaSortOptionRow(
-                icon: Icons.close,
-                label: l.cancel,
-                onTap: () => Navigator.of(dialogContext).pop(),
-              ),
-            ],
-          ),
+    builder: (dialogContext) {
+      final scale = FontSizeScope.scaleOf(dialogContext);
+      return SimpleDialog(
+        title: Row(
+          children: [
+            Icon(Icons.sort, size: 18 * scale),
+            SizedBox(width: 8 * scale),
+            Expanded(child: Text(title)),
+          ],
         ),
-      ],
-    ),
+        children: [
+          DpadRegion(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final (icon, label, option) in options)
+                  _MediaSortOptionRow(
+                    icon: icon,
+                    label: label,
+                    isActive: current == option,
+                    autofocus: current == option,
+                    onTap: () => Navigator.of(dialogContext).pop(option),
+                  ),
+                _MediaSortOptionRow(
+                  icon: Icons.close,
+                  label: l.cancel,
+                  onTap: () => Navigator.of(dialogContext).pop(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    },
   );
 }
 
@@ -84,15 +88,19 @@ class _MediaSortOptionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final scale = FontSizeScope.scaleOf(context);
     return DpadInkWell(
       autofocus: autofocus,
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 24),
+        padding: EdgeInsets.symmetric(
+          vertical: 10 * scale,
+          horizontal: 24 * scale,
+        ),
         child: Row(
           children: [
-            Icon(icon, size: 20),
-            const SizedBox(width: 12),
+            Icon(icon, size: 20 * scale),
+            SizedBox(width: 12 * scale),
             Expanded(
               child: Text(
                 label,
@@ -102,7 +110,8 @@ class _MediaSortOptionRow extends StatelessWidget {
                 ),
               ),
             ),
-            if (isActive) Icon(Icons.check, color: colorScheme.primary),
+            if (isActive)
+              Icon(Icons.check, color: colorScheme.primary, size: 24 * scale),
           ],
         ),
       ),
