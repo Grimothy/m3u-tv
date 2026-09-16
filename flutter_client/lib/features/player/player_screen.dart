@@ -35,6 +35,17 @@ const bool _showPlaybackDiagnostics = bool.fromEnvironment(
   'M3U_TV_SHOW_PLAYBACK_DIAGNOSTICS',
 );
 
+/// Debug-only escape hatch: when set, the player on a handheld device
+/// does NOT call `SystemChrome.setPreferredOrientations` to lock into
+/// landscape. Lets QA rotate a handheld emulator mid-load to reproduce
+/// the landscape loading-bug scenarios (the spinner burn-in and the
+/// diagnostic-status overlay positioning) without having to fight the
+/// the OS rotation lock. Defaults to false; never affects production
+/// builds since the dart-define is opt-in.
+const bool _bypassOrientationLock = bool.fromEnvironment(
+  'PLAYER_BYPASS_ORIENTATION_LOCK',
+);
+
 /// Which TheIntroDB segment a skip prompt refers to.
 enum _IntroDbSegmentKind { intro, credits }
 
@@ -284,7 +295,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     // not just while actively playing — e.g. staying paused on an overlay
     // shouldn't let the screen sleep. Enabled here, disabled in dispose().
     unawaited(widget.wakelockController.enable());
-    if (widget.isHandheld) {
+    if (widget.isHandheld && !_bypassOrientationLock) {
       unawaited(
         SystemChrome.setPreferredOrientations([
           DeviceOrientation.landscapeLeft,
@@ -1767,6 +1778,35 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 ),
                               ),
                             ],
+                          ),
+                        ),
+                      ),
+
+                    // Diagnostic status banner — debug-only. Renders the
+                    // current `_status` and any active `_errorMessage`
+                    // in the top-right corner so QA can pin a report
+                    // ("I see X distortion in landscape") to a specific
+                    // state transition. Visible the entire time the
+                    // player is mounted; gated only on the
+                    // M3U_TV_SHOW_PLAYBACK_DIAGNOSTICS dart-define so it
+                    // never ships to end users.
+                    if (_showPlaybackDiagnostics)
+                      Positioned(
+                        top: mediaQuery.padding.top + 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          color: Colors.black54,
+                          child: Text(
+                            'status=${_status.name}'
+                            '${_errorMessage != null ? " err=$_errorMessage" : ""}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                            ),
                           ),
                         ),
                       ),

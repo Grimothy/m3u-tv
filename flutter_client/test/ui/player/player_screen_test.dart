@@ -2576,6 +2576,155 @@ void main() {
       expect(find.text('Playback error'), findsNothing);
     });
 
+    // Regression coverage for the L1037 string being routed through
+    // AppLocalizations. Without ever emitting a state transition the
+    // player stays in `loading`, the 20s watchdog fires, and
+    // _setErrorMessage writes the localized timeout message into the
+    // error UI — assert the English value of playerLoadingTimedOut.
+    testWidgets('localized loading timeout message', (tester) async {
+      final adapter = FakePlayerAdapter(
+        capabilities: PlaybackCapabilities.androidExoPlayer,
+      );
+      final orchestrator = PlaybackOrchestrator(
+        platform: PlaybackPlatform.android,
+        adapters: <PlaybackBackend, PlayerAdapter>{
+          PlaybackBackend.androidExoPlayer: adapter,
+        },
+        transcodeGateway: FakeTranscodeGateway(),
+      );
+      addTearDown(orchestrator.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('Launcher'),
+                    ElevatedButton(
+                      onPressed: () {
+                        unawaited(
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => PlayerScreen(
+                                args: const PlayerArgs(
+                                  streamUrl: 'https://example.com/live.m3u8',
+                                  title: 'Timeout Fixture',
+                                  type: 'live',
+                                ),
+                                orchestrator: orchestrator,
+                                epgService: EpgService(
+                                  clock: () => DateTime.utc(2026),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                      child: const Text('Open player'),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open player'));
+      await tester.pumpAndSettle();
+
+      // _status is still `loading` because we never emitted a state
+      // transition. Advance the test clock past the 20s
+      // _loadingTimeout so the watchdog Timer fires and writes the
+      // localized timeout message via _setErrorMessage.
+      await tester.pump(const Duration(seconds: 21));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Stream loading timed out. The server may be unreachable or the stream URL is invalid.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    // Regression coverage for the L1691 'Playback error' string being
+    // routed through AppLocalizations. Emit a PlaybackError and assert
+    // the localized header (playerPlaybackError) appears.
+    testWidgets('localized playback error header', (tester) async {
+      final adapter = FakePlayerAdapter(
+        capabilities: PlaybackCapabilities.androidExoPlayer,
+      );
+      final orchestrator = PlaybackOrchestrator(
+        platform: PlaybackPlatform.android,
+        adapters: <PlaybackBackend, PlayerAdapter>{
+          PlaybackBackend.androidExoPlayer: adapter,
+        },
+        transcodeGateway: FakeTranscodeGateway(),
+      );
+      addTearDown(orchestrator.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('Launcher'),
+                    ElevatedButton(
+                      onPressed: () {
+                        unawaited(
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => PlayerScreen(
+                                args: const PlayerArgs(
+                                  streamUrl: 'https://example.com/live.m3u8',
+                                  title: 'Error Header Fixture',
+                                  type: 'live',
+                                ),
+                                orchestrator: orchestrator,
+                                epgService: EpgService(
+                                  clock: () => DateTime.utc(2026),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                      child: const Text('Open player'),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open player'));
+      await tester.pumpAndSettle();
+
+      adapter.emitError(
+        const PlaybackError(
+          backend: PlaybackBackend.androidExoPlayer,
+          message: 'Playback failed',
+          code: 'playback_failed',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Playback error'), findsOneWidget);
+    });
+
     testWidgets(
       'switching live channel via a stable key reuses the orchestrator '
       'instead of disposing it',
