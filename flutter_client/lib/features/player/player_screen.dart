@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:m3u_tv/app/app_shell.dart' show playerModalDismissTick;
 import 'package:m3u_tv/features/player/epg_overlay.dart';
 import 'package:m3u_tv/features/player/now_playing_overlay.dart';
 import 'package:m3u_tv/features/player/playback_controls.dart';
@@ -925,6 +926,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
+  /// Forces a full child rebuild on rotation (or any other MediaQuery
+  /// change). The hybrid-composition SurfaceView underneath is happy to
+  /// reuse its compositor layer across orientation changes, but the route
+  /// the player replaces (e.g. a just-dismissed resume modal) leaves a
+  /// cached bitmap that doesn't get invalidated until the first video
+  /// frame paints. setState here forces the loading overlay to repaint
+  /// fresh; the [RepaintBoundary] keyed on `playerModalDismissTick`
+  /// below gives the layer a new identity post-modal so the burn-in is
+  /// cleared even when `_status` is unchanged across the rotation.
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     _disposed = true;
@@ -1623,26 +1639,46 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             _status == PlaybackStatus.loading ||
                             _status == PlaybackStatus.ready) &&
                         _errorMessage == null)
-                      Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const CircularProgressIndicator(
-                              color: Colors.white,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              _retryStatusMessage ??
-                                  AppLocalizations.of(
-                                    context,
-                                  ).playerLoadingStream,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
+                      // RepaintBoundary keyed on `_status` AND the modal-dismiss
+                      // tick so the layer is fresh on first paint after a
+                      // resume-modal exit AND on every status transition. The
+                      // tick read in didChangeMetrics busts the cached bitmap
+                      // that the modal route's exit animation would otherwise
+                      // leave behind across a concurrent rotation.
+                      RepaintBoundary(
+                        key: ValueKey(
+                          'player-loader-${_status.name}-'
+                          '${playerModalDismissTick.value}',
+                        ),
+                        child: SafeArea(
+                          minimum: const EdgeInsets.all(8),
+                          child: Align(
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: isHandheldLayout(context) ? 240 : 360,
                               ),
-                              textAlign: TextAlign.center,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const CircularProgressIndicator(
+                                    color: Colors.white,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    _retryStatusMessage ??
+                                        AppLocalizations.of(
+                                          context,
+                                        ).playerLoadingStream,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
                             ),
-                          ],
+                          ),
                         ),
                       ),
 
