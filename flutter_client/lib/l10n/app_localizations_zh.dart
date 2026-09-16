@@ -317,6 +317,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get playerReturningToMenu => '正在返回菜单…';
 
   @override
+  String get playerLoadingStream => '正在加载流…';
+
+  @override
   String get searchHint => '搜索直播电视、电影和剧集…';
 
   @override

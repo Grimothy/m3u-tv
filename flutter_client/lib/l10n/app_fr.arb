@@ -173,6 +173,7 @@
   "playerUpNextDismiss": "Ignorer",
   "playerLiveStreamEnded": "Diffusion terminée",
   "playerReturningToMenu": "Retour au menu…",
+  "playerLoadingStream": "Chargement du flux…",
   "searchHint": "Rechercher Télévision en direct, films et séries…",
   "searchSectionLiveTv": "Télévision en direct",
   "searchSectionMovies": "Films",

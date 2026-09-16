@@ -680,6 +680,12 @@ abstract class AppLocalizations {
   /// **'Returning to the menu…'**
   String get playerReturningToMenu;
 
+  /// No description provided for @playerLoadingStream.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading stream…'**
+  String get playerLoadingStream;
+
   /// No description provided for @searchHint.
   ///
   /// In en, this message translates to:

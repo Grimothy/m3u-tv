@@ -326,6 +326,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get playerReturningToMenu => 'Volviendo al menú…';
 
   @override
+  String get playerLoadingStream => 'Cargando stream…';
+
+  @override
   String get searchHint => 'Buscar Televisión en vivo, cine y series…';
 
   @override

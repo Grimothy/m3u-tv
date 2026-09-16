@@ -173,6 +173,7 @@
   "playerUpNextDismiss": "关闭",
   "playerLiveStreamEnded": "直播已结束",
   "playerReturningToMenu": "正在返回菜单…",
+  "playerLoadingStream": "正在加载流…",
   "searchHint": "搜索直播电视、电影和剧集…",
   "searchSectionLiveTv": "直播电视",
   "searchSectionMovies": "电影",

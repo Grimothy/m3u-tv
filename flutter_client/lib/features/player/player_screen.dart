@@ -986,6 +986,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _openAndSeek(PlaybackSource source) async {
+    if (!_disposed && mounted) {
+      setState(() {
+        _status = PlaybackStatus.loading;
+        _errorMessage = null;
+        _retryStatusMessage = null;
+      });
+      // Force a paint boundary so the spinner renders before the
+      // orchestrator emits ready/playing. Without this, a synchronous
+      // loading → playing emission would batch both setStates into a
+      // single frame and the spinner would never paint. One endOfFrame
+      // await guarantees the spinner paints at least once before
+      // orchestrator state events can override it.
+      await WidgetsBinding.instance.endOfFrame;
+    }
     try {
       await widget.orchestrator.open(source);
       // Native backends default to HDR on; only push an explicit call when
@@ -1593,8 +1607,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                    // Loading indicator
-                    if (_status == PlaybackStatus.loading &&
+                    // Loading indicator — visible during every pre-playback
+                    // state (idle/loading/ready) so the spinner stays on
+                    // screen for the entire window between mount and first
+                    // frame render. The orchestrator transitions
+                    // idle → loading → ready → playing as the source is
+                    // fetched and the first frame is decoded; once it
+                    // emits `playing`, the first video frame is on screen
+                    // and the overlay clears. `paused`/`buffering`/
+                    // `completed`/`stopped` deliberately don't show the
+                    // overlay — paused has the frozen frame, buffering
+                    // mid-stream has its own UX plan, completed/stopped
+                    // have end-of-stream UI.
+                    if ((_status == PlaybackStatus.idle ||
+                            _status == PlaybackStatus.loading ||
+                            _status == PlaybackStatus.ready) &&
                         _errorMessage == null)
                       Center(
                         child: Column(
@@ -1605,7 +1632,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              _retryStatusMessage ?? 'Loading stream...',
+                              _retryStatusMessage ??
+                                  AppLocalizations.of(
+                                    context,
+                                  ).playerLoadingStream,
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,

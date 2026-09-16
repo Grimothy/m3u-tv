@@ -326,6 +326,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get playerReturningToMenu => 'Retour au menu…';
 
   @override
+  String get playerLoadingStream => 'Chargement du flux…';
+
+  @override
   String get searchHint => 'Rechercher Télévision en direct, films et séries…';
 
   @override

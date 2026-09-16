@@ -326,6 +326,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get playerReturningToMenu => 'Rückkehr zum Menü…';
 
   @override
+  String get playerLoadingStream => 'Stream wird geladen…';
+
+  @override
   String get searchHint => 'Live-TV, Filme und Serien durchsuchen …';
 
   @override
