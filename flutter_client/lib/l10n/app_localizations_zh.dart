@@ -317,6 +317,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get playerReturningToMenu => '正在返回菜单…';
 
   @override
+  String get playerLoadingTimedOut => '流加载超时。服务器可能不可达,或流 URL 无效。';
+
+  @override
+  String get playerPlaybackError => '播放错误';
+
+  @override
   String get playerLoadingStream => '正在加载流…';
 
   @override

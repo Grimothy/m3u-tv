@@ -680,6 +680,18 @@ abstract class AppLocalizations {
   /// **'Returning to the menu…'**
   String get playerReturningToMenu;
 
+  /// No description provided for @playerLoadingTimedOut.
+  ///
+  /// In en, this message translates to:
+  /// **'Stream loading timed out. The server may be unreachable or the stream URL is invalid.'**
+  String get playerLoadingTimedOut;
+
+  /// No description provided for @playerPlaybackError.
+  ///
+  /// In en, this message translates to:
+  /// **'Playback error'**
+  String get playerPlaybackError;
+
   /// No description provided for @playerLoadingStream.
   ///
   /// In en, this message translates to:

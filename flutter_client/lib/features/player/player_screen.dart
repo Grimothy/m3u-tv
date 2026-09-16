@@ -1034,7 +1034,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           (_status == PlaybackStatus.loading ||
               _status == PlaybackStatus.idle)) {
         _setErrorMessage(
-          'Stream loading timed out. The server may be unreachable or the stream URL is invalid.',
+          AppLocalizations.of(context).playerLoadingTimedOut,
         );
       }
     });
@@ -1688,7 +1688,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                'Playback error',
+                                AppLocalizations.of(
+                                  context,
+                                ).playerPlaybackError,
                                 style: Theme.of(context).textTheme.headlineSmall
                                     ?.copyWith(
                                       color: Colors.white,
